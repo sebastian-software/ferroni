@@ -1058,6 +1058,8 @@ mod tests {
     /// with an accept seek and on those the walk leaves without one.
     #[test]
     fn accept_answers_are_the_matchers() {
+        // `is_match_at` reads the process-wide retry limits.
+        let _limits = crate::regexec::shared_limits();
         // Pattern, the django flags (ignore case, `$` at the end only) or
         // the defaults, and whether the pattern has an accept seek.
         let patterns: &[(&str, bool, bool)] = &[
