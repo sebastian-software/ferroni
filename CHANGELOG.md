@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.3.0](https://github.com/sebastian-software/ferroni/compare/v2.2.4...v2.3.0) (2026-10-21)
+
+
+### Features
+
+* **bench:** track ferrolink's HTML scanning in the corpus and across threads ([#422](https://github.com/sebastian-software/ferroni/issues/422)) ([587381b](https://github.com/sebastian-software/ferroni/commit/587381bea197c7000c5b112c5c47abebd361af79))
+
+
+### Bug Fixes
+
+* **bench:** give every timed process one environment size ([#423](https://github.com/sebastian-software/ferroni/issues/423)) ([f66a56c](https://github.com/sebastian-software/ferroni/commit/f66a56cbe0d43b6aba440fa1fe2140e4410f338d))
+* **compile:** bound the inline expansion of {n,} over non-empty bodies ([#428](https://github.com/sebastian-software/ferroni/issues/428)) ([db5c031](https://github.com/sebastian-software/ferroni/commit/db5c031a2d2bd822711dec13ab93e0a90d7fa4e4))
+
+
+### Performance Improvements
+
+* **api:** build a regex's seek automaton on the first search that consults it ([#429](https://github.com/sebastian-software/ferroni/issues/429)) ([983d12d](https://github.com/sebastian-software/ferroni/commit/983d12d74e9266609187a4b1372a9c877a9baf25))
+* **compile:** build a class's multi-character case folds as C does ([#427](https://github.com/sebastian-software/ferroni/issues/427)) ([0fb7b57](https://github.com/sebastian-software/ferroni/commit/0fb7b5747fbbb4a6ab0e0cd538c9f9367d7056e0)), closes [#419](https://github.com/sebastian-software/ferroni/issues/419)
+* **parse:** add code ranges in place, as C does ([#425](https://github.com/sebastian-software/ferroni/issues/425)) ([929b58f](https://github.com/sebastian-software/ferroni/commit/929b58f836a23af8cdd21d24f532fabff418e6ba)), closes [#419](https://github.com/sebastian-software/ferroni/issues/419)
+
 ## [2.2.4](https://github.com/sebastian-software/ferroni/compare/v2.2.3...v2.2.4) (2026-10-21)
 
 
