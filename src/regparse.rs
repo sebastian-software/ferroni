@@ -907,7 +907,7 @@ fn new_code_range() -> BBuf {
 }
 
 /// Decode a code range buffer into its sorted, disjoint `(from, to)` pairs.
-fn code_ranges_of(bbuf: &BBuf) -> Vec<(OnigCodePoint, OnigCodePoint)> {
+pub(crate) fn code_ranges_of(bbuf: &BBuf) -> Vec<(OnigCodePoint, OnigCodePoint)> {
     if bbuf.data.len() < SIZE_CODE_POINT {
         return Vec::new();
     }
@@ -4946,7 +4946,7 @@ fn fold_cclass_cached(
     cc: &mut CClassNode,
     flag: OnigCaseFoldType,
     enc: OnigEncoding,
-) -> Vec<Vec<u8>> {
+) -> Vec<Vec<OnigCodePoint>> {
     let ranges = cc
         .mbuf
         .as_ref()
@@ -4958,7 +4958,7 @@ fn fold_cclass_cached(
         *const (),
         OnigCaseFoldType,
         (bool, BitSet, Vec<u8>),
-        (BitSet, Option<BBuf>, Vec<Vec<u8>>),
+        (BitSet, Option<BBuf>, Vec<Vec<OnigCodePoint>>),
     );
     thread_local! {
         static CACHE: std::cell::RefCell<Vec<Entry>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -4994,7 +4994,7 @@ fn fold_cclass_cached(
 }
 
 /// Case-fold expansion: add fold equivalents for all codes in the class,
-/// and return the strings of the multi-character folds it holds.
+/// and return the codes of the multi-character folds it holds.
 ///
 /// Strategy: invert the iteration so the cost follows the class, not the
 /// fold tables, and avoid the `dyn FnMut` dispatch of apply_all_case_fold.
@@ -5004,11 +5004,15 @@ fn fold_cclass_cached(
 ///   keys (two binary searches per range), then merge the additions into
 ///   the ranges in one pass instead of one buffer rewrite per code point
 /// - FOLDS2/FOLDS3 (~73 entries): direct iteration, no callback
-fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -> Vec<Vec<u8>> {
+fn fold_cclass(
+    cc: &mut CClassNode,
+    flag: OnigCaseFoldType,
+    enc: OnigEncoding,
+) -> Vec<Vec<OnigCodePoint>> {
     let ascii_only = crate::regenc::case_fold_is_ascii_only(flag);
     let negated = cc.is_not();
     let mut codes_to_add: Vec<OnigCodePoint> = Vec::new();
-    let mut multi_char_alts: Vec<Vec<u8>> = Vec::new();
+    let mut multi_char_alts: Vec<Vec<OnigCodePoint>> = Vec::new();
     // Decoded once; every membership test below is a binary search here.
     let mb_ranges = cc.mbuf.as_ref().map_or_else(Vec::new, code_ranges_of);
     // C: ADD_CODE_INTO_CC and onig_is_code_in_cc. A code is kept in the
@@ -5076,17 +5080,9 @@ fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -
     crate::unicode::for_each_folds2_group(flag, |fold, unfolds| {
         let any_in_class = unfolds.iter().any(|&uf| is_in_cc(uf));
         if any_in_class {
-            let mut buf = Vec::new();
-            let mut tmp = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
-            for &cp in fold {
-                let len = enc.code_to_mbc(cp, &mut tmp);
-                if len > 0 {
-                    buf.extend_from_slice(&tmp[..len as usize]);
-                }
-            }
             // C: multi-character alternatives are only valid for positive classes.
-            if !negated && !buf.is_empty() {
-                multi_char_alts.push(buf);
+            if !negated {
+                multi_char_alts.push(fold.to_vec());
             }
             for &uf in unfolds {
                 codes_to_add.push(uf);
@@ -5098,17 +5094,9 @@ fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -
     crate::unicode::for_each_folds3_group(flag, |fold, unfolds| {
         let any_in_class = unfolds.iter().any(|&uf| is_in_cc(uf));
         if any_in_class {
-            let mut buf = Vec::new();
-            let mut tmp = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
-            for &cp in fold {
-                let len = enc.code_to_mbc(cp, &mut tmp);
-                if len > 0 {
-                    buf.extend_from_slice(&tmp[..len as usize]);
-                }
-            }
             // C: multi-character alternatives are only valid for positive classes.
-            if !negated && !buf.is_empty() {
-                multi_char_alts.push(buf);
+            if !negated {
+                multi_char_alts.push(fold.to_vec());
             }
             for &uf in unfolds {
                 codes_to_add.push(uf);
@@ -5143,6 +5131,51 @@ fn fold_cclass(cc: &mut CClassNode, flag: OnigCaseFoldType, enc: OnigEncoding) -
     }
 
     multi_char_alts
+}
+
+/// The alternative a positive class gains under ignore-case for a member
+/// whose fold is the multi-character `codes`, built as C's
+/// `i_apply_case_fold` builds it: a code with single-character case variants
+/// becomes a class of them, consecutive other codes one string. In a Unicode
+/// encoding that string is marked case-expanded, not ignore-case, so
+/// `tune_tree` does not unravel it again.
+fn multi_char_fold_node(codes: &[OnigCodePoint], enc: OnigEncoding) -> Option<Box<Node>> {
+    let unicode = onigenc_is_unicode_encoding(enc);
+    let mut nodes: Vec<Box<Node>> = Vec::new();
+    let mut buf = [0u8; ONIGENC_CODE_TO_MBC_MAXLEN];
+    for &code in codes {
+        if unicode && let Some(unfolds) = crate::unicode::fold1_unfolds(code) {
+            let mut class = node_new_cclass();
+            let cc = class.as_cclass_mut().unwrap();
+            for &unfold in unfolds {
+                add_code_into_cc(cc, unfold, enc);
+            }
+            add_code_into_cc(cc, code, enc);
+            nodes.push(class);
+            continue;
+        }
+        let len = enc.code_to_mbc(code, &mut buf);
+        if len <= 0 {
+            continue;
+        }
+        let bytes = &buf[..len as usize];
+        if let Some(sn) = nodes.last_mut().and_then(|last| last.as_str_mut()) {
+            sn.s.extend_from_slice(bytes);
+            continue;
+        }
+        let mut sn = node_new_str(bytes);
+        if unicode {
+            sn.as_str_mut().unwrap().flag |= ND_STRING_CASE_EXPANDED;
+        } else {
+            sn.status_add(ND_ST_IGNORECASE);
+        }
+        nodes.push(sn);
+    }
+    match nodes.len() {
+        0 => None,
+        1 => nodes.pop(),
+        _ => Some(make_list_n(nodes)),
+    }
 }
 
 // ============================================================================
@@ -7213,19 +7246,13 @@ fn prs_exp(
             let mut np = prs_cc(tok, p, end, pattern, env)?;
             if opton_ignorecase(env.options) {
                 let cc = np.as_cclass_mut().unwrap();
-                let multi_char_alts = fold_cclass_cached(cc, env.case_fold_flag, env.enc);
-                if !multi_char_alts.is_empty() {
-                    let mut alt_tail: Option<Box<Node>> = None;
-                    for alt_bytes in multi_char_alts.into_iter().rev() {
-                        let mut sn = node_new_str(&alt_bytes);
-                        sn.status_add(ND_ST_IGNORECASE);
-                        if let Some(tail) = alt_tail {
-                            alt_tail = Some(node_new_alt(sn, Some(tail)));
-                        } else {
-                            alt_tail = Some(node_new_alt(sn, None));
-                        }
-                    }
-                    np = node_new_alt(np, alt_tail);
+                let multi_char_folds = fold_cclass_cached(cc, env.case_fold_flag, env.enc);
+                let alts: Vec<Box<Node>> = multi_char_folds
+                    .iter()
+                    .filter_map(|codes| multi_char_fold_node(codes, env.enc))
+                    .collect();
+                if !alts.is_empty() {
+                    np = node_new_alt(np, Some(make_alt_n(alts)));
                 }
             }
             np
