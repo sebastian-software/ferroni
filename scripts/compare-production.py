@@ -68,6 +68,44 @@ def environment(case, engine):
     return dict(os.environ, PRODUCTION_CASE=case, PRODUCTION_ENGINE=engine)
 
 
+# Every timed process of a repetition starts with an environment of one size.
+# The environment sits above a process's initial stack, so its size moves
+# every stack frame below it, and with it the alignment of the benchmark's hot
+# data. On an Apple M1 Ultra, a dummy variable of 0 to 60 bytes moved one
+# steady lane between 93.2 and 98.4 µs. The engine name, the case ID and the
+# Criterion directory differ in length from pair to pair, which turned that
+# into a fixed offset per engine: rust_erroraware, 22 bytes longer, measured
+# up to 10% faster than rust on the same iterator. Each repetition adds its own
+# offset, so the repetitions see different alignments, and a result that
+# depends on the alignment reads as inconclusive instead of as a direction.
+ALIGNMENT_VARIABLE = "FERRONI_BENCH_ALIGNMENT_PAD"
+ALIGNMENT_OFFSETS = (0, 24, 48)
+# The size every environment of a run is padded to is a multiple of this,
+# above the largest unpadded environment.
+ALIGNMENT_ROUNDING = 64
+
+
+def environment_size(env):
+    """Bytes the environment takes above the initial stack: `KEY=VALUE\0` each."""
+    return sum(len(os.fsencode(key)) + len(os.fsencode(value)) + 2 for key, value in env.items())
+
+
+def aligned_environment(env, size):
+    """`env` padded with ALIGNMENT_VARIABLE to exactly `size` bytes."""
+    unpadded = {key: value for key, value in env.items() if key != ALIGNMENT_VARIABLE}
+    padding = size - environment_size(unpadded) - len(ALIGNMENT_VARIABLE) - 2
+    if padding < 0:
+        raise ValueError(f"environment of {environment_size(unpadded)} bytes exceeds the padded size {size}")
+    return dict(unpadded, **{ALIGNMENT_VARIABLE: "x" * padding})
+
+
+def aligned_size(environments, repetition):
+    """The padded size of one repetition's timed environments."""
+    largest = max(environment_size(env) for env in environments) + len(ALIGNMENT_VARIABLE) + 2
+    base = -(-largest // ALIGNMENT_ROUNDING) * ALIGNMENT_ROUNDING
+    return base + ALIGNMENT_OFFSETS[repetition % len(ALIGNMENT_OFFSETS)]
+
+
 def snapshot_source(directory):
     """Retain current engine/harness code even for a diagnostic dirty checkout."""
     paths = ["Cargo.toml", "Cargo.lock", "build.rs", "rust-toolchain.toml", "README.md",
@@ -250,9 +288,9 @@ def lane_budgets(args):
 SHARED_CONTEXT = ("format_version", "corpus", "commit", "git_status", "build_profile", "corpus_sha256",
                   "cargo_lock_sha256", "rustflags", "engines", "profiles", "cases", "repetitions", "samples",
                   "measure_seconds", "warmup_seconds", "lane_budgets", "timeout", "seed", "diagnostic",
-                  "order_policy", "engine_source_overrides", "pcre2_build", "machine")
+                  "order_policy", "engine_source_overrides", "pcre2_build", "machine", "environment_alignment")
 HOST_CONTEXT = ("only_run", "started_utc", "platform", "cpu_count", "host_note", "rustc", "cargo", "python",
-                "binary_sha256", "source_snapshot_sha256", "native_sources", "command")
+                "binary_sha256", "source_snapshot_sha256", "native_sources", "command", "environment_sizes")
 
 
 def merge(directory, shards):
@@ -373,7 +411,9 @@ def main():
                "measure_seconds": args.measure_seconds, "warmup_seconds": args.warmup_seconds,
                "lane_budgets": lane_budgets(args), "only_run": args.only_run,
                "timeout": args.timeout, "seed": args.seed, "diagnostic": args.diagnostic or args.command == "validate" or bool(args.binary),
-               "command": sys.argv, "order_policy": "seeded case shuffle; rotated engine order, reversed on alternating repetitions"}
+               "command": sys.argv, "order_policy": "seeded case shuffle; rotated engine order, reversed on alternating repetitions",
+               "environment_alignment": {"variable": ALIGNMENT_VARIABLE, "offsets_bytes": list(ALIGNMENT_OFFSETS),
+                                         "rounding_bytes": ALIGNMENT_ROUNDING}}
     write_json(directory / "context.json", context)
     write_json(directory / "catalog.json", catalog)
     shutil.copyfile(ROOT / "Cargo.lock", directory / "Cargo.lock")
@@ -402,17 +442,25 @@ def main():
     order = []
     memory = []
     if args.command == "run":
-        for rep in range(args.repetitions):
-            if args.only_run is not None and rep != args.only_run - 1:
-                continue
+        def timed_environment(case, engine, raw):
+            return dict(environment(case, engine), CRITERION_HOME=str(raw),
+                        PRODUCTION_LANE_BUDGETS=json.dumps(context["lane_budgets"]))
+
+        repetitions = [rep for rep in range(args.repetitions) if args.only_run is None or rep == args.only_run - 1]
+        sizes = {rep: aligned_size([timed_environment(case, engine, directory / f"raw/run-{rep + 1}/{case}/{engine}")
+                                    for case, engine in ordered_pairs(cases, engines, rep, args.seed)
+                                    if (case, engine) in eligible], rep)
+                 for rep in repetitions if eligible}
+        context["environment_sizes"] = {str(rep + 1): size for rep, size in sizes.items()}
+        write_json(directory / "context.json", context)
+        for rep in repetitions:
             for case, engine in ordered_pairs(cases, engines, rep, args.seed):
                 if (case, engine) not in eligible:
                     continue
                 relative = f"raw/run-{rep + 1}/{case}/{engine}"
                 raw = directory / relative
                 raw.mkdir(parents=True)
-                env = dict(environment(case, engine), CRITERION_HOME=str(raw),
-                           PRODUCTION_LANE_BUDGETS=json.dumps(context["lane_budgets"]))
+                env = aligned_environment(timed_environment(case, engine, raw), sizes[rep])
                 command = [str(binary), "--bench", "--noplot", "--sample-size", str(args.samples),
                            "--measurement-time", str(args.measure_seconds), "--warm-up-time", str(args.warmup_seconds)]
                 record = {"case": case, "engine": engine, "repetition": rep, "raw": relative}

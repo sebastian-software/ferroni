@@ -21,6 +21,21 @@ def estimate(ns, low=None, high=None):
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_timed_environments_share_one_size_per_repetition(self):
+        short = {"PATH": "/usr/bin", "PRODUCTION_CASE": "uuid_v4", "PRODUCTION_ENGINE": "c"}
+        long = dict(short, PRODUCTION_CASE="ferrolink_attribute_split", PRODUCTION_ENGINE="fancy_regex_seek")
+        sizes = []
+        for repetition in range(len(comparison.ALIGNMENT_OFFSETS)):
+            size = comparison.aligned_size([short, long], repetition)
+            padded = [comparison.aligned_environment(env, size) for env in (short, long)]
+            self.assertEqual({comparison.environment_size(env) for env in padded}, {size})
+            self.assertEqual(padded[1]["PRODUCTION_ENGINE"], "fancy_regex_seek")
+            sizes.append(size)
+        self.assertEqual([size - sizes[0] for size in sizes], list(comparison.ALIGNMENT_OFFSETS))
+        self.assertEqual(sizes[0] % comparison.ALIGNMENT_ROUNDING, 0)
+        with self.assertRaises(ValueError):
+            comparison.aligned_environment(long, comparison.environment_size(short))
+
     def test_ferroni_oracle_mismatch_stops_timings(self):
         records = [{"case": "case", "engine": "rust", "status": "semantic_difference"}]
         self.assertEqual(comparison.fatal_preflight(records), records)

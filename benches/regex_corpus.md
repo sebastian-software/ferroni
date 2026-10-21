@@ -130,6 +130,19 @@ fancy-regex's Oniguruma dialect is explicit. Seek mode and PCRE2 JIT are separat
 profiles. Syntax and Unicode policy differences remain visible rather than being
 papered over by changing the expected output.
 
+Every timed process of a repetition starts with an environment of the same
+size. The environment sits above a process's initial stack, so its size moves
+the alignment of every stack frame, and with it a steady lane by a few percent:
+padding the environment of one Ferroni profile by 0 to 60 bytes moved it
+between 93.2 and 98.4 µs on an Apple M1 Ultra. Engine names, case IDs and the
+Criterion directory differ in length, which used to give every engine a fixed
+offset of its own; `rust_erroraware` measured up to 10% faster than `rust` on
+the same iterator. The runner pads each environment with
+`FERRONI_BENCH_ALIGNMENT_PAD` to one size and adds 0, 24 or 48 bytes per
+repetition, so the repetitions sample different alignments. A ratio that
+depends on alignment then reads as inconclusive instead of as a direction.
+`context.json` records the method and the padded size of each repetition.
+
 Earlier published aggregates are not a performance baseline for this corpus.
 Most general tasks already materialized all matches and capture bounds through
 direct engine calls; individual search probes requested only a position. The
