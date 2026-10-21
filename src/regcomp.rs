@@ -55,6 +55,11 @@ const EXACT_REPEAT_UNROLL_THRESHOLD: i32 = 16;
 /// `{n,m}` ranges use the bounded REPEAT/REPEAT_INC bytecode instead.
 const QUANTIFIER_EXPAND_LIMIT_SIZE: OnigLen = 10;
 
+/// Rust-only: the most bytecode a `{n,}` over a body that cannot be empty
+/// writes out inline (`expand_infinite_quantifier`). The grammars and the
+/// production catalog expand at most 126.
+const INFINITE_EXPAND_LIMIT_SIZE: OnigLen = 1024;
+
 thread_local! {
     /// Set while `upstream_body_len` measures a body the way C would.
     static UPSTREAM_LENGTH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -2195,15 +2200,24 @@ fn compile_quantifier_node(qn: &QuantNode, reg: &mut RegexType, env: &ParseEnv) 
 ///
 /// Both forms match the same strings unless the body may be empty: with
 /// REPEAT, the empty check also runs on the mandatory iterations. The port
-/// therefore keeps the inline form for bodies that cannot be empty.
+/// therefore keeps the inline form for bodies that cannot be empty, which
+/// matches faster (`(?:\w+\s+){3,}fox` 0.35 ms inline against 0.99 ms
+/// with REPEAT), up to `INFINITE_EXPAND_LIMIT_SIZE`. Past that the inline
+/// form grows with the count, and nested counts multiply it: the fuzzer's
+/// `}{1,}{26666,}{1,}{26666,}` compiled for over three minutes into some
+/// 20 GB. Such a body takes C's REPEAT.
 ///
-/// The inline form is not faster for such bodies either: after an empty
-/// pass, every remaining mandatory copy retries paths that already failed.
-/// `(?:(ab|cd|ef|gh|ij)?){3,}z` over longer runs of pairs measured about
-/// six times slower inline than with REPEAT.
+/// The inline form is not faster for a body that may be empty either: after
+/// an empty pass, every remaining mandatory copy retries paths that already
+/// failed. `(?:(ab|cd|ef|gh|ij)?){3,}z` over longer runs of pairs measured
+/// about six times slower inline than with REPEAT.
 fn expand_infinite_quantifier(qn: &QuantNode, body_len: i32) -> bool {
-    qn.emptiness == BodyEmptyType::NotEmpty
-        || !len_multiply_cmp(body_len as OnigLen, qn.lower, QUANTIFIER_EXPAND_LIMIT_SIZE)
+    let limit = if qn.emptiness == BodyEmptyType::NotEmpty {
+        INFINITE_EXPAND_LIMIT_SIZE
+    } else {
+        QUANTIFIER_EXPAND_LIMIT_SIZE
+    };
+    !len_multiply_cmp(body_len as OnigLen, qn.lower, limit)
 }
 
 /// C: compile_range_repeat_node.
@@ -12438,6 +12452,40 @@ mod tests {
             "{per_level} ops per level ({small} -> {large})"
         );
         assert!(large < 256, "{large} ops for 43 stacked quantifiers");
+    }
+
+    /// A `{n,}` over a body that cannot be empty is written out inline only
+    /// up to `INFINITE_EXPAND_LIMIT_SIZE`; nested counts multiply the
+    /// expansion. Past the limit REPEAT matches the same strings.
+    #[test]
+    fn nested_counted_loops_compile_to_bounded_bytecode() {
+        use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+        use crate::oniguruma::{ONIG_OPTION_EXTEND, ONIG_OPTION_NONE};
+        use crate::regexec::onig_search;
+        use crate::regsyntax::OnigSyntaxJava;
+
+        // Found by the pattern-compile fuzzer: over three minutes and some
+        // 20 GB before the limit.
+        let reg = onig_new(
+            b",}{1,}{26666,}{1,}{26666,}.,}.",
+            ONIG_OPTION_EXTEND,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxJava,
+        )
+        .unwrap();
+        assert!(reg.ops.len() < 64, "{} ops", reg.ops.len());
+
+        let matches = |reg: &RegexType, text: &[u8]| {
+            let (r, _) = onig_search(reg, text, text.len(), 0, text.len(), None, ONIG_OPTION_NONE);
+            r
+        };
+        for (pattern, count) in [(&b"(?:ab){500,}"[..], 500), (b"(?:ab){2000,}", 2000)] {
+            let reg = compile_utf8(pattern);
+            assert!(reg.ops.len() < 1100, "{} ops", reg.ops.len());
+            assert_eq!(matches(&reg, &b"ab".repeat(count + 3)), 0);
+            assert_eq!(matches(&reg, &b"ab".repeat(count - 1)), ONIG_MISMATCH);
+        }
+        assert!(compile_utf8(b"(?:ab){2000,}").ops.len() < 16);
     }
 
     fn compile_utf8(pattern: &[u8]) -> RegexType {
