@@ -9,7 +9,7 @@ import { SpeedSummary } from "../../components/speed-summary";
 # Regex Benchmarks
 
 Ferroni is compared with C Oniguruma, Ruby's Onigmo, PCRE2 (interpreter and
-JIT), fancy-regex and Rust's `regex` crate on regex tasks taken from ten
+JIT), fancy-regex and Rust's `regex` crate on regex tasks taken from eleven
 open-source projects. Every engine has to reproduce each task's expected output
 before it is timed. This page shows the summary; every table and the raw
 measurements are [in the repository](#all-numbers-and-raw-data).
@@ -20,21 +20,22 @@ measurements are [in the repository](#all-numbers-and-raw-data).
 
 ## What is measured
 
-| Application                                                                                                                                 | Measured regex work                                                 |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| [validator.js](https://github.com/validatorjs/validator.js/blob/9ff342479591ca5a43cb30000195bcf55c1bbed9/src/lib/isUUID.js)                 | UUID loose shape and v4, IPv4 and IPv6 boolean steps                |
-| [node-semver](https://github.com/npm/node-semver/blob/6e05b7637396ac66522cff8731f07cfe0ef49a29/internal/re.js)                              | Safe FULL version captures and HYPHENRANGE captures                 |
-| [Jinja](https://github.com/pallets/jinja/blob/5ef70112a1ff19c05324ff889dd30405b1002044/src/jinja2/lexer.py)                                 | String, integer and float token match at the lexer candidate offset |
-| [Django](https://github.com/django/django/blob/9014ca519c1cc825709a8fce0934f9919861ffb9/django/core/validators.py)                          | Email local-part/domain and URL regex steps                         |
-| [Fluent Bit](https://github.com/fluent/fluent-bit/blob/daf00526b97c36f33b027d60e3bf8a3934577a0e/conf/parsers.conf)                          | Apache and NGINX field captures on actual log test records          |
-| [Rails](https://github.com/rails/rails/blob/3235827585d87661942c91bc81f64f56d710f0b2/activesupport/lib/active_support/inflector/methods.rb) | Underscore boundary replacement, including zero-width matches       |
-| [Mastodon](https://github.com/mastodon/mastodon/blob/7f5bc79930136abe1a4aeb0f4530be1b08f9dbbb/app/models/tag.rb)                            | Hashtag regex matches and captures                                  |
-| [Python-Markdown](https://github.com/Python-Markdown/markdown/blob/d9c8431e404d614812e39a11109afbe9981bba13/markdown/inlinepatterns.py)     | Smart emphasis capture matches at candidate positions               |
-| [WordPress](https://github.com/WordPress/wordpress-develop/blob/5744bc5803c71ad1bf3d4da5f8fc580bf4f995b9/src/wp-includes/shortcodes.php)    | Shortcode matches and all six captures                              |
-| [Symfony String](https://github.com/symfony/string/blob/02470500a9cddcebc6d6092fc7f97bb673ed9d7d/UnicodeString.php)                         | Grapheme chunk strings on already normalized input                  |
+| Application                                                                                                                                 | Measured regex work                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| [validator.js](https://github.com/validatorjs/validator.js/blob/9ff342479591ca5a43cb30000195bcf55c1bbed9/src/lib/isUUID.js)                 | UUID loose shape and v4, IPv4 and IPv6 boolean steps                      |
+| [node-semver](https://github.com/npm/node-semver/blob/6e05b7637396ac66522cff8731f07cfe0ef49a29/internal/re.js)                              | Safe FULL version captures and HYPHENRANGE captures                       |
+| [Jinja](https://github.com/pallets/jinja/blob/5ef70112a1ff19c05324ff889dd30405b1002044/src/jinja2/lexer.py)                                 | String, integer and float token match at the lexer candidate offset       |
+| [Django](https://github.com/django/django/blob/9014ca519c1cc825709a8fce0934f9919861ffb9/django/core/validators.py)                          | Email local-part/domain and URL regex steps                               |
+| [Fluent Bit](https://github.com/fluent/fluent-bit/blob/daf00526b97c36f33b027d60e3bf8a3934577a0e/conf/parsers.conf)                          | Apache and NGINX field captures on actual log test records                |
+| [Rails](https://github.com/rails/rails/blob/3235827585d87661942c91bc81f64f56d710f0b2/activesupport/lib/active_support/inflector/methods.rb) | Underscore boundary replacement, including zero-width matches             |
+| [Mastodon](https://github.com/mastodon/mastodon/blob/7f5bc79930136abe1a4aeb0f4530be1b08f9dbbb/app/models/tag.rb)                            | Hashtag regex matches and captures                                        |
+| [Python-Markdown](https://github.com/Python-Markdown/markdown/blob/d9c8431e404d614812e39a11109afbe9981bba13/markdown/inlinepatterns.py)     | Smart emphasis capture matches at candidate positions                     |
+| [WordPress](https://github.com/WordPress/wordpress-develop/blob/5744bc5803c71ad1bf3d4da5f8fc580bf4f995b9/src/wp-includes/shortcodes.php)    | Shortcode matches and all six captures                                    |
+| [Symfony String](https://github.com/symfony/string/blob/02470500a9cddcebc6d6092fc7f97bb673ed9d7d/UnicodeString.php)                         | Grapheme chunk strings on already normalized input                        |
+| [ferrolink](https://github.com/sebastian-software/ferrolink/blob/885196c16ca72a38bed54071e9bf543ffae0e270/src/scan/ferroni.rs)              | HTML comment and start-tag scan over page slices, and attribute splitting |
 
 These are isolated regex steps, not the complete validators, parsers or
-renderers. The 513 upstream-derived inputs define the expected output; they are
+renderers. The 743 upstream-derived inputs define the expected output; they are
 not a model of production traffic.
 
 - **Same output first.** An engine that rejects a pattern or returns a

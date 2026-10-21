@@ -91,9 +91,9 @@ const projects = new Set(
     .map((entry) => catalog.sources[entry.source.file].repository),
 );
 if (
-  projects.size !== 10 ||
-  !flat(home).includes("Django, Rails, WordPress and seven other projects") ||
-  !flat(page).includes("taken from ten open-source projects")
+  projects.size !== 11 ||
+  !flat(home).includes("Django, Rails, WordPress and eight other projects") ||
+  !flat(page).includes("taken from eleven open-source projects")
 ) {
   errors.push("Update the homepage's and workload page's project counts from catalog.json.");
 }

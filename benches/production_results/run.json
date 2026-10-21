@@ -1,278 +1,222 @@
 {
-  "id": 38924508724,
+  "id": 39588030348,
   "run_attempt": 1,
-  "head_sha": "c08e0b99cc250408e911e5bd51e3a3df5198b124",
-  "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38924508724",
+  "head_sha": "8796aef33af2f874a0fdf56685f831cf175a7cd0",
+  "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/39588030348",
   "path": ".github/workflows/blacksmith-comparison.yml",
   "event": "workflow_dispatch",
   "conclusion": "success",
-  "created_at": "2026-10-16T15:30:34Z",
-  "updated_at": "2026-10-16T16:08:50Z",
+  "created_at": "2026-10-21T10:54:42Z",
+  "updated_at": "2026-10-21T11:28:10Z",
   "jobs": [
     {
-      "id": 117052521618,
-      "name": "linux-x86-64 run 1",
-      "conclusion": "success",
-      "labels": [
-        "blacksmith-4vcpu-ubuntu-2404"
-      ],
-      "runner_name": "blacksmith-4vcpu-ubuntu-2404-ailvr32g3y5j7wpe",
-      "started_at": "2026-10-16T15:30:43Z",
-      "completed_at": "2026-10-16T16:08:12Z",
-      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38924508724/job/117052521618"
-    },
-    {
-      "id": 117052522047,
-      "name": "macos-arm64 run 1",
-      "conclusion": "success",
-      "labels": [
-        "blacksmith-6vcpu-macos-26"
-      ],
-      "runner_name": "blacksmith-6vcpu-macos-26-436voekuih5dmelf",
-      "started_at": "2026-10-16T15:30:57Z",
-      "completed_at": "2026-10-16T16:07:47Z",
-      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38924508724/job/117052522047"
-    },
-    {
-      "id": 117052522053,
-      "name": "macos-arm64 run 3",
-      "conclusion": "success",
-      "labels": [
-        "blacksmith-6vcpu-macos-26"
-      ],
-      "runner_name": "blacksmith-6vcpu-macos-26-74f42dbhf2snwl37",
-      "started_at": "2026-10-16T15:30:55Z",
-      "completed_at": "2026-10-16T16:07:42Z",
-      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38924508724/job/117052522053"
-    },
-    {
-      "id": 117052522077,
+      "id": 119181715038,
       "name": "linux-x86-64 run 2",
       "conclusion": "success",
       "labels": [
         "blacksmith-4vcpu-ubuntu-2404"
       ],
-      "runner_name": "blacksmith-4vcpu-ubuntu-2404-7d3yrv2obmdwmbld",
-      "started_at": "2026-10-16T15:30:45Z",
-      "completed_at": "2026-10-16T16:07:44Z",
-      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38924508724/job/117052522077"
+      "runner_name": "blacksmith-4vcpu-ubuntu-2404-ikyukabkq642hogt",
+      "started_at": "2026-10-21T10:54:50Z",
+      "completed_at": "2026-10-21T11:26:50Z",
+      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/39588030348/job/119181715038"
     },
     {
-      "id": 117052522169,
-      "name": "linux-x86-64 run 3",
+      "id": 119181715238,
+      "name": "linux-x86-64 run 1",
       "conclusion": "success",
       "labels": [
         "blacksmith-4vcpu-ubuntu-2404"
       ],
-      "runner_name": "blacksmith-4vcpu-ubuntu-2404-w6v4bmwzchf3k2pk",
-      "started_at": "2026-10-16T15:30:44Z",
-      "completed_at": "2026-10-16T16:07:44Z",
-      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38924508724/job/117052522169"
+      "runner_name": "blacksmith-4vcpu-ubuntu-2404-byp55rdr2xxzciy4",
+      "started_at": "2026-10-21T10:54:50Z",
+      "completed_at": "2026-10-21T11:26:49Z",
+      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/39588030348/job/119181715238"
     },
     {
-      "id": 117052522254,
+      "id": 119181715307,
       "name": "macos-arm64 run 2",
       "conclusion": "success",
       "labels": [
         "blacksmith-6vcpu-macos-26"
       ],
-      "runner_name": "blacksmith-6vcpu-macos-26-d75kdp4a4rto5uf3",
-      "started_at": "2026-10-16T15:30:57Z",
-      "completed_at": "2026-10-16T16:07:48Z",
-      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38924508724/job/117052522254"
+      "runner_name": "blacksmith-6vcpu-macos-26-ucvv7bfivjl6lkdh",
+      "started_at": "2026-10-21T10:55:00Z",
+      "completed_at": "2026-10-21T11:27:28Z",
+      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/39588030348/job/119181715307"
     },
     {
-      "id": 117069651583,
-      "name": "merge macos-arm64",
+      "id": 119181715409,
+      "name": "linux-x86-64 run 3",
       "conclusion": "success",
       "labels": [
-        "ubuntu-latest"
+        "blacksmith-4vcpu-ubuntu-2404"
       ],
-      "runner_name": "GitHub Actions 1000192480",
-      "started_at": "2026-10-16T16:08:15Z",
-      "completed_at": "2026-10-16T16:08:49Z",
-      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38924508724/job/117069651583"
+      "runner_name": "blacksmith-4vcpu-ubuntu-2404-usvwdwqadzwujgfe",
+      "started_at": "2026-10-21T10:54:50Z",
+      "completed_at": "2026-10-21T11:26:47Z",
+      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/39588030348/job/119181715409"
     },
     {
-      "id": 117069651631,
+      "id": 119181715459,
+      "name": "macos-arm64 run 1",
+      "conclusion": "success",
+      "labels": [
+        "blacksmith-6vcpu-macos-26"
+      ],
+      "runner_name": "blacksmith-6vcpu-macos-26-ddxnvymtgl7czypk",
+      "started_at": "2026-10-21T10:55:04Z",
+      "completed_at": "2026-10-21T11:27:33Z",
+      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/39588030348/job/119181715459"
+    },
+    {
+      "id": 119181715718,
+      "name": "macos-arm64 run 3",
+      "conclusion": "success",
+      "labels": [
+        "blacksmith-6vcpu-macos-26"
+      ],
+      "runner_name": "blacksmith-6vcpu-macos-26-du3clnpsxg2n66gq",
+      "started_at": "2026-10-21T10:55:01Z",
+      "completed_at": "2026-10-21T11:27:24Z",
+      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/39588030348/job/119181715718"
+    },
+    {
+      "id": 119195338190,
       "name": "merge linux-x86-64",
       "conclusion": "success",
       "labels": [
         "ubuntu-latest"
       ],
-      "runner_name": "GitHub Actions 1000192479",
-      "started_at": "2026-10-16T16:08:15Z",
-      "completed_at": "2026-10-16T16:08:45Z",
-      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/38924508724/job/117069651631"
+      "runner_name": "GitHub Actions 1000198742",
+      "started_at": "2026-10-21T11:27:36Z",
+      "completed_at": "2026-10-21T11:28:09Z",
+      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/39588030348/job/119195338190"
+    },
+    {
+      "id": 119195338320,
+      "name": "merge macos-arm64",
+      "conclusion": "success",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_name": "GitHub Actions 1000198743",
+      "started_at": "2026-10-21T11:27:36Z",
+      "completed_at": "2026-10-21T11:28:07Z",
+      "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/39588030348/job/119195338320"
     }
   ],
   "artifacts": [
     {
-      "id": 12058735125,
-      "name": "shard-scanner-replays-macos-arm64-run1-38924508724-1",
-      "digest": "sha256:a6cf6f17f9af2e2215cf19dabd147f6d7928b54507d8f435d5d974f90e50ab12",
-      "size_in_bytes": 2681133,
+      "id": 12342657286,
+      "name": "shard-production-macos-arm64-run3-39588030348-1",
+      "digest": "sha256:2c771d58726f19e61de022614437e3c9a741239796edafd59bf0366779e40363",
+      "size_in_bytes": 4894959,
       "expired": false
     },
     {
-      "id": 12058695274,
-      "name": "shard-tokenizers-linux-x86-64-run3-38924508724-1",
-      "digest": "sha256:6dd6b58ea381fc6f7395d037ab2ee73d69e58e36fdd639411978fd6776376ce9",
-      "size_in_bytes": 2074016,
+      "id": 12342607452,
+      "name": "shard-tokenizers-linux-x86-64-run1-39588030348-1",
+      "digest": "sha256:c40704496b6efd29ca8dcd88224bf9dc9433953f06077e8d9d47013db42c7223",
+      "size_in_bytes": 2109035,
       "expired": false
     },
     {
-      "id": 12058595655,
-      "name": "shard-tokenizers-macos-arm64-run1-38924508724-1",
-      "digest": "sha256:9a23147c92abed4412a41eea65e860a5f9175b444a522e1b68517d0e0b8ea914",
-      "size_in_bytes": 2074473,
+      "id": 12342492366,
+      "name": "shard-production-linux-x86-64-run3-39588030348-1",
+      "digest": "sha256:5c3f5df6ee952c3aa662ecf59e9cabc7920134ad12b920949489d3028d58ce32",
+      "size_in_bytes": 4904393,
       "expired": false
     },
     {
-      "id": 12058566418,
-      "name": "shard-tokenizers-linux-x86-64-run1-38924508724-1",
-      "digest": "sha256:7fce370b6a83aa86bd860e003050035676d88d93f8bb9d52dc2e3be7400ac35b",
-      "size_in_bytes": 2073998,
+      "id": 12342482586,
+      "name": "shard-production-linux-x86-64-run1-39588030348-1",
+      "digest": "sha256:e4934f239b404a2d0393c5a5a1b67afa97c990c1b88d863279622fef3e626509",
+      "size_in_bytes": 4904883,
       "expired": false
     },
     {
-      "id": 12058516445,
-      "name": "shard-scanner-replays-linux-x86-64-run1-38924508724-1",
-      "digest": "sha256:bd73f51948007bb2ce5a757eb0cbb6614e710741ee3db0e550fc344725c7da54",
-      "size_in_bytes": 2680296,
+      "id": 12342367712,
+      "name": "production-macos-arm64-39588030348-1",
+      "digest": "sha256:0ea9100f39d17b11889738d5ebb9b29c4de3dc1b7f9dcbdaeeefd1a653b6d65d",
+      "size_in_bytes": 10866573,
       "expired": false
     },
     {
-      "id": 12058361873,
-      "name": "production-linux-x86-64-38924508724-1",
-      "digest": "sha256:e808809c3de75f5e71698752bd2286194a8036cd5c83b83f56f78ab87a5ebea0",
-      "size_in_bytes": 10121327,
+      "id": 12342342787,
+      "name": "shard-tokenizers-macos-arm64-run3-39588030348-1",
+      "digest": "sha256:b6197d9d4153afd3b4ab62b0055deffc87695841ae037d49f4dbac0e3417b799",
+      "size_in_bytes": 2109265,
       "expired": false
     },
     {
-      "id": 12058287182,
-      "name": "scanner-replays-linux-x86-64-38924508724-1",
-      "digest": "sha256:e7c43b6b5bace93edf4b47c8b502d173d6fb0fe0dc790adbd823bc9383a7cc6a",
-      "size_in_bytes": 3220445,
+      "id": 12342247383,
+      "name": "shard-production-linux-x86-64-run2-39588030348-1",
+      "digest": "sha256:80389eca91efe46a4eae32ca2994abbad3c3482c49006883e872aeca9f1ea37e",
+      "size_in_bytes": 4904186,
       "expired": false
     },
     {
-      "id": 12058272601,
-      "name": "tokenizers-linux-x86-64-38924508724-1",
-      "digest": "sha256:e3839443de218d2b4d5beb75e3b4ea91708cad2626bcc38c15eb3f4163ae1cd3",
-      "size_in_bytes": 2504556,
+      "id": 12341967841,
+      "name": "tokenizers-macos-arm64-39588030348-1",
+      "digest": "sha256:04a1145ac7ae69ee1fc6368ebad9b5cbef94f1fcb3dbaa01d98b8bed6098c18f",
+      "size_in_bytes": 2539515,
       "expired": false
     },
     {
-      "id": 12058242504,
-      "name": "shard-production-macos-arm64-run3-38924508724-1",
-      "digest": "sha256:a12bfe05fe5781a71f05d4ef62dd7b224af13ccefc09ffd06bff49b64933b290",
-      "size_in_bytes": 4598449,
+      "id": 12341923069,
+      "name": "shard-tokenizers-macos-arm64-run2-39588030348-1",
+      "digest": "sha256:1afad1ae90368fc04aacc158b16f193f2a501a8a7bf971ce0d066e2fa3f7992b",
+      "size_in_bytes": 2109003,
       "expired": false
     },
     {
-      "id": 12058137557,
-      "name": "shard-production-linux-x86-64-run3-38924508724-1",
-      "digest": "sha256:c3b521b8cf0a74b49c439814c5f506fddab1c1f869ce0106bed935bf074d0197",
-      "size_in_bytes": 4606496,
+      "id": 12341903083,
+      "name": "shard-production-macos-arm64-run2-39588030348-1",
+      "digest": "sha256:bb1c3e7fb0088c80e3382806a8339b64723134e520f6ff6356622ba40a0fede3",
+      "size_in_bytes": 4895662,
       "expired": false
     },
     {
-      "id": 12058092631,
-      "name": "shard-tokenizers-macos-arm64-run3-38924508724-1",
-      "digest": "sha256:7b169ddc5e2938d2fadd99de297459fff7c0829a9b0fb2402206a256d8acabbf",
-      "size_in_bytes": 2073565,
+      "id": 12341897542,
+      "name": "shard-tokenizers-macos-arm64-run1-39588030348-1",
+      "digest": "sha256:67a93872b9293b0962c63a42cfefde646b5e659cce2ff8394e74fde9eb77bfbc",
+      "size_in_bytes": 2109909,
       "expired": false
     },
     {
-      "id": 12058077699,
-      "name": "shard-scanner-replays-macos-arm64-run3-38924508724-1",
-      "digest": "sha256:a31c10ecaffb39e06dea31288ad31e09dd03d934e726f4ab7fdb26b9bba63160",
-      "size_in_bytes": 2677058,
+      "id": 12341837596,
+      "name": "tokenizers-linux-x86-64-39588030348-1",
+      "digest": "sha256:2e49d18213404cd4754a8e0ba81fcf4d0fec620e85379b3b6bf895bfa203fbcd",
+      "size_in_bytes": 2540304,
       "expired": false
     },
     {
-      "id": 12058032556,
-      "name": "production-macos-arm64-38924508724-1",
-      "digest": "sha256:b0260bc41189362a78f1a03489d065a1d32f4fc5350c7c595a9f8aebef7bf67e",
-      "size_in_bytes": 10103286,
+      "id": 12341687572,
+      "name": "shard-tokenizers-linux-x86-64-run3-39588030348-1",
+      "digest": "sha256:9529b3f551415c04af7eeba3e3900ade6755ca0f75cdbdb47d7a88f2705246f2",
+      "size_in_bytes": 2108824,
       "expired": false
     },
     {
-      "id": 12058022943,
-      "name": "shard-production-linux-x86-64-run1-38924508724-1",
-      "digest": "sha256:8a9f1e07ceebe5f47420285beaf76425a04431625f4c37b4bd706f82b3f9c2b5",
-      "size_in_bytes": 4605692,
+      "id": 12341418655,
+      "name": "shard-tokenizers-linux-x86-64-run2-39588030348-1",
+      "digest": "sha256:041f1cda6948e640971df86237017e0d382c567995d2c3b48656b2da76a69d9b",
+      "size_in_bytes": 2109226,
       "expired": false
     },
     {
-      "id": 12057997445,
-      "name": "shard-production-macos-arm64-run1-38924508724-1",
-      "digest": "sha256:5c4a9efa382b2e7f416e75c7d1319ae09b08e6bbc360278d6a0f645dde6320fe",
-      "size_in_bytes": 4598895,
+      "id": 12341198292,
+      "name": "production-linux-x86-64-39588030348-1",
+      "digest": "sha256:daf11a851e6e04e617602f0c7e4fe96d939b46c42308d6c21433b3ab61651e3d",
+      "size_in_bytes": 10895628,
       "expired": false
     },
     {
-      "id": 12057967789,
-      "name": "scanner-replays-macos-arm64-38924508724-1",
-      "digest": "sha256:5555f9ff678a5339927d4cae07e157fc91e446ced80b89803852f65022a2270b",
-      "size_in_bytes": 3219376,
-      "expired": false
-    },
-    {
-      "id": 12057698319,
-      "name": "shard-tokenizers-macos-arm64-run2-38924508724-1",
-      "digest": "sha256:7ec0aedc8c6f3b539e3ebf9f53ea4b50b61fe18a2a7668c6c043fd89fecac538",
-      "size_in_bytes": 2073820,
-      "expired": false
-    },
-    {
-      "id": 12057528977,
-      "name": "shard-scanner-replays-macos-arm64-run2-38924508724-1",
-      "digest": "sha256:9e38cc13bed320e933d48d6739999a2edf68d7b6ea0840d27d6a7e84d5dfa3c5",
-      "size_in_bytes": 2676241,
-      "expired": false
-    },
-    {
-      "id": 12057483653,
-      "name": "shard-scanner-replays-linux-x86-64-run3-38924508724-1",
-      "digest": "sha256:62e299c57d9a018f3b7dfe8186c6cdb9e92f15af7186eb61f3b78d99d8b247bc",
-      "size_in_bytes": 2684495,
-      "expired": false
-    },
-    {
-      "id": 12057483639,
-      "name": "shard-production-macos-arm64-run2-38924508724-1",
-      "digest": "sha256:40933fc733e0fc755bae832baaf0822f0481616c616a4a1675b9c24b69de1993",
-      "size_in_bytes": 4599880,
-      "expired": false
-    },
-    {
-      "id": 12057453922,
-      "name": "shard-scanner-replays-linux-x86-64-run2-38924508724-1",
-      "digest": "sha256:98ddb9ac708cb0d6599f597e843247d2fed5a60bd542144c8bc8ebc569d165a5",
-      "size_in_bytes": 2680887,
-      "expired": false
-    },
-    {
-      "id": 12057418981,
-      "name": "shard-production-linux-x86-64-run2-38924508724-1",
-      "digest": "sha256:31394037cc31b918382b92e0dc4d604b30c715169044f4f3fadb40a2a0d4c7c3",
-      "size_in_bytes": 4603530,
-      "expired": false
-    },
-    {
-      "id": 12057214887,
-      "name": "tokenizers-macos-arm64-38924508724-1",
-      "digest": "sha256:00f00ada525388ca866a6db6fab352ab09312e3cfa2ee15aa75c65341f87ab25",
-      "size_in_bytes": 2504427,
-      "expired": false
-    },
-    {
-      "id": 12057109669,
-      "name": "shard-tokenizers-linux-x86-64-run2-38924508724-1",
-      "digest": "sha256:6a238dbc9131d23d26543a016660a3fa0e5cf651ee18baadb375c5238d68a477",
-      "size_in_bytes": 2074331,
+      "id": 12341133332,
+      "name": "shard-production-macos-arm64-run1-39588030348-1",
+      "digest": "sha256:fc2f07fde11c686789ba7d017f56c5bdfec781e37c91895cb9341cc6f64a6f30",
+      "size_in_bytes": 4895348,
       "expired": false
     }
   ]
