@@ -20,12 +20,12 @@ Bindings to the C library would have kept the C code, the C toolchain and its
 memory-safety record. A new engine would have broken grammars in subtle ways.
 So Ferroni ports Oniguruma itself, file by file and function by function, and
 verifies the result against Oniguruma's own test suite
-([ADR-001](../adr/001-one-to-one-parity-with-c-original)).
+([ADR-001](/adr/001-one-to-one-parity-with-c-original)).
 
 ## What Ferroni covers
 
 Ferroni ports ASCII and UTF-8, two of Oniguruma's 29 encodings
-([ADR-003](../adr/003-encoding-scope-ascii-and-utf8-only)). All twelve syntax
+([ADR-003](/adr/003-encoding-scope-ascii-and-utf8-only)). All twelve syntax
 modes are included, from Oniguruma and Ruby to Perl, Python, Java and POSIX.
 For the projects built on Oniguruma's syntax, that means:
 
@@ -41,7 +41,7 @@ These parts of the C library are not ported:
 - **27 of 29 encodings:** UTF-16 and UTF-32, Shift_JIS, EUC-JP, EUC-KR,
   EUC-TW, EUC-CN, Big5, GB18030, KOI8-R, CP1251, and ISO-8859-1 to -16.
 - **The POSIX and GNU APIs:** `regcomp`, `regexec` and `regfree`
-  ([ADR-012](../adr/012-posix-and-gnu-api-not-ported)).
+  ([ADR-012](/adr/012-posix-and-gnu-api-not-ported)).
 - **20 of the 152 functions that `oniguruma.h` declares,** all of them C
   memory, string and setup plumbing that Rust does not need. The other 132
   are public under their C names.
@@ -69,16 +69,16 @@ These parts of the C library are not ported:
   Database 18.0; C Oniguruma's last release ships 16.0. Some characters change
   properties as a result: 672 leave `Extended_Pictographic`, U+0295 moves from
   `Ll` to `Lo`, and some `\X` boundaries move. U+1DF95 folds to "ss", so
-  `(?i)ss` matches it ([ADR-015](../adr/015-unicode-data-from-ucd)).
+  `(?i)ss` matches it ([ADR-015](/adr/015-unicode-data-from-ucd)).
 - **A capped backtracking stack.** When no stack limit is set, C lets the
   backtracking stack grow until memory runs out. Ferroni stops at 10 million
   entries and reports the limit
-  ([untrusted input](./untrusted-input#limit-each-search)).
+  ([untrusted input](/guide/untrusted-input#limit-each-search)).
 - **Searches that reach a limit.** Where C stops at a retry, stack or time
   limit, Ferroni may finish the search with the result C would return without
   that limit, because some of its optimizations do less work. Where C finishes,
   the results are identical
-  ([ADR-017](../adr/017-limit-outcomes-relative-to-c)). Under any stack limit
+  ([ADR-017](/adr/017-limit-outcomes-relative-to-c)). Under any stack limit
   below 320, C lets a search hold 321 stack entries, so Ferroni applies such
   a limit as 321 entries.
 - **Additions C never had.** The Scanner, per-search limits, the compile-time
@@ -109,7 +109,7 @@ Rust-native tests for the idiomatic API, edge cases, error paths and coverage
 gaps. The tree holds **at least 2,600 `#[test]` functions**, which
 [`scripts/count-tests.sh`](https://github.com/sebastian-software/ferroni/blob/main/scripts/count-tests.sh)
 derives from the tree. The test strategy is recorded in
-[ADR-011](../adr/011-test-strategy-and-c-test-parity).
+[ADR-011](/adr/011-test-strategy-and-c-test-parity).
 
 ### Coverage, fuzzing and benchmark checks
 
@@ -119,22 +119,26 @@ derives from the tree. The test strategy is recorded in
   [`scripts/coverage.sh`](https://github.com/sebastian-software/ferroni/blob/main/scripts/coverage.sh)
   fails the build below its threshold. Generated Unicode tables, the FFI
   bindings and the test files are excluded from the measurement.
-- **Fuzzing.** Three cargo-fuzz targets cover pattern compilation, matching
-  and the Scanner API. Each runs briefly on every pull request and for 15
-  minutes every week.
+- **Fuzzing.** Four cargo-fuzz targets cover pattern compilation
+  (`pattern-compile`), matching (`pattern-match`), the Scanner API
+  (`scanner-api`), and differential pre-filter checks
+  (`prefilter-differential`).
+  [`fuzz/README.md`](https://github.com/sebastian-software/ferroni/blob/main/fuzz/README.md)
+  lists each target and how to run it. Each runs briefly on every pull request
+  and for 15 minutes every week.
 - **Results before timings.** Every production regex case must reproduce its
   source-runtime oracle before timing. C Oniguruma also runs the admitted tasks;
   all engines share explicit operation contracts
-  ([regex workloads](../perf/regex-workloads)).
+  ([regex workloads](/perf/regex-workloads)).
 
 The bugs found while porting, and what they teach about C-to-Rust ports, are
-collected in [ADR-014](../adr/014-porting-bugs-lessons-learned).
+collected in [ADR-014](/adr/014-porting-bugs-lessons-learned).
 
 ## How the port maps to C
 
 Each C source file maps to one Rust module, with the same function names and
-control flow ([ADR-001](../adr/001-one-to-one-parity-with-c-original),
-[ADR-004](../adr/004-c-to-rust-translation-patterns)). A fix in upstream C can
+control flow ([ADR-001](/adr/001-one-to-one-parity-with-c-original),
+[ADR-004](/adr/004-c-to-rust-translation-patterns)). A fix in upstream C can
 be found and compared in the corresponding Rust function.
 
 | C file        | Rust module      | Purpose                                       |
@@ -166,4 +170,4 @@ onig_new() -> onig_compile()
 
 Optimizations that C does not have are recorded separately, so the parity of
 the ported code stays reviewable
-([ADR-008](../adr/008-rust-only-optimizations)).
+([ADR-008](/adr/008-rust-only-optimizations)).

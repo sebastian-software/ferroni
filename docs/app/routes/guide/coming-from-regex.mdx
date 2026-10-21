@@ -68,7 +68,7 @@ assert_eq!(caps.get(2).unwrap().as_str(), "34");
 
 The Scanner API is the exception: `Scanner::new` and the default
 `ScannerConfig` capture unnamed groups too, to match vscode-oniguruma. See
-[The Scanner API](./getting-started#the-scanner-api).
+[The Scanner API](/guide/getting-started#the-scanner-api).
 
 ## Empty matches
 
@@ -133,7 +133,7 @@ work in both. Each highlighted match below comes from running the
 Ferroni is a 1:1 port of Oniguruma, and its goal is that a pattern which works
 in C Oniguruma works the same way in Ferroni. TextMate grammars, jq and PHP's
 mbregex depend on that behavior, so changing a default would break them. The
-[ADR-001](../adr/001-one-to-one-parity-with-c-original) records this decision.
+[ADR-001](/adr/001-one-to-one-parity-with-c-original) records this decision.
 Every difference above is a builder option or a documented method, so the
 `regex` behavior is one call away.
 

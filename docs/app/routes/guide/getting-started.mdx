@@ -30,7 +30,7 @@ ferroni = "2"
 
 {/* x-release-please-end */}
 
-Upgrading from 1.x? [Migrating to 2.0](./migrating-to-2) has before and after
+Upgrading from 1.x? [Migrating to 2.0](/guide/migrating-to-2) has before and after
 code for each breaking change.
 
 Ferroni's MSRV is Rust 1.94, enforced by a dedicated CI lane. The build script
@@ -42,7 +42,7 @@ CI tests the crate on Linux, macOS and Windows. It also builds it for
 WebAssembly: for `wasm32-unknown-unknown`, the browser target, and for
 `wasm32-wasip1`, where the library and API tests run under Wasmtime. On
 `wasm32-unknown-unknown` a search must not set a time limit
-([Untrusted input](./untrusted-input#limit-each-search) explains why and what to
+([Untrusted input](/guide/untrusted-input#limit-each-search) explains why and what to
 use instead).
 
 ## Your first match
@@ -219,7 +219,7 @@ assert!(re.is_match("Hello World"));
 `syntax` for selecting one of the twelve syntax modes (Oniguruma, Ruby, Perl,
 Perl_NG, Python, Java, Emacs, Grep, GNU, POSIX Basic, POSIX Extended, ASIS).
 
-`dfa` turns on the single-pattern seek of [ADR-008](../adr/008-rust-only-optimizations),
+`dfa` turns on the single-pattern seek of [ADR-008](/adr/008-rust-only-optimizations),
 a lazy DFA built with the regex. It is on by default when the `dfa-prefilter`
 feature is enabled, which is the default, and it has no effect without that
 feature. A standard `is_match` or `find` asks the DFA first: it answers "no
@@ -230,7 +230,7 @@ case-insensitive pattern whose classes have multi-character case folds
 are all matches of the pattern: `is_match` answers "match" from it, and "no
 match" on a text that contains none of the strings the folds add. Where a retry
 limit would stop the matcher, such a match is the one the matcher finds without
-the limit ([ADR-017](../adr/017-limit-outcomes-relative-to-c)). Every other
+the limit ([ADR-017](/adr/017-limit-outcomes-relative-to-c)). Every other
 search runs the matcher, so apart from that case the results are the same with
 the option on or off. The DFAs are built during `build`, so the compile takes
 longer, and each thread that searches with the regex keeps a cache of at most
@@ -514,22 +514,22 @@ assert_eq!(result, 6); // match starts at byte 6
 ```
 
 Ferroni supports ASCII and UTF-8; the other 27 upstream encodings are out of
-scope (see [ADR-003](../adr/003-encoding-scope-ascii-and-utf8-only)).
+scope (see [ADR-003](/adr/003-encoding-scope-ascii-and-utf8-only)).
 
 ## Where to go next
 
-- [Untrusted Input](./untrusted-input) -- per-search limits, the
+- [Untrusted Input](/guide/untrusted-input) -- per-search limits, the
   compile-time backtracking check, and memory safety.
-- [Compatibility](./compatibility) -- what is covered, where Ferroni differs
+- [Compatibility](/guide/compatibility) -- what is covered, where Ferroni differs
   from C on purpose, and the test parity with the upstream suite.
-- [Coming from regex or onig](./coming-from-regex) -- where the defaults differ
+- [Coming from regex or onig](/guide/coming-from-regex) -- where the defaults differ
   from the `regex` and `onig` crates, and how to get `regex`-like behavior.
-- [Migrating to 2.0](./migrating-to-2) -- the breaking changes of 2.0, with
+- [Migrating to 2.0](/guide/migrating-to-2) -- the breaking changes of 2.0, with
   before and after code for each.
-- [Regex Benchmarks](../perf/regex-workloads) -- the speed summary, the
+- [Regex Benchmarks](/perf/regex-workloads) -- the speed summary, the
   source projects, the method and where the full results live.
-- [ADR-001](../adr/001-one-to-one-parity-with-c-original) -- why the port is
+- [ADR-001](/adr/001-one-to-one-parity-with-c-original) -- why the port is
   structurally 1:1 with the C original, and what that means for contributions.
-- [ADR-006](../adr/006-scanner-api) -- the design of the Scanner API.
+- [ADR-006](/adr/006-scanner-api) -- the design of the Scanner API.
 - [The repository](https://github.com/sebastian-software/ferroni) and
   [the crate](https://crates.io/crates/ferroni).

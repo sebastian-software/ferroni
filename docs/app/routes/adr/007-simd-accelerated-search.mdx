@@ -39,13 +39,13 @@ The structural shape of the search pipeline is unchanged -- the same functions e
 ## Consequences
 
 - The `memchr` crate is a build dependency.
-- End-to-end regex comparisons include matching and required output work; scanner comparisons use separate workloads. The [current regex results](../../perf/regex-workloads) describe the measured cases rather than a universal SIMD speedup.
+- End-to-end regex comparisons include matching and required output work; scanner comparisons use separate workloads. The [current regex results](/perf/regex-workloads) describe the measured cases rather than a universal SIMD speedup.
 - The Map search path (>3 distinct first bytes) still uses a 256-entry byte map, same as C. SIMD dispatch only covers 1-3 byte sets.
 - Thin LTO (`lto = "thin"` in release profile) is enabled to allow cross-crate inlining of `memchr` calls without the compile-time cost of full LTO.
 
 ## Extension: RegSet First-Byte Dispatch and Skip Needle
 
-The original `memchr` integration accelerates single-pattern forward search. For multi-pattern workloads (Scanner/RegSet — see [ADR-006](../006-scanner-api)), two additional SIMD-assisted optimizations were added:
+The original `memchr` integration accelerates single-pattern forward search. For multi-pattern workloads (Scanner/RegSet — see [ADR-006](/adr/006-scanner-api)), two additional SIMD-assisted optimizations were added:
 
 ### First-byte dispatch table (`first_byte_candidates`)
 

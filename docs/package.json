@@ -8,7 +8,7 @@
     "verify": "pnpm lint && pnpm typecheck && pnpm format:check && pnpm build",
     "sample:write": "node scripts/render-regex-sample.mjs",
     "sample:check": "node scripts/render-regex-sample.mjs --check",
-    "build": "pnpm check:numbers && react-router build",
+    "build": "pnpm check:numbers && react-router build && pnpm check:links",
     "check:numbers": "node scripts/check-benchmark-claims.mjs",
     "lint": "pnpm lint:oxlint && pnpm lint:eslint",
     "lint:eslint": "eslint .",
@@ -16,7 +16,8 @@
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:links": "node scripts/check-site-links.mjs"
   },
   "dependencies": {
     "ardo": "^5.0.0",

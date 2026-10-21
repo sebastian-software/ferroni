@@ -20,11 +20,14 @@ CVE-2019-19012, CVE-2019-19204, CVE-2019-19246). In Ferroni, buffer arithmetic, 
 conversion are safe Rust. The remaining `unsafe` follows one narrowly
 scoped pattern, links between AST nodes during compilation, and every new
 block has to fit it
-([ADR-002](../adr/002-unsafe-code-policy)).
+([ADR-002](/adr/002-unsafe-code-policy)).
 
-Three [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets cover
-pattern compilation, matching and the Scanner API. Each runs briefly on every
-pull request and for 15 minutes every week.
+Four [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets cover
+pattern compilation (`pattern-compile`), matching (`pattern-match`), the
+Scanner API (`scanner-api`), and differential pre-filter checks
+(`prefilter-differential`). [`fuzz/README.md`](https://github.com/sebastian-software/ferroni/blob/main/fuzz/README.md)
+lists each target and how to run it. Each runs briefly on every pull request
+and for 15 minutes every week.
 
 ## Limit each search
 
@@ -103,8 +106,8 @@ cannot exhaust memory. A limit of your own also turns off the search
 optimizations whose skipped attempts a limit could observe, among them a
 scanner's pre-filter. The standard `is_match` of a `Regex` may use its
 single-pattern seek, which can report a match that the matcher reaches only
-without the process-wide limit ([ADR-008](../adr/008-rust-only-optimizations),
-[ADR-017](../adr/017-limit-outcomes-relative-to-c)). `find` and `captures` run
+without the process-wide limit ([ADR-008](/adr/008-rust-only-optimizations),
+[ADR-017](/adr/017-limit-outcomes-relative-to-c)). `find` and `captures` run
 the matcher, so under such a limit they can report no match where `is_match`
 reports one; the `*_with` methods never use the seek. A retry limit per match
 other than the default, a search retry budget, a stack limit or a timeout make
@@ -190,4 +193,4 @@ A checklist for user-supplied patterns:
    "too expensive", not as "no match".
 
 For how errors are grouped, see
-[Handling errors](./getting-started#handling-errors).
+[Handling errors](/guide/getting-started#handling-errors).

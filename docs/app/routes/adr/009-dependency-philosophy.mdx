@@ -33,7 +33,7 @@ Each was selected because:
 
 ### Amendment: `regex-automata` and `regex-syntax`
 
-The scanner's DFA pre-filter ([ADR-008](./008-rust-only-optimizations)) builds, per set of patterns, a multi-pattern lazy DFA and a meta regex from an over-approximation of each pattern. These come from two more crates, behind the `dfa-prefilter` feature, which is on by default:
+The scanner's DFA pre-filter ([ADR-008](/adr/008-rust-only-optimizations)) builds, per set of patterns, a multi-pattern lazy DFA and a meta regex from an over-approximation of each pattern. These come from two more crates, behind the `dfa-prefilter` feature, which is on by default:
 
 | Crate                                                       | Purpose                                                                                                                                                                                                                                            |                                                Transitive deps |
 | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------: |
