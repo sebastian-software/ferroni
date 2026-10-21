@@ -55,7 +55,7 @@ onig_set_parse_depth_limit(8192);
 In 2.0, raise the limit your patterns need. Both limits are process-wide, and
 zero restores a default. Raising either one raises the stack a compile needs,
 so compile on a thread sized for it;
-[ADR-013](../adr/013-stack-overflow-debug-builds) lists the cost per unit.
+[ADR-013](/adr/013-stack-overflow-debug-builds) lists the cost per unit.
 
 ```rust
 use ferroni::prelude::*;
@@ -78,7 +78,7 @@ assert!(compiled.is_ok());
 
 To restore the 1.x nesting default, call `onig_set_parse_depth_limit(4096)`. A
 compile at that depth needs about 14 MiB of stack in a debug build.
-[Untrusted Input](./untrusted-input#patterns-from-users) covers the limits for
+[Untrusted Input](/guide/untrusted-input#patterns-from-users) covers the limits for
 user-supplied patterns.
 
 ## Extensible scanner and error types
@@ -227,5 +227,5 @@ Other items that `oniguruma.h` does not declare are crate-private too. Compile
 with `onig_new` instead of `onig_compile`; the parse tree, `onig_parse_tree`
 and the VM opcodes have no public replacement. The Ferroni-only limit setters
 and getters, such as `onig_set_ast_node_limit`, stay public.
-[ADR-005](../adr/005-idiomatic-rust-api-layer) records where the public API
+[ADR-005](/adr/005-idiomatic-rust-api-layer) records where the public API
 ends.
