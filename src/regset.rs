@@ -4454,6 +4454,20 @@ mod tests {
         }
     }
 
+    fn new_shared_for_boundary_test(
+        regs: Vec<Arc<RegexType>>,
+        seeks: Vec<SharedSeek>,
+    ) -> (Option<Box<OnigRegSet>>, i32) {
+        #[cfg(feature = "dfa-prefilter")]
+        {
+            onig_regset_new_shared(regs, seeks, SharedAutomata::default(), 0)
+        }
+        #[cfg(not(feature = "dfa-prefilter"))]
+        {
+            onig_regset_new_shared(regs, seeks, (), 0)
+        }
+    }
+
     #[test]
     fn regset_rejects_indexes_beyond_u16_without_wrapping_or_mutating() {
         let first: Arc<RegexType> = Arc::from(compile(b"a"));
@@ -4463,8 +4477,7 @@ mod tests {
         let oversized_seeks: Vec<SharedSeek> = std::iter::repeat_with(Default::default)
             .take(MAX_REGSET_ENTRIES + 1)
             .collect();
-        let (too_many, status) =
-            onig_regset_new_shared(oversized, oversized_seeks, SharedAutomata::default(), 0);
+        let (too_many, status) = new_shared_for_boundary_test(oversized, oversized_seeks);
         assert!(too_many.is_none());
         assert_eq!(status, ONIGERR_INVALID_ARGUMENT);
 
@@ -4474,7 +4487,7 @@ mod tests {
         let seeks: Vec<SharedSeek> = std::iter::repeat_with(Default::default)
             .take(MAX_REGSET_ENTRIES)
             .collect();
-        let (set, status) = onig_regset_new_shared(regs, seeks, SharedAutomata::default(), 0);
+        let (set, status) = new_shared_for_boundary_test(regs, seeks);
         assert_eq!(status, ONIG_NORMAL);
         let mut set = set.unwrap();
         assert_eq!(set.entries.len(), MAX_REGSET_ENTRIES);
