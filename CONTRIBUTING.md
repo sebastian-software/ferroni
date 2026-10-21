@@ -285,6 +285,20 @@ isolated Python environment and run `scripts/verify-tokenizer-oracles.py`.
 [Comparator notes](benches/comparator-notes.md) record the library source review
 and why regexr is no longer compared.
 
+`regression_bench` tracks Ferroni-only regressions. Its `shared_regex_threads`
+group runs ferrolink's two corpus steps (`captures_iter`, and lexer-style
+`captures_at` and `find_at` loops) on 1, 4 and 8 threads with the same work per
+thread. The times should stay nearly flat as threads are added; a write to
+shared state per match or per call shows as growth with the thread count. Before
+[#417](https://github.com/sebastian-software/ferroni/pull/417), `captures_iter`
+took 4.5 ms on one thread and 39 ms on eight; after it, 5.0 ms. Before
+[#418](https://github.com/sebastian-software/ferroni/pull/418) the `find_at`
+loop grew from 6.1 to 12.2 ms; after it, from 3.6 to 4.0 ms (Apple M1 Ultra).
+
+```bash
+cargo bench --bench regression_bench -- shared_regex_threads
+```
+
 `battle_bench` requires a local Oniguruma source snapshot for comparison:
 
 ```bash

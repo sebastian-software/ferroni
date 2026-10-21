@@ -872,6 +872,120 @@ fn bench_regression_idiomatic_api(c: &mut Criterion) {
 // Criterion harness
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// regression: shared_regex_threads -- one Regex searched by several threads
+// ---------------------------------------------------------------------------
+//
+// ferrolink's markup and attribute steps from the source-backed corpus
+// (benches/production_regex/catalog.json), run by 1, 4 and 8 threads at once
+// with the same work per thread. With nothing shared written per search, the
+// time stays flat as threads are added. A shared write per match or per call
+// (an `Arc` clone in every `Captures`, a seek gate counter) makes it grow with
+// the thread count, which no single-thread benchmark shows. Thread counts
+// above the machine's core count are skipped.
+
+fn corpus_case(id: &str) -> (String, Vec<String>) {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/benches/production_regex/catalog.json"
+    );
+    let catalog: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).expect("catalog is readable"))
+            .expect("catalog is JSON");
+    let case = catalog["cases"]
+        .as_array()
+        .expect("catalog has cases")
+        .iter()
+        .find(|case| case["id"] == id)
+        .unwrap_or_else(|| panic!("corpus case {id}"));
+    let texts = case["inputs"]
+        .as_array()
+        .expect("case has inputs")
+        .iter()
+        .map(|input| input["text"].as_str().expect("input text").to_owned())
+        .collect();
+    (case["pattern"].as_str().expect("pattern").to_owned(), texts)
+}
+
+/// Matches of `re` in `text` by single `captures_at` calls, as a lexer makes
+/// them. The markup pattern never matches empty.
+fn captures_at_count(re: &ferroni::api::Regex, text: &str) -> usize {
+    let (mut count, mut at) = (0, 0);
+    while let Some(caps) = re.captures_at(text, at) {
+        count += 1;
+        at = caps.get(0).expect("group 0").end();
+    }
+    count
+}
+
+/// As `captures_at_count`, with single `find_at` calls.
+fn find_at_count(re: &ferroni::api::Regex, text: &str) -> usize {
+    let (mut count, mut at) = (0, 0);
+    while let Some(found) = re.find_at(text, at) {
+        count += 1;
+        at = found.end();
+    }
+    count
+}
+
+fn bench_regression_shared_regex_threads(c: &mut Criterion) {
+    use ferroni::prelude::*;
+
+    let (markup, slices) = corpus_case("ferrolink_markup_scan");
+    let (attribute, attributes) = corpus_case("ferrolink_attribute_split");
+    let markup = Regex::new(&markup).unwrap();
+    let attribute = Regex::new(&attribute).unwrap();
+    let cores = std::thread::available_parallelism().map_or(1, usize::from);
+
+    let captures_iter_attributes = || {
+        attributes
+            .iter()
+            .map(|text| attribute.captures_iter(text).count())
+            .sum::<usize>()
+    };
+    let captures_at_markup = || {
+        slices
+            .iter()
+            .map(|text| captures_at_count(&markup, text))
+            .sum::<usize>()
+    };
+    let find_at_markup = || {
+        slices
+            .iter()
+            .map(|text| find_at_count(&markup, text))
+            .sum::<usize>()
+    };
+    // Repetitions per thread and iteration: about 5 ms of work on one thread,
+    // so that spawning the threads stays negligible.
+    let workloads: [(&str, &(dyn Fn() -> usize + Sync), usize); 3] = [
+        ("captures_iter_attributes", &captures_iter_attributes, 64),
+        ("captures_at_markup", &captures_at_markup, 24),
+        ("find_at_markup", &find_at_markup, 24),
+    ];
+
+    let mut group = c.benchmark_group("regression_shared_regex_threads");
+    group.sample_size(20);
+    for (name, work, repeats) in workloads {
+        for threads in [1, 4, 8].into_iter().filter(|&threads| threads <= cores) {
+            group.bench_with_input(BenchmarkId::new(name, threads), &threads, |b, &threads| {
+                b.iter(|| {
+                    std::thread::scope(|scope| {
+                        let workers: Vec<_> = (0..threads)
+                            .map(|_| scope.spawn(|| (0..repeats).map(|_| work()).sum::<usize>()))
+                            .collect();
+                        let total: usize = workers
+                            .into_iter()
+                            .map(|worker| worker.join().expect("worker finished"))
+                            .sum();
+                        black_box(total)
+                    })
+                });
+            });
+        }
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_regression_compile,
@@ -890,5 +1004,6 @@ criterion_group!(
     bench_regression_scanner_textmate,
     bench_regression_scanner_documents,
     bench_regression_idiomatic_api,
+    bench_regression_shared_regex_threads,
 );
 criterion_main!(benches);
