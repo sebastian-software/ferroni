@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.2](https://github.com/sebastian-software/ferroni/compare/v2.5.1...v2.5.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **scanner:** accept merged class runs as look-behind bodies in archives ([b5c30a4](https://github.com/sebastian-software/ferroni/commit/b5c30a4f26e64dbd07b02e96d35da4a1cdabce45)), closes [#448](https://github.com/sebastian-software/ferroni/issues/448)
+
 ## [2.5.1](https://github.com/sebastian-software/ferroni/compare/v2.5.0...v2.5.1) (2026-10-22)
 
 
