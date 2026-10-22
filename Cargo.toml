@@ -96,6 +96,10 @@ lto = "thin"
 [profile.bench]
 lto = "thin"
 
+[[test]]
+name = "precompiled_scanner"
+required-features = ["precompiled"]
+
 [[bench]]
 name = "battle_bench"
 harness = false

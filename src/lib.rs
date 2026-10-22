@@ -395,6 +395,10 @@ struct GettingStartedDoctests;
 #[doc = include_str!("../docs/app/routes/guide/scanner.mdx")]
 struct ScannerGuideDoctests;
 
+#[cfg(all(doctest, ferroni_guide_docs, feature = "precompiled"))]
+#[doc = include_str!("../docs/app/routes/guide/precompiled-patterns.mdx")]
+struct PrecompiledPatternsGuideDoctests;
+
 #[cfg(all(doctest, ferroni_guide_docs))]
 #[doc = include_str!("../docs/app/routes/guide/untrusted-input.mdx")]
 struct UntrustedInputDoctests;

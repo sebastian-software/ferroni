@@ -198,33 +198,14 @@ affect RSS.
 
 ## Reuse compilation across starts
 
-Enable the optional `precompiled` feature to ship compiled scanner patterns
-alongside a grammar:
+Enable the optional `precompiled` feature to ship compiled patterns alongside
+an unchanged grammar and reuse compilation in later processes or browser
+sessions. Programs decode only when a scanner requests them; missing or
+incompatible entries fall back to normal compilation.
 
-```toml
-[dependencies]
-ferroni = { version = "2", features = ["precompiled"] }
-```
-
-At build time, populate a `ScannerPatternCache` using the same configuration
-as the consumer, then call `export_precompiled()` and save the returned bytes.
-At runtime, open those bytes with `PrecompiledPatterns::from_bytes` and attach
-the result with `cache.add_precompiled(source)`. Opening checks the index;
-programs and their stored prefilter seeks decode only when a scanner requests
-them. Cache `len()` still counts only decoded patterns.
-
-Keep the original patterns. A missing entry, a compile-setting mismatch, or a
-corrupt program falls back to normal compilation. If opening the archive
-returns an error, leave the cache without that source. Runtime-resolved
-end/while patterns compile normally when absent; callout patterns are omitted
-from exports because their callbacks belong to the producing process.
-
-Use archives from a trusted producer. Structural validation does not prove
-that a program implements its claimed pattern text. The format has its own
-version, independent of the crate version; incompatible versions are rejected.
-The [API example](https://docs.rs/ferroni/latest/ferroni/scanner/struct.ScannerPatternCache.html#method.add_precompiled)
-shows both sides, and [ADR-018](/adr/018-precompiled-scanner-patterns) explains
-the compatibility and validation contract.
+The [precompiled patterns guide](/guide/precompiled-patterns) shows how to
+export an archive, load it at startup, keep compile settings compatible, and
+interpret the startup measurements.
 
 ## Bound work on untrusted input
 

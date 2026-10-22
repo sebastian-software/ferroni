@@ -26,6 +26,7 @@ fn guide_pages_present() -> bool {
     [
         "getting-started",
         "scanner",
+        "precompiled-patterns",
         "untrusted-input",
         "compatibility",
         "coming-from-regex",
