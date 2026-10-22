@@ -16,7 +16,7 @@ libfuzzer-sys = "0.4"
 # targets check the pre-filter on every search they make.
 [dependencies.ferroni]
 path = ".."
-features = ["prefilter-self-check"]
+features = ["prefilter-self-check", "precompiled"]
 
 [[bin]]
 name = "pattern-compile"
@@ -42,6 +42,13 @@ bench = false
 [[bin]]
 name = "prefilter-differential"
 path = "fuzz_targets/prefilter_differential.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "precompiled-loader"
+path = "fuzz_targets/precompiled_loader.rs"
 test = false
 doc = false
 bench = false

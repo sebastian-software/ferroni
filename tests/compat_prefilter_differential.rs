@@ -425,3 +425,73 @@ fn composed_compat_patterns_answer_alike_with_and_without_the_prefilter() {
         assert!(mismatches.is_empty(), "{name}: {}", mismatches.join("\n"));
     }
 }
+
+/// Every accepted UTF-8 compat pair must actually decode from its archive (a
+/// silent compiler fallback would hide schema omissions), then return the same
+/// pattern and captures at every start offset. Callouts are process-local and
+/// deliberately remain on the compile path.
+#[cfg(feature = "precompiled")]
+#[test]
+fn compat_pairs_round_trip_through_precompiled_patterns() {
+    use ferroni::scanner::{PrecompiledPatterns, ScannerPatternCache};
+    let mut checked = 0;
+    let mut omitted_callouts = 0;
+    for (file, source) in SOURCES {
+        for case in cases(file, source) {
+            let (Ok(pattern), Ok(text)) = (
+                std::str::from_utf8(&case.pattern),
+                std::str::from_utf8(&case.text),
+            ) else {
+                continue;
+            };
+            let config = ScannerConfig::default()
+                .options(case.options)
+                .prefilter_warmup(0);
+            let mut build = ScannerPatternCache::new();
+            let Ok(mut fresh) = Scanner::with_pattern_cache(&[pattern], &config, &mut build) else {
+                continue;
+            };
+            let bytes = build
+                .export_precompiled()
+                .unwrap_or_else(|e| panic!("{}:{} {pattern:?}: {e}", case.file, case.line));
+            let source = PrecompiledPatterns::from_bytes(bytes).unwrap();
+            if source.is_empty() {
+                assert!(
+                    pattern.contains("(*") || pattern.contains("(?{"),
+                    "unexpected omitted pattern: {pattern}"
+                );
+                omitted_callouts += 1;
+                continue;
+            }
+            assert_eq!(
+                source.validate_pattern(pattern, &config, false),
+                Ok(true),
+                "{}:{} {pattern:?}",
+                case.file,
+                case.line
+            );
+            let mut runtime = ScannerPatternCache::new();
+            runtime.add_precompiled(source);
+            let mut loaded =
+                Scanner::with_pattern_cache(&[pattern], &config, &mut runtime).unwrap();
+            assert_eq!(fresh.warnings(), loaded.warnings());
+            for bits in 0..8 {
+                let options = ScannerFindOptions::from_bits(bits);
+                for start in 0..=text.len() {
+                    assert_eq!(
+                        bounds(loaded.find_next_match(text, start, options)),
+                        bounds(fresh.find_next_match(text, start, options)),
+                        "{}:{} {pattern:?} on {text:?} at {start}, options {bits}",
+                        case.file,
+                        case.line
+                    );
+                }
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked > 1000, "only {checked} pairs checked");
+    eprintln!(
+        "precompiled round-trip: {checked} compat pairs, {omitted_callouts} process-local callouts omitted"
+    );
+}

@@ -274,6 +274,110 @@ mod tag {
 }
 
 impl SeekCode {
+    #[cfg(feature = "precompiled")]
+    pub(crate) fn precompiled_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Check the complete seek before the infallible internal decoder sees it.
+    /// Depth and node budgets also bound the HIR constructors and destruction.
+    #[cfg(feature = "precompiled")]
+    pub(crate) fn from_precompiled(bytes: Vec<u8>) -> Option<Self> {
+        struct Check<'a> {
+            bytes: &'a [u8],
+            nodes: usize,
+        }
+        impl Check<'_> {
+            fn byte(&mut self) -> Option<u8> {
+                let (&first, rest) = self.bytes.split_first()?;
+                self.bytes = rest;
+                Some(first)
+            }
+            fn number(&mut self) -> Option<usize> {
+                let mut value = 0u64;
+                for shift in (0..35).step_by(7) {
+                    let b = self.byte()?;
+                    value |= u64::from(b & 0x7f) << shift;
+                    if b & 0x80 == 0 {
+                        return usize::try_from(value)
+                            .ok()
+                            .filter(|v| *v <= u32::MAX as usize);
+                    }
+                }
+                None
+            }
+            fn node(&mut self, depth: usize) -> Option<()> {
+                self.nodes = self.nodes.checked_sub(1)?;
+                if depth > 256 {
+                    return None;
+                }
+                match self.byte()? {
+                    tag::EMPTY => {}
+                    tag::LITERAL => {
+                        let len = self.number()?;
+                        self.bytes = self.bytes.get(len..)?;
+                    }
+                    kind @ (tag::BYTES | tag::UNICODE) => {
+                        let count = self.number()?;
+                        if count > self.bytes.len() / 2 {
+                            return None;
+                        }
+                        let mut previous = None;
+                        for _ in 0..count {
+                            let (lo, hi) = if kind == tag::BYTES {
+                                (u32::from(self.byte()?), u32::from(self.byte()?))
+                            } else {
+                                let lo = self.number()? as u32;
+                                let hi = self.number()? as u32;
+                                char::from_u32(lo)?;
+                                char::from_u32(hi)?;
+                                (lo, hi)
+                            };
+                            if lo > hi || previous.is_some_and(|p| p >= lo) {
+                                return None;
+                            }
+                            previous = Some(hi);
+                        }
+                    }
+                    tag::LOOK => {
+                        Look::from_repr(self.number()? as u32)?;
+                    }
+                    tag::REPETITION => {
+                        let min = self.number()?;
+                        let max = self.number()?;
+                        if (max != 0 && max - 1 < min) || self.byte()? > 1 {
+                            return None;
+                        }
+                        self.node(depth + 1)?;
+                    }
+                    tag::CONCAT | tag::ALTERNATION => {
+                        let count = self.number()?;
+                        if count > self.nodes {
+                            return None;
+                        }
+                        for _ in 0..count {
+                            self.node(depth + 1)?;
+                        }
+                    }
+                    _ => return None,
+                }
+                Some(())
+            }
+        }
+        let mut check = Check {
+            bytes: &bytes,
+            nodes: 65_536,
+        };
+        if check.byte()? > 1 {
+            return None;
+        }
+        check.node(0)?;
+        if !check.bytes.is_empty() {
+            return None;
+        }
+        Some(Self(bytes.into_boxed_slice()))
+    }
+
     /// `hir` encoded, or `None` for a node kind the walk never writes
     /// (a capture).
     fn encode(hir: &Hir, exact: bool) -> Option<SeekCode> {

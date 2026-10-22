@@ -18,7 +18,7 @@ exclude = [".cache/", ".cargo/", "benches/", "docs/", "fuzz/", "scripts/", "exam
 # The `ffi` feature links a local Oniguruma C checkout that docs.rs cannot
 # provide, so document the pure-Rust features explicitly.
 all-features = false
-features = []
+features = ["precompiled"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 # These mirror the crate-level attributes that used to live in `src/lib.rs`, so
@@ -51,6 +51,9 @@ dfa-prefilter = ["dep:regex-automata", "dep:regex-syntax"]
 # same match, captures included. For the fuzz targets and the differential
 # tests; it doubles the cost of every scanner search.
 prefilter-self-check = ["dfa-prefilter"]
+# Versioned, lazily decoded scanner pattern archives (ADR-018).
+# The explicit wire codec adds no dependencies.
+precompiled = []
 # Benchmark-comparison harness: links a local upstream Oniguruma checkout
 # (scripts/prepare-oniguruma-sources.sh or FERRONI_ONIGURUMA_DIR) for the
 # in-repo C-vs-Rust benches. Not needed to use the library.

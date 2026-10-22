@@ -9,6 +9,11 @@
 
 use smallvec::SmallVec;
 
+#[cfg(feature = "precompiled")]
+mod precompiled;
+#[cfg(feature = "precompiled")]
+pub use precompiled::{PRECOMPILED_FORMAT_VERSION, PrecompiledError, PrecompiledPatterns};
+
 use crate::api::Syntax;
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
@@ -399,6 +404,9 @@ pub struct ScannerPatternCache {
     automata: HashMap<Box<[u32]>, SharedAutomata>,
     /// The id the next compiled pattern gets.
     next_id: u32,
+    /// Indexed archives, consulted in insertion order on a cache miss.
+    #[cfg(feature = "precompiled")]
+    precompiled: Vec<PrecompiledPatterns>,
 }
 
 /// Compiled programs by pattern text, for one `PatternSettings`.
@@ -412,6 +420,8 @@ struct CachedPattern {
     reg: Arc<RegexType>,
     seek: SharedSeek,
     id: u32,
+    #[cfg(feature = "precompiled")]
+    environment: precompiled::Environment,
 }
 
 impl ScannerPatternCache {
@@ -439,6 +449,7 @@ impl ScannerPatternCache {
     /// Drop the cache's references to every compiled pattern, and to the
     /// pre-filter automata of every pattern list built from it. Scanners
     /// built from it keep theirs.
+    /// Attached precompiled sources remain available for later misses.
     pub fn clear(&mut self) {
         self.compiled.clear();
         #[cfg(feature = "dfa-prefilter")]
@@ -468,23 +479,40 @@ impl ScannerPatternCache {
         for pattern in patterns {
             let cached = match compiled.get(*pattern) {
                 Some(cached) => cached.clone(),
-                None => match settings.compile(pattern) {
-                    Ok((reg, seek)) => {
-                        let cached = CachedPattern {
-                            reg,
-                            seek,
-                            id: self.next_id,
-                        };
-                        self.next_id += 1;
-                        compiled.insert((*pattern).into(), cached.clone());
-                        added.push(*pattern);
-                        cached
+                None => {
+                    #[cfg(feature = "precompiled")]
+                    let environment = precompiled::Environment::current();
+                    #[cfg(feature = "precompiled")]
+                    let result = self
+                        .precompiled
+                        .iter()
+                        .find_map(|source| {
+                            source.load(pattern, settings, &environment).ok().flatten()
+                        })
+                        .map(Ok)
+                        .unwrap_or_else(|| settings.compile(pattern));
+                    #[cfg(not(feature = "precompiled"))]
+                    let result = settings.compile(pattern);
+                    match result {
+                        Ok((reg, seek)) => {
+                            let cached = CachedPattern {
+                                reg,
+                                seek,
+                                id: self.next_id,
+                                #[cfg(feature = "precompiled")]
+                                environment,
+                            };
+                            self.next_id += 1;
+                            compiled.insert((*pattern).into(), cached.clone());
+                            added.push(*pattern);
+                            cached
+                        }
+                        Err(error) => {
+                            failed = Some(error);
+                            break;
+                        }
                     }
-                    Err(error) => {
-                        failed = Some(error);
-                        break;
-                    }
-                },
+                }
             };
             ids.push(cached.id);
             parts.push((cached.reg, cached.seek));
@@ -560,6 +588,8 @@ impl PatternSettings {
 
     /// The compiled pattern and its seek approximation, each shared.
     fn compile(self, pattern: &str) -> Result<(Arc<RegexType>, SharedSeek), RegexError> {
+        #[cfg(all(test, feature = "precompiled"))]
+        precompiled::COMPILES.with(|n| n.set(n.get() + 1));
         let (reg, seek) = onig_new_for_scanner(
             pattern.as_bytes(),
             self.options,

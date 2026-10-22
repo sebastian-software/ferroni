@@ -806,6 +806,16 @@ struct UserProperty {
 
 static USER_DEFINED_PROPERTIES: Mutex<Vec<UserProperty>> = Mutex::new(Vec::new());
 
+#[cfg(feature = "precompiled")]
+pub(crate) fn precompiled_user_properties() -> Vec<(Vec<u8>, Vec<u32>)> {
+    USER_DEFINED_PROPERTIES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .map(|p| (p.name.clone(), p.ranges.clone()))
+        .collect()
+}
+
 /// Normalize a property name: strip spaces/hyphens/underscores, lowercase.
 /// Returns None if the name contains non-ASCII bytes or exceeds buffer size.
 #[cfg_attr(coverage_nightly, coverage(off))]

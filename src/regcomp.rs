@@ -12037,6 +12037,28 @@ fn detect_skip_repeated_empty_search(reg: &RegexType) -> bool {
         })
 }
 
+/// Rebuild process-local search accelerators only after the archive's program
+/// validator has accepted every instruction and table reference (ADR-018).
+#[cfg(feature = "precompiled")]
+pub(crate) fn rebuild_precompiled_search(reg: &mut RegexType) {
+    reg.exact_finder = (reg.optimize == OptimizeType::StrFast && reg.exact.len() > 1)
+        .then(|| Box::new(memchr::memmem::Finder::new(&reg.exact).into_owned()));
+    reg.map_ascii_ranges = MapAsciiRanges::of(&reg.map);
+    if let Some((trie_idx, has_capture)) = detect_ac_eligible(reg) {
+        let trie = &reg.literal_tries[trie_idx];
+        if let Ok(ac) = aho_corasick::AhoCorasick::builder()
+            .match_kind(aho_corasick::MatchKind::LeftmostFirst)
+            .build(trie.literals())
+        {
+            reg.ac_alt = Some(ac);
+            reg.ac_alt_has_capture = has_capture;
+        }
+    }
+    crate::leading_run::plan(reg);
+    reg.pure_literal = detect_pure_literal(reg);
+    reg.skip_repeated_empty_search = detect_skip_repeated_empty_search(reg);
+}
+
 /// Create and compile a new regex - mirrors C's onig_new().
 /// This is the main public API entry point.
 pub fn onig_new(

@@ -309,6 +309,11 @@ static MAX_CAPTURE_NUM: AtomicI32 = AtomicI32::new(DEFAULT_MAX_CAPTURE_NUM);
 static PARSE_DEPTH_LIMIT: AtomicU32 = AtomicU32::new(DEFAULT_PARSE_DEPTH_LIMIT);
 static AST_NODE_LIMIT: AtomicU32 = AtomicU32::new(DEFAULT_AST_NODE_LIMIT);
 
+#[cfg(feature = "precompiled")]
+pub(crate) fn capture_num_limit() -> i32 {
+    MAX_CAPTURE_NUM.load(Ordering::Relaxed)
+}
+
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_set_capture_num_limit(num: i32) -> i32 {
     if num < 0 {

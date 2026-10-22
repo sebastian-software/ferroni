@@ -140,6 +140,35 @@ enum Searcher {
 }
 
 impl RequiredLiterals {
+    #[cfg(feature = "precompiled")]
+    pub(crate) fn precompiled_parts(&self) -> (Vec<u8>, Vec<u32>, bool) {
+        (self.bytes.to_vec(), self.ends.to_vec(), self.calls)
+    }
+
+    #[cfg(feature = "precompiled")]
+    pub(crate) fn from_precompiled(bytes: Vec<u8>, ends: Vec<u32>, calls: bool) -> Option<Self> {
+        if ends.is_empty()
+            || ends.len() > MAX_LITERALS
+            || ends.last().copied()? as usize != bytes.len()
+        {
+            return None;
+        }
+        let mut start = 0;
+        for &end in &ends {
+            let end = end as usize;
+            if end <= start || end > bytes.len() || (0x80..=0xBF).contains(&bytes[start]) {
+                return None;
+            }
+            start = end;
+        }
+        Some(Self {
+            bytes: bytes.into(),
+            ends: ends.into(),
+            calls,
+            searcher: OnceLock::new(),
+        })
+    }
+
     fn literals(&self) -> impl Iterator<Item = &[u8]> {
         let starts = std::iter::once(0).chain(self.ends.iter().copied());
         starts

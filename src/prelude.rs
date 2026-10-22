@@ -22,3 +22,5 @@ pub use crate::scanner::{
     CaptureIndex, OnigString, Scanner, ScannerConfig, ScannerFindOptions, ScannerMatch,
     ScannerPatternCache, ScannerSyntax,
 };
+#[cfg(feature = "precompiled")]
+pub use crate::scanner::{PRECOMPILED_FORMAT_VERSION, PrecompiledError, PrecompiledPatterns};

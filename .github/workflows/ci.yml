@@ -76,6 +76,24 @@ jobs:
         env:
           RUST_MIN_STACK: "268435456"
 
+  precompiled:
+    name: Precompiled scanner patterns (MSRV)
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: "1.94"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: "1.94"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Round trips and captured calls with checked prefilter
+        run: cargo test --locked --features precompiled,prefilter-self-check --lib --test precompiled_scanner --test compat_prefilter_differential
+      - name: Round trips and captured calls without prefilter
+        run: cargo test --locked --no-default-features --features precompiled --lib --test precompiled_scanner --test compat_prefilter_differential
+      - name: Precompiled API examples
+        run: cargo test --locked --features precompiled --doc
+
   fresh-resolution:
     name: Fresh dependency resolution
     runs-on: ubuntu-latest
@@ -264,6 +282,8 @@ jobs:
         run: cargo build --lib --locked --target wasm32-unknown-unknown
       - name: Build for wasm32-unknown-unknown without the DFA pre-filter
         run: cargo build --lib --locked --target wasm32-unknown-unknown --no-default-features
+      - name: Build archive loading for wasm32-unknown-unknown
+        run: cargo build --lib --locked --target wasm32-unknown-unknown --features precompiled
       # wasm32-wasip1 cannot spawn threads, and a panic aborts the whole test
       # binary there (libtest ignores the #[should_panic] tests by itself), so
       # the tests that start a thread or catch a panic are skipped by name.
