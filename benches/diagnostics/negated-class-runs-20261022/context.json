@@ -1,0 +1,16 @@
+{
+  "baseline_commit": "7e67f0436f34b237f2b558ac5a4c9a568d415154",
+  "cpu": "Apple M1 Ultra",
+  "physical_memory_bytes": 68719476736,
+  "logical_cpus": 20,
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+  "profile": "bench, opt-level=3, lto=thin, default target CPU",
+  "features": [
+    "dfa-prefilter",
+    "ffi"
+  ],
+  "pcre2_sys_static": "1",
+  "host_note": "Interactive local host; no thermal or performance warning reported by pmset; system background load and CPU affinity were not controlled. Agent builds, tests, and timed benchmarks ran in separate phases.",
+  "lock_sha256": "d1e0a33adb5a7760adc928a1a17da3d0e0b9a1385c087d610bf8ed6a41b93421"
+}

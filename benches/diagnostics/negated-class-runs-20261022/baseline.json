@@ -1,0 +1,731 @@
+[
+  {
+    "case": "semver_version_parse",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/semver_version_parse/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 5623.847771433906,
+        "lower_ns": 5578.85303511315,
+        "upper_ns": 5670.757357607903,
+        "raw_directory": "production_regex/semver_version_parse_steady_rust/new"
+      },
+      "first_use": {
+        "ns": 55278.40493176346,
+        "lower_ns": 54878.42054411621,
+        "upper_ns": 55672.125527294425,
+        "raw_directory": "production_regex/semver_version_parse_first_use_rust/new"
+      },
+      "compile": {
+        "ns": 40422.95902923876,
+        "lower_ns": 40103.94165781415,
+        "upper_ns": 40761.22348768147,
+        "raw_directory": "production_regex/semver_version_parse_compile_rust/new"
+      }
+    }
+  },
+  {
+    "case": "python_markdown_smart_strong_em_re",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/python_markdown_smart_strong_em_re/rust",
+    "status": "measured",
+    "lanes": {
+      "first_use": {
+        "ns": 27711.49409334336,
+        "lower_ns": 27425.057585432358,
+        "upper_ns": 27985.657062630315,
+        "raw_directory": "production_regex/python_markdown_smart_strong_em_re_first_use_rust/new"
+      },
+      "compile": {
+        "ns": 14118.29106003824,
+        "lower_ns": 13971.654254699508,
+        "upper_ns": 14257.894072483496,
+        "raw_directory": "production_regex/python_markdown_smart_strong_em_re_compile_rust/new"
+      },
+      "steady": {
+        "ns": 467.4257769620872,
+        "lower_ns": 466.0045511745261,
+        "upper_ns": 468.7485067496074,
+        "raw_directory": "production_regex/python_markdown_smart_strong_em_re_steady_rust/new"
+      }
+    }
+  },
+  {
+    "case": "literal_absent",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/literal_absent/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 15.273057126884344,
+        "lower_ns": 15.157065963389439,
+        "upper_ns": 15.386230672922736,
+        "raw_directory": "production_regex/literal_absent_steady_rust/new"
+      },
+      "compile": {
+        "ns": 896.4830963007573,
+        "lower_ns": 888.8608179295452,
+        "upper_ns": 904.0273893593803,
+        "raw_directory": "production_regex/literal_absent_compile_rust/new"
+      },
+      "first_use": {
+        "ns": 910.3523652819098,
+        "lower_ns": 903.822348482315,
+        "upper_ns": 917.5382351114233,
+        "raw_directory": "production_regex/literal_absent_first_use_rust/new"
+      }
+    }
+  },
+  {
+    "case": "semver_hyphen_range_captures",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/semver_hyphen_range_captures/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 2612.671280142559,
+        "lower_ns": 2597.355388607982,
+        "upper_ns": 2628.8555284397385,
+        "raw_directory": "production_regex/semver_hyphen_range_captures_steady_rust/new"
+      },
+      "compile": {
+        "ns": 117052.54704199223,
+        "lower_ns": 116056.51539894653,
+        "upper_ns": 118033.97673279741,
+        "raw_directory": "production_regex/semver_hyphen_range_captures_compile_rust/new"
+      },
+      "first_use": {
+        "ns": 158610.85036323065,
+        "lower_ns": 156297.91953930867,
+        "upper_ns": 161384.04694540377,
+        "raw_directory": "production_regex/semver_hyphen_range_captures_first_use_rust/new"
+      }
+    }
+  },
+  {
+    "case": "literal_end",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/literal_end/rust",
+    "status": "measured",
+    "lanes": {
+      "first_use": {
+        "ns": 917.4018977154037,
+        "lower_ns": 908.9616386265182,
+        "upper_ns": 924.9700379465528,
+        "raw_directory": "production_regex/literal_end_first_use_rust/new"
+      },
+      "compile": {
+        "ns": 896.2094263236107,
+        "lower_ns": 891.2628542511802,
+        "upper_ns": 901.7242902046206,
+        "raw_directory": "production_regex/literal_end_compile_rust/new"
+      },
+      "steady": {
+        "ns": 16.308917085795272,
+        "lower_ns": 16.21214687321963,
+        "upper_ns": 16.404489557282755,
+        "raw_directory": "production_regex/literal_end_steady_rust/new"
+      }
+    }
+  },
+  {
+    "case": "fluent_bit_apache",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/fluent_bit_apache/rust",
+    "status": "measured",
+    "lanes": {
+      "compile": {
+        "ns": 32624.27541324414,
+        "lower_ns": 32332.332536222144,
+        "upper_ns": 32915.936758363365,
+        "raw_directory": "production_regex/fluent_bit_apache_compile_rust/new"
+      },
+      "steady": {
+        "ns": 828.7724549413939,
+        "lower_ns": 824.3478182150764,
+        "upper_ns": 833.3065572634139,
+        "raw_directory": "production_regex/fluent_bit_apache_steady_rust/new"
+      },
+      "first_use": {
+        "ns": 61541.86674888064,
+        "lower_ns": 61000.04014498198,
+        "upper_ns": 62106.312228719726,
+        "raw_directory": "production_regex/fluent_bit_apache_first_use_rust/new"
+      }
+    }
+  },
+  {
+    "case": "python_markdown_smart_emphasis_re",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/python_markdown_smart_emphasis_re/rust",
+    "status": "measured",
+    "lanes": {
+      "first_use": {
+        "ns": 16241.230939863386,
+        "lower_ns": 15993.677170766006,
+        "upper_ns": 16530.46062849642,
+        "raw_directory": "production_regex/python_markdown_smart_emphasis_re_first_use_rust/new"
+      },
+      "steady": {
+        "ns": 734.3789916439384,
+        "lower_ns": 730.0683244354926,
+        "upper_ns": 738.2166996417211,
+        "raw_directory": "production_regex/python_markdown_smart_emphasis_re_steady_rust/new"
+      },
+      "compile": {
+        "ns": 8052.548908306601,
+        "lower_ns": 7973.119116133021,
+        "upper_ns": 8130.8498717541615,
+        "raw_directory": "production_regex/python_markdown_smart_emphasis_re_compile_rust/new"
+      }
+    }
+  },
+  {
+    "case": "ferrolink_markup_scan",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/ferrolink_markup_scan/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 155661.33804666757,
+        "lower_ns": 153881.58622753507,
+        "upper_ns": 158017.96982527722,
+        "raw_directory": "production_regex/ferrolink_markup_scan_steady_rust/new"
+      },
+      "compile": {
+        "ns": 31094.21934645557,
+        "lower_ns": 30835.02697131981,
+        "upper_ns": 31362.465075254742,
+        "raw_directory": "production_regex/ferrolink_markup_scan_compile_rust/new"
+      },
+      "first_use": {
+        "ns": 32812.21843831717,
+        "lower_ns": 32595.290049396805,
+        "upper_ns": 33027.05216047397,
+        "raw_directory": "production_regex/ferrolink_markup_scan_first_use_rust/new"
+      }
+    }
+  },
+  {
+    "case": "jinja_float_token",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/jinja_float_token/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 2952.362742477384,
+        "lower_ns": 2939.270672803121,
+        "upper_ns": 2966.249922115866,
+        "raw_directory": "production_regex/jinja_float_token_steady_rust/new"
+      },
+      "first_use": {
+        "ns": 62496.012111338336,
+        "lower_ns": 61896.88120683807,
+        "upper_ns": 63090.13788845473,
+        "raw_directory": "production_regex/jinja_float_token_first_use_rust/new"
+      },
+      "compile": {
+        "ns": 43800.134938927265,
+        "lower_ns": 43431.85566824266,
+        "upper_ns": 44158.911983234706,
+        "raw_directory": "production_regex/jinja_float_token_compile_rust/new"
+      }
+    }
+  },
+  {
+    "case": "django_email_local_part",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/django_email_local_part/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 1109.2878742518706,
+        "lower_ns": 1103.735476559474,
+        "upper_ns": 1114.3984611677758,
+        "raw_directory": "production_regex/django_email_local_part_steady_rust/new"
+      },
+      "first_use": {
+        "ns": 42737.793309593246,
+        "lower_ns": 42486.51229877158,
+        "upper_ns": 43014.29819301907,
+        "raw_directory": "production_regex/django_email_local_part_first_use_rust/new"
+      },
+      "compile": {
+        "ns": 32111.118389238527,
+        "lower_ns": 31896.212240147684,
+        "upper_ns": 32321.608873908204,
+        "raw_directory": "production_regex/django_email_local_part_compile_rust/new"
+      }
+    }
+  },
+  {
+    "case": "symfony_grapheme_chunks_2",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/symfony_grapheme_chunks_2/rust",
+    "status": "measured",
+    "lanes": {
+      "first_use": {
+        "ns": 4951.6428326888,
+        "lower_ns": 4904.88646255195,
+        "upper_ns": 4993.048289810446,
+        "raw_directory": "production_regex/symfony_grapheme_chunks_2_first_use_rust/new"
+      },
+      "steady": {
+        "ns": 444.4987252658637,
+        "lower_ns": 436.0138864863282,
+        "upper_ns": 451.51431297414194,
+        "raw_directory": "production_regex/symfony_grapheme_chunks_2_steady_rust/new"
+      },
+      "compile": {
+        "ns": 4602.0946191128605,
+        "lower_ns": 4469.446670248659,
+        "upper_ns": 4804.705215412354,
+        "raw_directory": "production_regex/symfony_grapheme_chunks_2_compile_rust/new"
+      }
+    }
+  },
+  {
+    "case": "django_url_regex",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/django_url_regex/rust",
+    "status": "measured",
+    "lanes": {
+      "first_use": {
+        "ns": 2047113.6834358568,
+        "lower_ns": 2023788.5379240548,
+        "upper_ns": 2070741.3370370476,
+        "raw_directory": "production_regex/django_url_regex_first_use_rust/new"
+      },
+      "steady": {
+        "ns": 131638.89360439478,
+        "lower_ns": 130753.5080260258,
+        "upper_ns": 132542.41139508702,
+        "raw_directory": "production_regex/django_url_regex_steady_rust/new"
+      },
+      "compile": {
+        "ns": 1535591.4786345044,
+        "lower_ns": 1520649.6423271764,
+        "upper_ns": 1549998.8354205487,
+        "raw_directory": "production_regex/django_url_regex_compile_rust/new"
+      }
+    }
+  },
+  {
+    "case": "literal_first",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/literal_first/rust",
+    "status": "measured",
+    "lanes": {
+      "compile": {
+        "ns": 882.1575579882226,
+        "lower_ns": 875.9003411450176,
+        "upper_ns": 888.2820116908558,
+        "raw_directory": "production_regex/literal_first_compile_rust/new"
+      },
+      "first_use": {
+        "ns": 922.9913940791937,
+        "lower_ns": 911.4100960098343,
+        "upper_ns": 936.2466317122668,
+        "raw_directory": "production_regex/literal_first_first_use_rust/new"
+      },
+      "steady": {
+        "ns": 14.109779105543932,
+        "lower_ns": 14.019117025228933,
+        "upper_ns": 14.233869727231749,
+        "raw_directory": "production_regex/literal_first_steady_rust/new"
+      }
+    }
+  },
+  {
+    "case": "uuid_shape",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/uuid_shape/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 767.2392740887284,
+        "lower_ns": 763.4833183463437,
+        "upper_ns": 771.0839491809008,
+        "raw_directory": "production_regex/uuid_shape_steady_rust/new"
+      },
+      "first_use": {
+        "ns": 29140.496515586245,
+        "lower_ns": 28853.481382275135,
+        "upper_ns": 29420.714355830052,
+        "raw_directory": "production_regex/uuid_shape_first_use_rust/new"
+      },
+      "compile": {
+        "ns": 15341.248097352465,
+        "lower_ns": 15239.426782087063,
+        "upper_ns": 15441.184993405119,
+        "raw_directory": "production_regex/uuid_shape_compile_rust/new"
+      }
+    }
+  },
+  {
+    "case": "ipv4_validation",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/ipv4_validation/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 235.82840011135605,
+        "lower_ns": 233.87260795681772,
+        "upper_ns": 237.6313874712546,
+        "raw_directory": "production_regex/ipv4_validation_steady_rust/new"
+      },
+      "first_use": {
+        "ns": 39654.98777300795,
+        "lower_ns": 39104.79622184914,
+        "upper_ns": 40356.16576279559,
+        "raw_directory": "production_regex/ipv4_validation_first_use_rust/new"
+      },
+      "compile": {
+        "ns": 26665.823546962532,
+        "lower_ns": 26510.692137988146,
+        "upper_ns": 26804.562045824157,
+        "raw_directory": "production_regex/ipv4_validation_compile_rust/new"
+      }
+    }
+  },
+  {
+    "case": "jinja_integer_token",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/jinja_integer_token/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 2297.5880478651566,
+        "lower_ns": 2290.081392271485,
+        "upper_ns": 2305.302765729934,
+        "raw_directory": "production_regex/jinja_integer_token_steady_rust/new"
+      },
+      "compile": {
+        "ns": 31460.19499392031,
+        "lower_ns": 31226.137693976354,
+        "upper_ns": 31692.170539930823,
+        "raw_directory": "production_regex/jinja_integer_token_compile_rust/new"
+      },
+      "first_use": {
+        "ns": 43888.54306788132,
+        "lower_ns": 43556.80999124672,
+        "upper_ns": 44201.56133889723,
+        "raw_directory": "production_regex/jinja_integer_token_first_use_rust/new"
+      }
+    }
+  },
+  {
+    "case": "uuid_v4",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/uuid_v4/rust",
+    "status": "measured",
+    "lanes": {
+      "first_use": {
+        "ns": 30328.585697268216,
+        "lower_ns": 30048.243208999076,
+        "upper_ns": 30609.550782878632,
+        "raw_directory": "production_regex/uuid_v4_first_use_rust/new"
+      },
+      "compile": {
+        "ns": 16729.840499237143,
+        "lower_ns": 16570.856877325892,
+        "upper_ns": 16890.801152326298,
+        "raw_directory": "production_regex/uuid_v4_compile_rust/new"
+      },
+      "steady": {
+        "ns": 350.85158845149687,
+        "lower_ns": 349.19207318135915,
+        "upper_ns": 352.4042280407901,
+        "raw_directory": "production_regex/uuid_v4_steady_rust/new"
+      }
+    }
+  },
+  {
+    "case": "ferrolink_attribute_split",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/ferrolink_attribute_split/rust",
+    "status": "measured",
+    "lanes": {
+      "compile": {
+        "ns": 23369.768895816356,
+        "lower_ns": 23118.871311706887,
+        "upper_ns": 23600.77990483963,
+        "raw_directory": "production_regex/ferrolink_attribute_split_compile_rust/new"
+      },
+      "steady": {
+        "ns": 106214.75857946642,
+        "lower_ns": 104177.25861802931,
+        "upper_ns": 107986.70208181771,
+        "raw_directory": "production_regex/ferrolink_attribute_split_steady_rust/new"
+      },
+      "first_use": {
+        "ns": 23142.11248753931,
+        "lower_ns": 22972.943691167187,
+        "upper_ns": 23296.824767424354,
+        "raw_directory": "production_regex/ferrolink_attribute_split_first_use_rust/new"
+      }
+    }
+  },
+  {
+    "case": "fluent_bit_nginx",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/fluent_bit_nginx/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 1226.6805126246866,
+        "lower_ns": 1221.4895572952241,
+        "upper_ns": 1232.7631427178508,
+        "raw_directory": "production_regex/fluent_bit_nginx_steady_rust/new"
+      },
+      "compile": {
+        "ns": 30758.163127721673,
+        "lower_ns": 30476.481408504427,
+        "upper_ns": 31036.529703087075,
+        "raw_directory": "production_regex/fluent_bit_nginx_compile_rust/new"
+      },
+      "first_use": {
+        "ns": 58911.73203490736,
+        "lower_ns": 58434.911563415764,
+        "upper_ns": 59339.07491679822,
+        "raw_directory": "production_regex/fluent_bit_nginx_first_use_rust/new"
+      }
+    }
+  },
+  {
+    "case": "ipv6_validation",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/ipv6_validation/rust",
+    "status": "measured",
+    "lanes": {
+      "compile": {
+        "ns": 250470.9068926884,
+        "lower_ns": 249120.45000066518,
+        "upper_ns": 252195.12093770743,
+        "raw_directory": "production_regex/ipv6_validation_compile_rust/new"
+      },
+      "steady": {
+        "ns": 358.57074194409836,
+        "lower_ns": 356.92382235457364,
+        "upper_ns": 360.3608190651062,
+        "raw_directory": "production_regex/ipv6_validation_steady_rust/new"
+      },
+      "first_use": {
+        "ns": 360670.5059181495,
+        "lower_ns": 356871.34813596256,
+        "upper_ns": 365298.51948425424,
+        "raw_directory": "production_regex/ipv6_validation_first_use_rust/new"
+      }
+    }
+  },
+  {
+    "case": "mastodon_hashtag_regex_step",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/mastodon_hashtag_regex_step/rust",
+    "status": "measured",
+    "lanes": {
+      "first_use": {
+        "ns": 60316.41815234684,
+        "lower_ns": 59803.846778936844,
+        "upper_ns": 60819.36811898206,
+        "raw_directory": "production_regex/mastodon_hashtag_regex_step_first_use_rust/new"
+      },
+      "steady": {
+        "ns": 4766.543276149584,
+        "lower_ns": 4687.443290178239,
+        "upper_ns": 4839.225407036789,
+        "raw_directory": "production_regex/mastodon_hashtag_regex_step_steady_rust/new"
+      },
+      "compile": {
+        "ns": 59399.79626092569,
+        "lower_ns": 59090.7509562517,
+        "upper_ns": 59733.48514707208,
+        "raw_directory": "production_regex/mastodon_hashtag_regex_step_compile_rust/new"
+      }
+    }
+  },
+  {
+    "case": "django_email_domain",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/django_email_domain/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 13862.526867772223,
+        "lower_ns": 13788.84313606699,
+        "upper_ns": 13937.497931015194,
+        "raw_directory": "production_regex/django_email_domain_steady_rust/new"
+      },
+      "compile": {
+        "ns": 1359638.7690144712,
+        "lower_ns": 1346149.0327608283,
+        "upper_ns": 1373426.9098195687,
+        "raw_directory": "production_regex/django_email_domain_compile_rust/new"
+      },
+      "first_use": {
+        "ns": 1719176.063841872,
+        "lower_ns": 1705245.1143690434,
+        "upper_ns": 1734919.036155712,
+        "raw_directory": "production_regex/django_email_domain_first_use_rust/new"
+      }
+    }
+  },
+  {
+    "case": "literal_middle",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/literal_middle/rust",
+    "status": "measured",
+    "lanes": {
+      "first_use": {
+        "ns": 907.8017343385118,
+        "lower_ns": 900.9279616116992,
+        "upper_ns": 914.1260390147802,
+        "raw_directory": "production_regex/literal_middle_first_use_rust/new"
+      },
+      "steady": {
+        "ns": 14.197812143741993,
+        "lower_ns": 14.125197364745533,
+        "upper_ns": 14.277047241959632,
+        "raw_directory": "production_regex/literal_middle_steady_rust/new"
+      },
+      "compile": {
+        "ns": 891.639940260747,
+        "lower_ns": 880.706898118821,
+        "upper_ns": 904.3457277503736,
+        "raw_directory": "production_regex/literal_middle_compile_rust/new"
+      }
+    }
+  },
+  {
+    "case": "wordpress_shortcode_captures",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/wordpress_shortcode_captures/rust",
+    "status": "measured",
+    "lanes": {
+      "compile": {
+        "ns": 30464.29364530379,
+        "lower_ns": 30149.936823332824,
+        "upper_ns": 30777.810521633957,
+        "raw_directory": "production_regex/wordpress_shortcode_captures_compile_rust/new"
+      },
+      "steady": {
+        "ns": 3197.3708923598037,
+        "lower_ns": 3135.701618598291,
+        "upper_ns": 3249.191822265355,
+        "raw_directory": "production_regex/wordpress_shortcode_captures_steady_rust/new"
+      },
+      "first_use": {
+        "ns": 31096.02854615833,
+        "lower_ns": 30851.928386596257,
+        "upper_ns": 31354.17471216908,
+        "raw_directory": "production_regex/wordpress_shortcode_captures_first_use_rust/new"
+      }
+    }
+  },
+  {
+    "case": "jinja_string_token",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/jinja_string_token/rust",
+    "status": "measured",
+    "lanes": {
+      "compile": {
+        "ns": 16495.779600097,
+        "lower_ns": 16369.247276718974,
+        "upper_ns": 16632.54567621943,
+        "raw_directory": "production_regex/jinja_string_token_compile_rust/new"
+      },
+      "first_use": {
+        "ns": 31155.85377451832,
+        "lower_ns": 30902.6757665329,
+        "upper_ns": 31395.10122851109,
+        "raw_directory": "production_regex/jinja_string_token_first_use_rust/new"
+      },
+      "steady": {
+        "ns": 1396.9847325938651,
+        "lower_ns": 1393.534913250457,
+        "upper_ns": 1400.589676545069,
+        "raw_directory": "production_regex/jinja_string_token_steady_rust/new"
+      }
+    }
+  },
+  {
+    "case": "rails_underscore_regex_step",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/rails_underscore_regex_step/rust",
+    "status": "measured",
+    "lanes": {
+      "steady": {
+        "ns": 3402.8098110490973,
+        "lower_ns": 3373.1546748194974,
+        "upper_ns": 3436.3785856956047,
+        "raw_directory": "production_regex/rails_underscore_regex_step_steady_rust/new"
+      },
+      "compile": {
+        "ns": 7113.295612702978,
+        "lower_ns": 7033.512777676134,
+        "upper_ns": 7193.500305463271,
+        "raw_directory": "production_regex/rails_underscore_regex_step_compile_rust/new"
+      },
+      "first_use": {
+        "ns": 7193.200736033886,
+        "lower_ns": 7146.251736468173,
+        "upper_ns": 7243.271030075264,
+        "raw_directory": "production_regex/rails_underscore_regex_step_first_use_rust/new"
+      }
+    }
+  },
+  {
+    "case": "symfony_grapheme_chunks_1",
+    "engine": "rust",
+    "repetition": 0,
+    "raw": "raw/run-1/symfony_grapheme_chunks_1/rust",
+    "status": "measured",
+    "lanes": {
+      "compile": {
+        "ns": 4298.121308487367,
+        "lower_ns": 4260.824493243021,
+        "upper_ns": 4335.126736708975,
+        "raw_directory": "production_regex/symfony_grapheme_chunks_1_compile_rust/new"
+      },
+      "first_use": {
+        "ns": 5039.484464438566,
+        "lower_ns": 5004.289994988051,
+        "upper_ns": 5073.135287092723,
+        "raw_directory": "production_regex/symfony_grapheme_chunks_1_first_use_rust/new"
+      },
+      "steady": {
+        "ns": 1761.848625638549,
+        "lower_ns": 1730.984634080025,
+        "upper_ns": 1788.7899243515512,
+        "raw_directory": "production_regex/symfony_grapheme_chunks_1_steady_rust/new"
+      }
+    }
+  }
+]
