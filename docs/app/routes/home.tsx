@@ -9,6 +9,7 @@ import { SpeedSummary } from "../components/speed-summary";
 import {
   ClosingSection,
   FitSection,
+  PrecompiledSection,
   SafetySection,
   ScannerSection,
   StartSection,
@@ -172,6 +173,7 @@ export default function HomePage() {
       <WhySection />
       <SyntaxSection />
       <ScannerSection />
+      <PrecompiledSection />
       <SpeedSection />
       <SafetySection />
       <FitSection />

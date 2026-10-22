@@ -1,9 +1,9 @@
 {
   "format_version": 1,
   "run": {
-    "head_sha": "8796aef33af2f874a0fdf56685f831cf175a7cd0",
-    "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/39588030348",
-    "created_at": "2026-10-21T10:54:42Z"
+    "head_sha": "817d2b349b88cec0b2c130e416a3caa90220e129",
+    "html_url": "https://github.com/sebastian-software/ferroni/actions/runs/39852407433",
+    "created_at": "2026-10-22T20:51:17Z"
   },
   "case_count": 23,
   "input_count": 743,
@@ -18,17 +18,17 @@
           "lane": "steady",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 1.7666042665576858,
-          "ferroni_cases": 16,
+          "family_weighted_ratio": 1.8118427190511073,
+          "ferroni_cases": 17,
           "comparator_cases": 0,
-          "inconclusive_cases": 7
+          "inconclusive_cases": 6
         },
         {
           "engine": "rust_erroraware",
           "lane": "compile",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 1.0006862377123238,
+          "family_weighted_ratio": 1.005169251184631,
           "ferroni_cases": 0,
           "comparator_cases": 0,
           "inconclusive_cases": 23
@@ -38,17 +38,17 @@
           "lane": "first_use",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.9408241039814393,
-          "ferroni_cases": 0,
-          "comparator_cases": 10,
-          "inconclusive_cases": 13
+          "family_weighted_ratio": 0.7656641377752974,
+          "ferroni_cases": 1,
+          "comparator_cases": 16,
+          "inconclusive_cases": 6
         },
         {
           "engine": "c",
           "lane": "steady",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 3.262333925910313,
+          "family_weighted_ratio": 3.3420037801485774,
           "ferroni_cases": 23,
           "comparator_cases": 0,
           "inconclusive_cases": 0
@@ -58,7 +58,7 @@
           "lane": "compile",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.3526704185258927,
+          "family_weighted_ratio": 0.5697731869975776,
           "ferroni_cases": 5,
           "comparator_cases": 18,
           "inconclusive_cases": 0
@@ -68,27 +68,27 @@
           "lane": "first_use",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.37560451838368086,
+          "family_weighted_ratio": 0.48094832836249285,
           "ferroni_cases": 5,
-          "comparator_cases": 18,
-          "inconclusive_cases": 0
+          "comparator_cases": 17,
+          "inconclusive_cases": 1
         },
         {
           "engine": "onigmo",
           "lane": "steady",
           "case_count": 22,
           "family_count": 13,
-          "family_weighted_ratio": 3.6713709804321737,
-          "ferroni_cases": 20,
+          "family_weighted_ratio": 3.722601194335888,
+          "ferroni_cases": 22,
           "comparator_cases": 0,
-          "inconclusive_cases": 2
+          "inconclusive_cases": 0
         },
         {
           "engine": "onigmo",
           "lane": "compile",
           "case_count": 22,
           "family_count": 13,
-          "family_weighted_ratio": 0.4886080109434654,
+          "family_weighted_ratio": 0.7807232165384639,
           "ferroni_cases": 6,
           "comparator_cases": 16,
           "inconclusive_cases": 0
@@ -98,7 +98,7 @@
           "lane": "first_use",
           "case_count": 22,
           "family_count": 13,
-          "family_weighted_ratio": 0.48336489040061714,
+          "family_weighted_ratio": 0.6089192281898519,
           "ferroni_cases": 6,
           "comparator_cases": 16,
           "inconclusive_cases": 0
@@ -108,7 +108,7 @@
           "lane": "steady",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.6773663976695892,
+          "family_weighted_ratio": 0.6939122947696291,
           "ferroni_cases": 4,
           "comparator_cases": 18,
           "inconclusive_cases": 1
@@ -118,19 +118,19 @@
           "lane": "compile",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.2602981286389872,
+          "family_weighted_ratio": 0.4237938954312769,
           "ferroni_cases": 0,
-          "comparator_cases": 23,
-          "inconclusive_cases": 0
+          "comparator_cases": 22,
+          "inconclusive_cases": 1
         },
         {
           "engine": "pcre2_jit",
           "lane": "first_use",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.29108347142929347,
-          "ferroni_cases": 0,
-          "comparator_cases": 22,
+          "family_weighted_ratio": 0.36814991396793434,
+          "ferroni_cases": 1,
+          "comparator_cases": 21,
           "inconclusive_cases": 1
         },
         {
@@ -138,7 +138,7 @@
           "lane": "steady",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 1.9567451572643955,
+          "family_weighted_ratio": 1.9717122840511676,
           "ferroni_cases": 20,
           "comparator_cases": 3,
           "inconclusive_cases": 0
@@ -148,7 +148,7 @@
           "lane": "compile",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.08336504429157067,
+          "family_weighted_ratio": 0.13489103845353884,
           "ferroni_cases": 0,
           "comparator_cases": 23,
           "inconclusive_cases": 0
@@ -158,7 +158,7 @@
           "lane": "first_use",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.09796252913118149,
+          "family_weighted_ratio": 0.12437367896588045,
           "ferroni_cases": 0,
           "comparator_cases": 23,
           "inconclusive_cases": 0
@@ -168,7 +168,7 @@
           "lane": "steady",
           "case_count": 19,
           "family_count": 11,
-          "family_weighted_ratio": 3.1058048396387696,
+          "family_weighted_ratio": 3.0947479311494184,
           "ferroni_cases": 17,
           "comparator_cases": 0,
           "inconclusive_cases": 2
@@ -178,27 +178,27 @@
           "lane": "compile",
           "case_count": 19,
           "family_count": 11,
-          "family_weighted_ratio": 1.9998157642601775,
-          "ferroni_cases": 13,
-          "comparator_cases": 4,
-          "inconclusive_cases": 2
+          "family_weighted_ratio": 3.092233204665413,
+          "ferroni_cases": 16,
+          "comparator_cases": 2,
+          "inconclusive_cases": 1
         },
         {
           "engine": "fancy_regex",
           "lane": "first_use",
           "case_count": 19,
           "family_count": 11,
-          "family_weighted_ratio": 2.0359984824605175,
-          "ferroni_cases": 14,
+          "family_weighted_ratio": 2.4025609779005586,
+          "ferroni_cases": 13,
           "comparator_cases": 3,
-          "inconclusive_cases": 2
+          "inconclusive_cases": 3
         },
         {
           "engine": "fancy_regex_seek",
           "lane": "steady",
           "case_count": 19,
           "family_count": 11,
-          "family_weighted_ratio": 3.061510407525453,
+          "family_weighted_ratio": 3.0342873940871473,
           "ferroni_cases": 17,
           "comparator_cases": 0,
           "inconclusive_cases": 2
@@ -208,47 +208,47 @@
           "lane": "compile",
           "case_count": 19,
           "family_count": 11,
-          "family_weighted_ratio": 2.2669683488878682,
-          "ferroni_cases": 13,
-          "comparator_cases": 4,
-          "inconclusive_cases": 2
+          "family_weighted_ratio": 3.490786516870757,
+          "ferroni_cases": 16,
+          "comparator_cases": 3,
+          "inconclusive_cases": 0
         },
         {
           "engine": "fancy_regex_seek",
           "lane": "first_use",
           "case_count": 19,
           "family_count": 11,
-          "family_weighted_ratio": 2.302238125752696,
+          "family_weighted_ratio": 2.7331026600034254,
           "ferroni_cases": 14,
-          "comparator_cases": 3,
-          "inconclusive_cases": 2
-        },
-        {
-          "engine": "regex",
-          "lane": "steady",
-          "case_count": 11,
-          "family_count": 6,
-          "family_weighted_ratio": 1.4764389674296572,
-          "ferroni_cases": 6,
-          "comparator_cases": 1,
-          "inconclusive_cases": 4
-        },
-        {
-          "engine": "regex",
-          "lane": "compile",
-          "case_count": 11,
-          "family_count": 6,
-          "family_weighted_ratio": 1.8325668224043867,
-          "ferroni_cases": 7,
-          "comparator_cases": 3,
+          "comparator_cases": 4,
           "inconclusive_cases": 1
         },
         {
           "engine": "regex",
+          "lane": "steady",
+          "case_count": 11,
+          "family_count": 6,
+          "family_weighted_ratio": 1.501563100207834,
+          "ferroni_cases": 7,
+          "comparator_cases": 2,
+          "inconclusive_cases": 2
+        },
+        {
+          "engine": "regex",
+          "lane": "compile",
+          "case_count": 11,
+          "family_count": 6,
+          "family_weighted_ratio": 2.6707412115018885,
+          "ferroni_cases": 9,
+          "comparator_cases": 0,
+          "inconclusive_cases": 2
+        },
+        {
+          "engine": "regex",
           "lane": "first_use",
           "case_count": 11,
           "family_count": 6,
-          "family_weighted_ratio": 1.913750309921078,
+          "family_weighted_ratio": 2.0282159169847196,
           "ferroni_cases": 7,
           "comparator_cases": 4,
           "inconclusive_cases": 0
@@ -264,240 +264,240 @@
           "lane": "steady",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 1.744365629686482,
-          "ferroni_cases": 18,
+          "family_weighted_ratio": 1.783003833786642,
+          "ferroni_cases": 11,
           "comparator_cases": 0,
-          "inconclusive_cases": 5
+          "inconclusive_cases": 12
         },
         {
           "engine": "rust_erroraware",
           "lane": "compile",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 1.0034262311628352,
-          "ferroni_cases": 0,
-          "comparator_cases": 0,
-          "inconclusive_cases": 23
+          "family_weighted_ratio": 0.99592751452945,
+          "ferroni_cases": 2,
+          "comparator_cases": 2,
+          "inconclusive_cases": 19
         },
         {
           "engine": "rust_erroraware",
           "lane": "first_use",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.9545056014284332,
+          "family_weighted_ratio": 0.7405793503711924,
           "ferroni_cases": 0,
-          "comparator_cases": 6,
-          "inconclusive_cases": 17
+          "comparator_cases": 13,
+          "inconclusive_cases": 10
         },
         {
           "engine": "c",
           "lane": "steady",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 2.606532227093116,
-          "ferroni_cases": 21,
+          "family_weighted_ratio": 2.53457544477816,
+          "ferroni_cases": 19,
+          "comparator_cases": 1,
+          "inconclusive_cases": 3
+        },
+        {
+          "engine": "c",
+          "lane": "compile",
+          "case_count": 23,
+          "family_count": 13,
+          "family_weighted_ratio": 0.47614866042940246,
+          "ferroni_cases": 4,
+          "comparator_cases": 19,
+          "inconclusive_cases": 0
+        },
+        {
+          "engine": "c",
+          "lane": "first_use",
+          "case_count": 23,
+          "family_count": 13,
+          "family_weighted_ratio": 0.40751872415993284,
+          "ferroni_cases": 4,
+          "comparator_cases": 19,
+          "inconclusive_cases": 0
+        },
+        {
+          "engine": "onigmo",
+          "lane": "steady",
+          "case_count": 22,
+          "family_count": 13,
+          "family_weighted_ratio": 3.4930912293694596,
+          "ferroni_cases": 19,
           "comparator_cases": 0,
+          "inconclusive_cases": 3
+        },
+        {
+          "engine": "onigmo",
+          "lane": "compile",
+          "case_count": 22,
+          "family_count": 13,
+          "family_weighted_ratio": 0.625432102419083,
+          "ferroni_cases": 5,
+          "comparator_cases": 17,
+          "inconclusive_cases": 0
+        },
+        {
+          "engine": "onigmo",
+          "lane": "first_use",
+          "case_count": 22,
+          "family_count": 13,
+          "family_weighted_ratio": 0.48576476265335394,
+          "ferroni_cases": 5,
+          "comparator_cases": 17,
+          "inconclusive_cases": 0
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "steady",
+          "case_count": 23,
+          "family_count": 13,
+          "family_weighted_ratio": 0.6030664940416182,
+          "ferroni_cases": 2,
+          "comparator_cases": 17,
+          "inconclusive_cases": 4
+        },
+        {
+          "engine": "pcre2_jit",
+          "lane": "compile",
+          "case_count": 23,
+          "family_count": 13,
+          "family_weighted_ratio": 0.39804838715124585,
+          "ferroni_cases": 0,
+          "comparator_cases": 21,
           "inconclusive_cases": 2
         },
         {
-          "engine": "c",
-          "lane": "compile",
-          "case_count": 23,
-          "family_count": 13,
-          "family_weighted_ratio": 0.3123937410428651,
-          "ferroni_cases": 4,
-          "comparator_cases": 19,
-          "inconclusive_cases": 0
-        },
-        {
-          "engine": "c",
+          "engine": "pcre2_jit",
           "lane": "first_use",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.3392151715692173,
-          "ferroni_cases": 4,
+          "family_weighted_ratio": 0.3572324063761562,
+          "ferroni_cases": 1,
           "comparator_cases": 19,
-          "inconclusive_cases": 0
+          "inconclusive_cases": 3
         },
         {
-          "engine": "onigmo",
-          "lane": "steady",
-          "case_count": 22,
-          "family_count": 13,
-          "family_weighted_ratio": 3.4654988739717787,
-          "ferroni_cases": 20,
-          "comparator_cases": 1,
-          "inconclusive_cases": 1
-        },
-        {
-          "engine": "onigmo",
-          "lane": "compile",
-          "case_count": 22,
-          "family_count": 13,
-          "family_weighted_ratio": 0.396615527091519,
-          "ferroni_cases": 5,
-          "comparator_cases": 17,
-          "inconclusive_cases": 0
-        },
-        {
-          "engine": "onigmo",
-          "lane": "first_use",
-          "case_count": 22,
-          "family_count": 13,
-          "family_weighted_ratio": 0.39622104015464926,
-          "ferroni_cases": 5,
-          "comparator_cases": 17,
-          "inconclusive_cases": 0
-        },
-        {
-          "engine": "pcre2_jit",
+          "engine": "pcre2",
           "lane": "steady",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.609266414543806,
-          "ferroni_cases": 4,
-          "comparator_cases": 18,
-          "inconclusive_cases": 1
+          "family_weighted_ratio": 1.8021203401289594,
+          "ferroni_cases": 15,
+          "comparator_cases": 2,
+          "inconclusive_cases": 6
         },
         {
-          "engine": "pcre2_jit",
+          "engine": "pcre2",
           "lane": "compile",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.23792660191801845,
+          "family_weighted_ratio": 0.10411669876636451,
           "ferroni_cases": 0,
           "comparator_cases": 23,
           "inconclusive_cases": 0
         },
         {
-          "engine": "pcre2_jit",
+          "engine": "pcre2",
           "lane": "first_use",
           "case_count": 23,
           "family_count": 13,
-          "family_weighted_ratio": 0.26273224990798927,
+          "family_weighted_ratio": 0.13225924940778788,
           "ferroni_cases": 0,
           "comparator_cases": 22,
           "inconclusive_cases": 1
         },
         {
-          "engine": "pcre2",
+          "engine": "fancy_regex",
           "lane": "steady",
-          "case_count": 23,
-          "family_count": 13,
-          "family_weighted_ratio": 1.809541914648032,
+          "case_count": 19,
+          "family_count": 11,
+          "family_weighted_ratio": 2.894469287891846,
+          "ferroni_cases": 14,
+          "comparator_cases": 0,
+          "inconclusive_cases": 5
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "compile",
+          "case_count": 19,
+          "family_count": 11,
+          "family_weighted_ratio": 2.30072421850374,
+          "ferroni_cases": 15,
+          "comparator_cases": 2,
+          "inconclusive_cases": 2
+        },
+        {
+          "engine": "fancy_regex",
+          "lane": "first_use",
+          "case_count": 19,
+          "family_count": 11,
+          "family_weighted_ratio": 1.7310598546427298,
+          "ferroni_cases": 12,
+          "comparator_cases": 5,
+          "inconclusive_cases": 2
+        },
+        {
+          "engine": "fancy_regex_seek",
+          "lane": "steady",
+          "case_count": 19,
+          "family_count": 11,
+          "family_weighted_ratio": 2.9216409352584956,
           "ferroni_cases": 16,
-          "comparator_cases": 4,
+          "comparator_cases": 0,
           "inconclusive_cases": 3
         },
         {
-          "engine": "pcre2",
-          "lane": "compile",
-          "case_count": 23,
-          "family_count": 13,
-          "family_weighted_ratio": 0.0635930064645466,
-          "ferroni_cases": 0,
-          "comparator_cases": 23,
-          "inconclusive_cases": 0
-        },
-        {
-          "engine": "pcre2",
-          "lane": "first_use",
-          "case_count": 23,
-          "family_count": 13,
-          "family_weighted_ratio": 0.09809839235813149,
-          "ferroni_cases": 0,
-          "comparator_cases": 23,
-          "inconclusive_cases": 0
-        },
-        {
-          "engine": "fancy_regex",
-          "lane": "steady",
-          "case_count": 19,
-          "family_count": 11,
-          "family_weighted_ratio": 2.9964276836766137,
-          "ferroni_cases": 19,
-          "comparator_cases": 0,
-          "inconclusive_cases": 0
-        },
-        {
-          "engine": "fancy_regex",
+          "engine": "fancy_regex_seek",
           "lane": "compile",
           "case_count": 19,
           "family_count": 11,
-          "family_weighted_ratio": 1.464401660408848,
-          "ferroni_cases": 11,
-          "comparator_cases": 6,
-          "inconclusive_cases": 2
+          "family_weighted_ratio": 2.7078440363617706,
+          "ferroni_cases": 14,
+          "comparator_cases": 2,
+          "inconclusive_cases": 3
         },
         {
-          "engine": "fancy_regex",
+          "engine": "fancy_regex_seek",
           "lane": "first_use",
           "case_count": 19,
           "family_count": 11,
-          "family_weighted_ratio": 1.5088859573778295,
+          "family_weighted_ratio": 2.0564272383420064,
           "ferroni_cases": 12,
           "comparator_cases": 5,
           "inconclusive_cases": 2
         },
         {
-          "engine": "fancy_regex_seek",
+          "engine": "regex",
           "lane": "steady",
-          "case_count": 19,
-          "family_count": 11,
-          "family_weighted_ratio": 2.9668759947100107,
-          "ferroni_cases": 19,
+          "case_count": 11,
+          "family_count": 6,
+          "family_weighted_ratio": 1.4433223499274608,
+          "ferroni_cases": 9,
           "comparator_cases": 0,
-          "inconclusive_cases": 0
-        },
-        {
-          "engine": "fancy_regex_seek",
-          "lane": "compile",
-          "case_count": 19,
-          "family_count": 11,
-          "family_weighted_ratio": 1.679947076475846,
-          "ferroni_cases": 12,
-          "comparator_cases": 5,
           "inconclusive_cases": 2
         },
         {
-          "engine": "fancy_regex_seek",
-          "lane": "first_use",
-          "case_count": 19,
-          "family_count": 11,
-          "family_weighted_ratio": 1.7792560008257579,
-          "ferroni_cases": 12,
-          "comparator_cases": 4,
-          "inconclusive_cases": 3
-        },
-        {
-          "engine": "regex",
-          "lane": "steady",
-          "case_count": 11,
-          "family_count": 6,
-          "family_weighted_ratio": 1.473074969737427,
-          "ferroni_cases": 10,
-          "comparator_cases": 1,
-          "inconclusive_cases": 0
-        },
-        {
           "engine": "regex",
           "lane": "compile",
           "case_count": 11,
           "family_count": 6,
-          "family_weighted_ratio": 1.733322421296701,
-          "ferroni_cases": 7,
-          "comparator_cases": 4,
-          "inconclusive_cases": 0
+          "family_weighted_ratio": 2.46166580844235,
+          "ferroni_cases": 9,
+          "comparator_cases": 0,
+          "inconclusive_cases": 2
         },
         {
           "engine": "regex",
           "lane": "first_use",
           "case_count": 11,
           "family_count": 6,
-          "family_weighted_ratio": 1.8001545046664271,
+          "family_weighted_ratio": 1.8972333644146973,
           "ferroni_cases": 7,
-          "comparator_cases": 4,
-          "inconclusive_cases": 0
+          "comparator_cases": 2,
+          "inconclusive_cases": 2
         }
       ]
     }

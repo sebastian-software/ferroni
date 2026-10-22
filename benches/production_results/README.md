@@ -1,6 +1,6 @@
 # Published source-backed regex results
 
-Measured revision: `8796aef33af2f874a0fdf56685f831cf175a7cd0`. [Blacksmith run](https://github.com/sebastian-software/ferroni/actions/runs/39588030348).
+Measured revision: `817d2b349b88cec0b2c130e416a3caa90220e129`. [Blacksmith run](https://github.com/sebastian-software/ferroni/actions/runs/39852407433).
 
 These timings describe that measured revision. Later engine changes are not included.
 
@@ -18,30 +18,30 @@ Host: macOS-26.3-arm64-arm-64bit-Mach-O; 6 visible CPUs.
 
 | Comparator profile | Phase | Common cases | Families | Family-weighted ratio | Standard API direction | Comparator direction | Inconclusive |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| rust_erroraware | steady | 23 | 13 | 1.767 | 16 | 0 | 7 |
-| rust_erroraware | compile | 23 | 13 | 1.001 | 0 | 0 | 23 |
-| rust_erroraware | first_use | 23 | 13 | 0.941 | 0 | 10 | 13 |
-| c | steady | 23 | 13 | 3.262 | 23 | 0 | 0 |
-| c | compile | 23 | 13 | 0.353 | 5 | 18 | 0 |
-| c | first_use | 23 | 13 | 0.376 | 5 | 18 | 0 |
-| onigmo | steady | 22 | 13 | 3.671 | 20 | 0 | 2 |
-| onigmo | compile | 22 | 13 | 0.489 | 6 | 16 | 0 |
-| onigmo | first_use | 22 | 13 | 0.483 | 6 | 16 | 0 |
-| pcre2_jit | steady | 23 | 13 | 0.677 | 4 | 18 | 1 |
-| pcre2_jit | compile | 23 | 13 | 0.260 | 0 | 23 | 0 |
-| pcre2_jit | first_use | 23 | 13 | 0.291 | 0 | 22 | 1 |
-| pcre2 | steady | 23 | 13 | 1.957 | 20 | 3 | 0 |
-| pcre2 | compile | 23 | 13 | 0.083 | 0 | 23 | 0 |
-| pcre2 | first_use | 23 | 13 | 0.098 | 0 | 23 | 0 |
-| fancy_regex | steady | 19 | 11 | 3.106 | 17 | 0 | 2 |
-| fancy_regex | compile | 19 | 11 | 2.000 | 13 | 4 | 2 |
-| fancy_regex | first_use | 19 | 11 | 2.036 | 14 | 3 | 2 |
-| fancy_regex_seek | steady | 19 | 11 | 3.062 | 17 | 0 | 2 |
-| fancy_regex_seek | compile | 19 | 11 | 2.267 | 13 | 4 | 2 |
-| fancy_regex_seek | first_use | 19 | 11 | 2.302 | 14 | 3 | 2 |
-| regex | steady | 11 | 6 | 1.476 | 6 | 1 | 4 |
-| regex | compile | 11 | 6 | 1.833 | 7 | 3 | 1 |
-| regex | first_use | 11 | 6 | 1.914 | 7 | 4 | 0 |
+| rust_erroraware | steady | 23 | 13 | 1.812 | 17 | 0 | 6 |
+| rust_erroraware | compile | 23 | 13 | 1.005 | 0 | 0 | 23 |
+| rust_erroraware | first_use | 23 | 13 | 0.766 | 1 | 16 | 6 |
+| c | steady | 23 | 13 | 3.342 | 23 | 0 | 0 |
+| c | compile | 23 | 13 | 0.570 | 5 | 18 | 0 |
+| c | first_use | 23 | 13 | 0.481 | 5 | 17 | 1 |
+| onigmo | steady | 22 | 13 | 3.723 | 22 | 0 | 0 |
+| onigmo | compile | 22 | 13 | 0.781 | 6 | 16 | 0 |
+| onigmo | first_use | 22 | 13 | 0.609 | 6 | 16 | 0 |
+| pcre2_jit | steady | 23 | 13 | 0.694 | 4 | 18 | 1 |
+| pcre2_jit | compile | 23 | 13 | 0.424 | 0 | 22 | 1 |
+| pcre2_jit | first_use | 23 | 13 | 0.368 | 1 | 21 | 1 |
+| pcre2 | steady | 23 | 13 | 1.972 | 20 | 3 | 0 |
+| pcre2 | compile | 23 | 13 | 0.135 | 0 | 23 | 0 |
+| pcre2 | first_use | 23 | 13 | 0.124 | 0 | 23 | 0 |
+| fancy_regex | steady | 19 | 11 | 3.095 | 17 | 0 | 2 |
+| fancy_regex | compile | 19 | 11 | 3.092 | 16 | 2 | 1 |
+| fancy_regex | first_use | 19 | 11 | 2.403 | 13 | 3 | 3 |
+| fancy_regex_seek | steady | 19 | 11 | 3.034 | 17 | 0 | 2 |
+| fancy_regex_seek | compile | 19 | 11 | 3.491 | 16 | 3 | 0 |
+| fancy_regex_seek | first_use | 19 | 11 | 2.733 | 14 | 4 | 1 |
+| regex | steady | 11 | 6 | 1.502 | 7 | 2 | 2 |
+| regex | compile | 11 | 6 | 2.671 | 9 | 0 | 2 |
+| regex | first_use | 11 | 6 | 2.028 | 7 | 4 | 0 |
 
 The exact common cases and all absolute timings are available in `publication.json`.
 
@@ -51,30 +51,30 @@ Host: Linux-6.6.141-x86_64-with-glibc2.39; 4 visible CPUs.
 
 | Comparator profile | Phase | Common cases | Families | Family-weighted ratio | Standard API direction | Comparator direction | Inconclusive |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| rust_erroraware | steady | 23 | 13 | 1.744 | 18 | 0 | 5 |
-| rust_erroraware | compile | 23 | 13 | 1.003 | 0 | 0 | 23 |
-| rust_erroraware | first_use | 23 | 13 | 0.955 | 0 | 6 | 17 |
-| c | steady | 23 | 13 | 2.607 | 21 | 0 | 2 |
-| c | compile | 23 | 13 | 0.312 | 4 | 19 | 0 |
-| c | first_use | 23 | 13 | 0.339 | 4 | 19 | 0 |
-| onigmo | steady | 22 | 13 | 3.465 | 20 | 1 | 1 |
-| onigmo | compile | 22 | 13 | 0.397 | 5 | 17 | 0 |
-| onigmo | first_use | 22 | 13 | 0.396 | 5 | 17 | 0 |
-| pcre2_jit | steady | 23 | 13 | 0.609 | 4 | 18 | 1 |
-| pcre2_jit | compile | 23 | 13 | 0.238 | 0 | 23 | 0 |
-| pcre2_jit | first_use | 23 | 13 | 0.263 | 0 | 22 | 1 |
-| pcre2 | steady | 23 | 13 | 1.810 | 16 | 4 | 3 |
-| pcre2 | compile | 23 | 13 | 0.064 | 0 | 23 | 0 |
-| pcre2 | first_use | 23 | 13 | 0.098 | 0 | 23 | 0 |
-| fancy_regex | steady | 19 | 11 | 2.996 | 19 | 0 | 0 |
-| fancy_regex | compile | 19 | 11 | 1.464 | 11 | 6 | 2 |
-| fancy_regex | first_use | 19 | 11 | 1.509 | 12 | 5 | 2 |
-| fancy_regex_seek | steady | 19 | 11 | 2.967 | 19 | 0 | 0 |
-| fancy_regex_seek | compile | 19 | 11 | 1.680 | 12 | 5 | 2 |
-| fancy_regex_seek | first_use | 19 | 11 | 1.779 | 12 | 4 | 3 |
-| regex | steady | 11 | 6 | 1.473 | 10 | 1 | 0 |
-| regex | compile | 11 | 6 | 1.733 | 7 | 4 | 0 |
-| regex | first_use | 11 | 6 | 1.800 | 7 | 4 | 0 |
+| rust_erroraware | steady | 23 | 13 | 1.783 | 11 | 0 | 12 |
+| rust_erroraware | compile | 23 | 13 | 0.996 | 2 | 2 | 19 |
+| rust_erroraware | first_use | 23 | 13 | 0.741 | 0 | 13 | 10 |
+| c | steady | 23 | 13 | 2.535 | 19 | 1 | 3 |
+| c | compile | 23 | 13 | 0.476 | 4 | 19 | 0 |
+| c | first_use | 23 | 13 | 0.408 | 4 | 19 | 0 |
+| onigmo | steady | 22 | 13 | 3.493 | 19 | 0 | 3 |
+| onigmo | compile | 22 | 13 | 0.625 | 5 | 17 | 0 |
+| onigmo | first_use | 22 | 13 | 0.486 | 5 | 17 | 0 |
+| pcre2_jit | steady | 23 | 13 | 0.603 | 2 | 17 | 4 |
+| pcre2_jit | compile | 23 | 13 | 0.398 | 0 | 21 | 2 |
+| pcre2_jit | first_use | 23 | 13 | 0.357 | 1 | 19 | 3 |
+| pcre2 | steady | 23 | 13 | 1.802 | 15 | 2 | 6 |
+| pcre2 | compile | 23 | 13 | 0.104 | 0 | 23 | 0 |
+| pcre2 | first_use | 23 | 13 | 0.132 | 0 | 22 | 1 |
+| fancy_regex | steady | 19 | 11 | 2.894 | 14 | 0 | 5 |
+| fancy_regex | compile | 19 | 11 | 2.301 | 15 | 2 | 2 |
+| fancy_regex | first_use | 19 | 11 | 1.731 | 12 | 5 | 2 |
+| fancy_regex_seek | steady | 19 | 11 | 2.922 | 16 | 0 | 3 |
+| fancy_regex_seek | compile | 19 | 11 | 2.708 | 14 | 2 | 3 |
+| fancy_regex_seek | first_use | 19 | 11 | 2.056 | 12 | 5 | 2 |
+| regex | steady | 11 | 6 | 1.443 | 9 | 0 | 2 |
+| regex | compile | 11 | 6 | 2.462 | 9 | 0 | 2 |
+| regex | first_use | 11 | 6 | 1.897 | 7 | 2 | 2 |
 
 The exact common cases and all absolute timings are available in `publication.json`.
 

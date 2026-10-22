@@ -35,12 +35,51 @@ export function ScannerSection() {
     >
       <HighlightedRust caption="highlight.rs" html={scannerHtml} />
       <ScannerWalkthrough />
-      <p className="fam-note">
-        Loading the same grammar on every start? Enable <code>precompiled</code> to ship a pattern
-        archive and decode programs as scanners request them. Keep one shared cache for the session.{" "}
-        <Link to="/guide/precompiled-patterns">Reuse compilation across starts</Link>
-      </p>
       <Relations current="ferroni" />
+    </Section>
+  );
+}
+
+/* -------------------------------------------------- */
+/*  Compilation across process starts                 */
+/* -------------------------------------------------- */
+
+const precompiled = [
+  {
+    heading: "Generate once",
+    text: "Compile your static scanner patterns into a shared cache, then export a .ferroni archive from your build tool.",
+  },
+  {
+    heading: "Commit or embed",
+    text: "Commit the archive alongside your pattern definitions, ship it as an asset, or embed it in your Rust binary with include_bytes!.",
+  },
+  {
+    heading: "Load what you use",
+    text: "Attach the archive to a pattern cache. Scanners decode programs on demand; missing or incompatible entries compile normally.",
+  },
+];
+
+export function PrecompiledSection() {
+  return (
+    <Section
+      id="fr-precompiled"
+      title="Ship compiled patterns with your app"
+      intro={
+        <>
+          Loading the same tokenizer or highlighter patterns on every start? With the optional{" "}
+          <code>precompiled</code> feature, keep their compiled programs in your project and reuse
+          them across process starts and browser sessions. The archive works through{" "}
+          <code>ScannerPatternCache</code>, even for a scanner with a single expression.
+        </>
+      }
+      note={
+        <>
+          Keep the original patterns for fallback and regenerate the archive when they change.{" "}
+          <Link to="/guide/precompiled-patterns">Generate, commit and load an archive</Link>
+        </>
+      }
+    >
+      <Principles items={precompiled} />
     </Section>
   );
 }
