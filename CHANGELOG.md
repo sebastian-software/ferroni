@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.5.0](https://github.com/sebastian-software/ferroni/compare/v2.4.0...v2.5.0) (2026-10-22)
+
+
+### Features
+
+* **scanner:** load precompiled patterns into the pattern cache ([b85527d](https://github.com/sebastian-software/ferroni/commit/b85527dae6f2dbbd252a9314d8fd000c41a0bec8)), closes [#444](https://github.com/sebastian-software/ferroni/issues/444)
+
+
+### Bug Fixes
+
+* **scanner:** gate archive replay tests and document startup reuse ([932f09f](https://github.com/sebastian-software/ferroni/commit/932f09f6df0fe6b6eb28689d336be68a78854949))
+
 ## [2.4.0](https://github.com/sebastian-software/ferroni/compare/v2.3.0...v2.4.0) (2026-10-22)
 
 
