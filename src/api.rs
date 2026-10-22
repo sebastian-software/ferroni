@@ -586,7 +586,11 @@ impl Regex {
                 return Some(answer);
             }
         }
-        let found = seek.search(text, start)?;
+        let found = if accept {
+            seek.search(text, start)?
+        } else {
+            seek.search_hybrid(text, start)?
+        };
         if found && !(accept && seek.exact()) {
             return None;
         }

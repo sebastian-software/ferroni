@@ -2925,18 +2925,22 @@ impl SingleSeek {
         if let Some(table) = self.dense.as_ref().and_then(AdaptiveDfa::dense) {
             return Some(table.search(text, start));
         }
-        let input = Input::new(text).span(start..text.len()).earliest(true);
-        let result = {
-            let mut caches = self.caches.get();
-            self.dfa
-                .try_search_fwd(&mut caches.seek, &input)
-                .ok()
-                .map(|found| found.is_some())
-        };
+        let result = self.search_hybrid(text, start);
         if let Some(adaptive) = &self.dense {
             adaptive.record_hybrid_consultation(self.dfa.get_nfa());
         }
         result
+    }
+
+    /// Reject-only callers still need the matcher after every positive seek.
+    /// Keep their original hybrid path without dense dispatch or promotion.
+    pub(crate) fn search_hybrid(&self, text: &[u8], start: usize) -> Option<bool> {
+        let input = Input::new(text).span(start..text.len()).earliest(true);
+        let mut caches = self.caches.get();
+        self.dfa
+            .try_search_fwd(&mut caches.seek, &input)
+            .ok()
+            .map(|found| found.is_some())
     }
 
     pub(crate) fn exact(&self) -> bool {
@@ -4527,5 +4531,31 @@ mod tests {
             assert!(!SingleTable::supports(&nfa));
             assert!(SingleTable::build(&nfa, PREFERRED_SINGLE_DENSE_LIMITS).is_none());
         }
+    }
+    /// Reject-only consultation does not pay promotion costs, even when the
+    /// same automaton later serves complete boolean decisions.
+    #[test]
+    fn reject_only_search_keeps_the_hybrid_path_before_and_after_promotion() {
+        let seek = adaptive_single_seek_with(
+            r"\A(?:ab|cd)[0-9]{1,3}\z",
+            ONIG_OPTION_CAPTURE_GROUP,
+            Some(PREFERRED_SINGLE_DENSE_LIMITS),
+            2,
+        )
+        .unwrap();
+        for _ in 0..128 {
+            assert_eq!(seek.search_hybrid(b"ab1", 0), Some(true));
+            assert_eq!(seek.search_hybrid(b"xx", 0), Some(false));
+        }
+        assert_eq!(seek.adaptive_consultations(), (Some(0), None));
+        assert_eq!(seek.backend_names().0, "hybrid");
+        assert_eq!(seek.search(b"ab1", 0), Some(true));
+        assert_eq!(seek.search(b"xx", 0), Some(false));
+        assert_eq!(seek.backend_names().0, "dense");
+        for _ in 0..128 {
+            assert_eq!(seek.search_hybrid(b"ab1", 0), Some(true));
+            assert_eq!(seek.search_hybrid(b"xx", 0), Some(false));
+        }
+        assert_eq!(seek.adaptive_consultations(), (Some(2), None));
     }
 }
