@@ -66,6 +66,7 @@ use regex_syntax::hir::{
     Repetition,
 };
 use regex_syntax::utf8::Utf8Sequences;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
 const MIB: usize = 1 << 20;
@@ -122,6 +123,17 @@ pub(crate) const LONG_WALK_BYTES: usize = 64;
 /// not tell which sets lose: C++ sets of 25,000 states take a quarter of
 /// their time, the hot SCSS set at 17,000 states 13% more (see ADR-008).
 pub(crate) const MAX_NFA_STATES: usize = 65_536;
+
+/// Cheap HIR estimate gate before the measured 64-state bitset/assertion guard.
+const MAX_SINGLE_DENSE_ESTIMATED_NFA_STATES: usize = 512;
+const MAX_SINGLE_BITSET_NFA_STATES: usize = u64::BITS as usize;
+
+/// Both the final table and auxiliary determinization workspace have
+/// independent hard caps. If either cap is reached, the hybrid DFA remains
+/// available instead. This small policy retains at most 64 KiB per dense DFA
+/// and bounds each determinization workspace to 32 KiB.
+const SINGLE_DENSE_DFA_SIZE_LIMIT: usize = 64 * 1024;
+const SINGLE_DENSE_DETERMINIZE_SIZE_LIMIT: usize = 32 * 1024;
 
 /// Sets whose automata would cover at most this many entries with at most
 /// `TINY_SET_NFA_STATES` NFA states get no pre-filter unless the scanner
@@ -2465,10 +2477,10 @@ impl SetPrefilter {
     }
 }
 
-/// Rust-only (ADR-008): the seek of one `Regex` as a lazy DFA, which answers
-/// whether any seek match starts in a subject from a position on. A `Regex`
-/// builds it with the pattern and searches with it from the first search
-/// (`RegexBuilder::dfa`).
+/// Rust-only (ADR-008): the seek of one `Regex`, which answers whether any
+/// seek match starts in a subject from a position on. Production starts with
+/// bounded hybrid DFAs and can promote eligible automata to immutable dense
+/// DFAs after enough consultations.
 ///
 /// Without an exact seek, "no seek match" proves "no match" and nothing else:
 /// a seek match leaves the answer to the matcher. An exact seek's match is a
@@ -2478,15 +2490,303 @@ impl SetPrefilter {
 /// search that a lazy DFA gives up on answers nothing, and the matcher runs.
 pub(crate) struct SingleSeek {
     dfa: hybrid::DFA,
-    /// The accept seek's lazy DFA, and where its "no match" holds.
     accept: Option<(hybrid::DFA, accept::AcceptRejects)>,
-    /// The lazy DFAs' caches, one pair per thread that searches (the pool's
-    /// owner fast path), so a search takes no lock.
     caches: Pool<SingleCaches, CacheMaker>,
     exact: bool,
+    dense: Option<AdaptiveDfa>,
+    accept_dense: Option<AdaptiveDfa>,
 }
 
-/// The caches of a `SingleSeek`'s lazy DFAs.
+/// A bounded boolean DFA for NFAs that fit in one machine-independent u64
+/// state set and use only text anchors. Other assertions stay on hybrid.
+/// Only existence is needed, so match states are terminal and NFA priority
+/// cannot change the answer. No captures or match positions are computed.
+struct SingleTable {
+    transitions: Vec<u32>,
+    classes: [u8; 256],
+    starts: [u32; 2],
+    eoi: usize,
+}
+
+impl SingleTable {
+    fn supports(nfa: &thompson::NFA) -> bool {
+        use regex_automata::util::look::Look;
+        nfa.states().len() <= MAX_SINGLE_BITSET_NFA_STATES
+            && !nfa.is_utf8()
+            && nfa
+                .look_set_any()
+                .iter()
+                .all(|look| matches!(look, Look::Start | Look::End))
+    }
+
+    /// Epsilon closure keeps a blocked end anchor in the frontier, so the
+    /// EOI edge can evaluate it later. A blocked start anchor can never become
+    /// true after consuming a byte and is discarded.
+    fn closure(nfa: &thompson::NFA, mut pending: u64, start: bool, end: bool) -> u64 {
+        use regex_automata::{nfa::thompson::State, util::look::Look};
+        let mut seen = 0u64;
+        let mut frontier = 0u64;
+        while pending != 0 {
+            let index = pending.trailing_zeros() as usize;
+            let bit = 1u64 << index;
+            pending &= !bit;
+            if seen & bit != 0 {
+                continue;
+            }
+            seen |= bit;
+            match &nfa.states()[index] {
+                State::Look {
+                    look: Look::Start,
+                    next,
+                } if start => pending |= 1u64 << next.as_usize(),
+                State::Look {
+                    look: Look::End,
+                    next,
+                } if end => pending |= 1u64 << next.as_usize(),
+                State::Look {
+                    look: Look::End, ..
+                } => frontier |= bit,
+                State::Look { .. } | State::Fail => {}
+                State::Union { alternates } => {
+                    for next in alternates {
+                        pending |= 1u64 << next.as_usize();
+                    }
+                }
+                State::BinaryUnion { alt1, alt2 } => {
+                    pending |= (1u64 << alt1.as_usize()) | (1u64 << alt2.as_usize())
+                }
+                State::Capture { next, .. } => pending |= 1u64 << next.as_usize(),
+                State::ByteRange { .. }
+                | State::Sparse(_)
+                | State::Dense(_)
+                | State::Match { .. } => frontier |= bit,
+            }
+        }
+        frontier
+    }
+
+    fn build(nfa: &thompson::NFA, limits: SingleDenseLimits) -> Option<Self> {
+        use regex_automata::nfa::thompson::State;
+        if !Self::supports(nfa) {
+            return None;
+        }
+        let classes = nfa.byte_classes();
+        let stride = classes.alphabet_len();
+        // Leave headroom for both buffers while shrink_to_fit compacts the
+        // table; the original and replacement together stay within the cap.
+        let max_rows = limits.dfa_bytes.checked_sub(std::mem::size_of::<Self>())?
+            / 2
+            / (stride * std::mem::size_of::<u32>());
+        let max_rows = max_rows.min(
+            limits
+                .determinize_bytes
+                .checked_sub(64 * std::mem::size_of::<u64>())?
+                / std::mem::size_of::<(u64, bool)>(),
+        );
+        if max_rows == 0 {
+            return None;
+        }
+        let mut closures = [0; 64];
+        let mut matches = 0u64;
+        for (i, state) in nfa.states().iter().enumerate() {
+            closures[i] = Self::closure(nfa, 1u64 << i, false, false);
+            if matches!(state, State::Match { .. }) {
+                matches |= 1u64 << i;
+            }
+        }
+        let mut states = Vec::with_capacity(max_rows);
+        let mut transitions = Vec::with_capacity(max_rows * stride);
+        fn intern(
+            mask: u64,
+            at_start: bool,
+            matches: u64,
+            states: &mut Vec<(u64, bool)>,
+            stride: usize,
+            max_rows: usize,
+        ) -> Option<u32> {
+            if mask & matches != 0 {
+                return Some(1);
+            }
+            if mask == 0 {
+                return Some(0);
+            }
+            let node = (mask, at_start);
+            let index = match states.iter().position(|&known| known == node) {
+                Some(index) => index,
+                None if states.len() < max_rows => {
+                    states.push(node);
+                    states.len() - 1
+                }
+                None => return None,
+            };
+            u32::try_from(index * stride + 2).ok()
+        }
+        let root = 1u64 << nfa.start_unanchored().as_usize();
+        let mut starts = [0; 2];
+        for (i, slot) in starts.iter_mut().enumerate() {
+            *slot = intern(
+                Self::closure(nfa, root, i == 1, false),
+                i == 1,
+                matches,
+                &mut states,
+                stride,
+                max_rows,
+            )?;
+        }
+        let mut row = 0;
+        while row < states.len() {
+            let (mask, at_start) = states[row];
+            for unit in classes.representatives(..) {
+                let next = if let Some(byte) = unit.as_u8() {
+                    let mut pending = mask;
+                    let mut next = 0u64;
+                    while pending != 0 {
+                        let i = pending.trailing_zeros() as usize;
+                        pending &= pending - 1;
+                        let target = match &nfa.states()[i] {
+                            State::ByteRange { trans } if trans.matches_byte(byte) => {
+                                Some(trans.next)
+                            }
+                            State::Sparse(trans) => trans.matches_byte(byte),
+                            State::Dense(trans) => trans.matches_byte(byte),
+                            _ => None,
+                        };
+                        if let Some(target) = target {
+                            next |= closures[target.as_usize()];
+                        }
+                    }
+                    intern(next, false, matches, &mut states, stride, max_rows)?
+                } else {
+                    u32::from(Self::closure(nfa, mask, at_start, true) & matches != 0)
+                };
+                transitions.push(next);
+            }
+            row += 1;
+        }
+        let mut map = [0; 256];
+        for (byte, slot) in map.iter_mut().enumerate() {
+            *slot = classes.get(byte as u8);
+        }
+        transitions.shrink_to_fit();
+        Some(Self {
+            transitions,
+            classes: map,
+            starts,
+            eoi: stride - 1,
+        })
+    }
+
+    fn search(&self, text: &[u8], start: usize) -> bool {
+        let mut state = self.starts[usize::from(start == 0)];
+        for &byte in &text[start..] {
+            if state <= 1 {
+                return state == 1;
+            }
+            state =
+                self.transitions[state as usize - 2 + usize::from(self.classes[usize::from(byte)])];
+        }
+        if state <= 1 {
+            return state == 1;
+        }
+        self.transitions[state as usize - 2 + self.eoi] == 1
+    }
+
+    fn memory_usage(&self) -> usize {
+        self.transitions.capacity() * std::mem::size_of::<u32>()
+    }
+}
+
+/// The hybrid automaton remains available after promotion so threads already
+/// consulting it stay valid, and its per-thread cache pool is retained. The
+/// dense table is published once through `OnceLock`; its bytes are additional
+/// to the NFA and caches already retained by the hybrid path.
+struct AdaptiveDfa {
+    limits: SingleDenseLimits,
+    threshold: usize,
+    consultations: AtomicUsize,
+    promotion_attempted: AtomicBool,
+    dense_decision: OnceLock<Option<Box<SingleTable>>>,
+}
+
+impl AdaptiveDfa {
+    fn new(limits: SingleDenseLimits, threshold: usize) -> Self {
+        Self {
+            limits,
+            threshold,
+            consultations: AtomicUsize::new(0),
+            promotion_attempted: AtomicBool::new(false),
+            dense_decision: OnceLock::new(),
+        }
+    }
+
+    fn dense(&self) -> Option<&SingleTable> {
+        self.dense_decision.get().and_then(Option::as_deref)
+    }
+
+    fn initialize_dense_with(&self, build: impl FnOnce() -> Option<Box<SingleTable>>) {
+        if self
+            .promotion_attempted
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            // A normal build rejection is stored as `None`, so it is never
+            // retried. If the builder panics, the flag remains set and later
+            // consultations safely stay on the hybrid DFA.
+            let _ = self.dense_decision.get_or_init(build);
+        }
+    }
+
+    fn record_hybrid_consultation(&self, nfa: &thompson::NFA) {
+        if self.promotion_attempted.load(Ordering::Relaxed) {
+            return;
+        }
+        let mut count = self.consultations.load(Ordering::Relaxed);
+        while count < self.threshold {
+            match self.consultations.compare_exchange_weak(
+                count,
+                count + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    count += 1;
+                    break;
+                }
+                Err(observed) => count = observed,
+            }
+        }
+        if count >= self.threshold {
+            self.initialize_dense_with(|| SingleTable::build(nfa, self.limits).map(Box::new));
+        }
+    }
+
+    #[cfg(test)]
+    fn consultation_count(&self) -> usize {
+        self.consultations.load(Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    fn promotion_attempted(&self) -> bool {
+        self.promotion_attempted.load(Ordering::Relaxed)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct SingleDenseLimits {
+    dfa_bytes: usize,
+    determinize_bytes: usize,
+}
+
+const PREFERRED_SINGLE_DENSE_LIMITS: SingleDenseLimits = SingleDenseLimits {
+    dfa_bytes: SINGLE_DENSE_DFA_SIZE_LIMIT,
+    determinize_bytes: SINGLE_DENSE_DETERMINIZE_SIZE_LIMIT,
+};
+
+/// Promote after this many actual hybrid DFA consultations of a seek or
+/// accept DFA, rather than counting public Regex API calls.
+const SINGLE_DENSE_PROMOTION_THRESHOLD: usize = 64;
+
+/// The caches of a `SingleSeek`'s hybrid fallback DFAs.
 struct SingleCaches {
     seek: hybrid::Cache,
     accept: Option<hybrid::Cache>,
@@ -2495,7 +2795,7 @@ struct SingleCaches {
 /// The cache constructor of a `SingleSeek`'s pool.
 type CacheMaker = Box<dyn Fn() -> SingleCaches + Send + Sync>;
 
-/// Lazy DFA cache of a single `Regex`'s seek, and of its accept seek.
+/// Cache capacity of a single `Regex`'s hybrid seek and accept seek.
 const SINGLE_CACHE_CAPACITY: usize = MIB;
 
 /// An estimate of the NFA states `hir` compiles to, from above: a repetition
@@ -2536,75 +2836,137 @@ fn states_estimate(hir: &Hir, utf8_classes: bool) -> usize {
 }
 
 impl SingleSeek {
-    /// The lazy DFA of `seek`, or `None` for a seek that matches everywhere
-    /// (it rejects nothing), one whose automaton would exceed
-    /// `MAX_NFA_STATES`, or one that does not build. The lazy DFA of
-    /// `accept`, the pattern's accept seek, is built beside it where it
-    /// builds within the same bounds.
     pub(crate) fn build(seek: &Seek, accept: Option<&AcceptCode>) -> Option<Self> {
+        // A positive inexact seek still needs the matcher. Keep its original
+        // hybrid path; dense promotion pays for complete boolean decisions.
+        let seek_limits = match seek {
+            Seek::Pattern(code) if code.exact() => Some(PREFERRED_SINGLE_DENSE_LIMITS),
+            _ => None,
+        };
+        Self::assemble(
+            seek,
+            accept,
+            seek_limits,
+            Some(PREFERRED_SINGLE_DENSE_LIMITS),
+            SINGLE_DENSE_PROMOTION_THRESHOLD,
+            false,
+        )
+    }
+
+    #[cfg(test)]
+    fn build_with_adaptive_policy(
+        seek: &Seek,
+        accept: Option<&AcceptCode>,
+        limits: Option<SingleDenseLimits>,
+        threshold: usize,
+    ) -> Option<Self> {
+        Self::assemble(seek, accept, limits, limits, threshold, false)
+    }
+
+    #[cfg(test)]
+    fn build_with_dense_limits(
+        seek: &Seek,
+        accept: Option<&AcceptCode>,
+        limits: Option<SingleDenseLimits>,
+    ) -> Option<Self> {
+        Self::build_with_separate_dense_limits(seek, accept, limits, limits)
+    }
+
+    #[cfg(test)]
+    fn build_with_separate_dense_limits(
+        seek: &Seek,
+        accept: Option<&AcceptCode>,
+        seek_limits: Option<SingleDenseLimits>,
+        accept_limits: Option<SingleDenseLimits>,
+    ) -> Option<Self> {
+        Self::assemble(seek, accept, seek_limits, accept_limits, 0, true)
+    }
+
+    fn assemble(
+        seek: &Seek,
+        accept: Option<&AcceptCode>,
+        seek_limits: Option<SingleDenseLimits>,
+        accept_limits: Option<SingleDenseLimits>,
+        threshold: usize,
+        eager: bool,
+    ) -> Option<Self> {
         let Seek::Pattern(code) = seek else {
             return None;
         };
-        let dfa = single_dfa(&code.decode())?;
+        let (dfa, dense) = single_dfa_adaptive(&code.decode(), seek_limits, threshold, eager)?;
         let accept = accept.and_then(|accept| {
-            let dfa = single_dfa(&accept.code.decode())?;
-            Some((dfa, accept.rejects.clone()))
+            let (dfa, dense) =
+                single_dfa_adaptive(&accept.code.decode(), accept_limits, threshold, eager)?;
+            Some((dfa, accept.rejects.clone(), dense))
         });
+        let (accept, accept_dense) = match accept {
+            Some((dfa, rejects, dense)) => (Some((dfa, rejects)), dense),
+            None => (None, None),
+        };
         let make_seek = dfa.clone();
         let make_accept = accept.as_ref().map(|(dfa, _)| dfa.clone());
         let caches = Pool::new(Box::new(move || SingleCaches {
             seek: make_seek.create_cache(),
             accept: make_accept.as_ref().map(hybrid::DFA::create_cache),
         }) as CacheMaker);
-        Some(SingleSeek {
+        Some(Self {
             dfa,
             accept,
             caches,
             exact: code.exact(),
+            dense,
+            accept_dense,
         })
     }
 
-    /// Whether the seek matches somewhere in `text[start..]`, with the look
-    /// around `start` read from `text`, or `None` when the lazy DFA gives up.
-    /// The text must be valid UTF-8 and `start` a character boundary, as the
-    /// matcher reads them.
+    /// Boolean search over the complete suffix, with the original hybrid
+    /// representation and cache path retained beside the optional table.
     pub(crate) fn search(&self, text: &[u8], start: usize) -> Option<bool> {
+        if let Some(table) = self.dense.as_ref().and_then(AdaptiveDfa::dense) {
+            return Some(table.search(text, start));
+        }
         let input = Input::new(text).span(start..text.len()).earliest(true);
-        let mut caches = self.caches.get();
-        self.dfa
-            .try_search_fwd(&mut caches.seek, &input)
-            .ok()
-            .map(|found| found.is_some())
+        let result = {
+            let mut caches = self.caches.get();
+            self.dfa
+                .try_search_fwd(&mut caches.seek, &input)
+                .ok()
+                .map(|found| found.is_some())
+        };
+        if let Some(adaptive) = &self.dense {
+            adaptive.record_hybrid_consultation(self.dfa.get_nfa());
+        }
+        result
     }
 
-    /// Whether the seek is exact (`SeekCode::exact`).
     pub(crate) fn exact(&self) -> bool {
         self.exact
     }
-
-    /// Whether the seek has an accept seek.
     pub(crate) fn has_accept(&self) -> bool {
         self.accept.is_some()
     }
 
-    /// The accept seek's answer for a search of `text` from `start`, read as
-    /// `search` reads it: `Some(true)` where an accept seek match starts in
-    /// `text[start..]`, which is a match of the pattern; `Some(false)` where
-    /// none does and the accept seek is exact on this text (its
-    /// `AcceptRejects`); `None` otherwise, or when the lazy DFA gives up.
     pub(crate) fn accept_answer(&self, text: &[u8], start: usize) -> Option<bool> {
         let (dfa, rejects) = self.accept.as_ref()?;
-        let input = Input::new(text).span(start..text.len()).earliest(true);
-        let mut caches = self.caches.get();
-        let found = dfa
-            .try_search_fwd(caches.accept.as_mut()?, &input)
-            .ok()?
-            .is_some();
+        let found = if let Some(table) = self.accept_dense.as_ref().and_then(AdaptiveDfa::dense) {
+            table.search(text, start)
+        } else {
+            let input = Input::new(text).span(start..text.len()).earliest(true);
+            let result = {
+                let mut caches = self.caches.get();
+                dfa.try_search_fwd(caches.accept.as_mut()?, &input)
+                    .ok()
+                    .map(|found| found.is_some())
+            };
+            if let Some(adaptive) = &self.accept_dense {
+                adaptive.record_hybrid_consultation(dfa.get_nfa());
+            }
+            result?
+        };
         if found {
             return Some(true);
         }
         match rejects {
-            // A match starts at or after `start` and reads only from there.
             accept::AcceptRejects::Unless(triggers) => {
                 (!triggers.occur_in(&text[start..])).then_some(false)
             }
@@ -2612,17 +2974,61 @@ impl SingleSeek {
         }
     }
 
-    /// Heap memory of the lazy DFAs and of this thread's caches, in bytes.
     #[cfg(test)]
     pub(crate) fn memory_usage(&self) -> usize {
+        self.automata_memory_usage() + self.cache_memory_usage()
+    }
+    #[cfg(test)]
+    fn uses_dense_dfas(&self) -> bool {
+        self.dense.as_ref().and_then(AdaptiveDfa::dense).is_some()
+            && (self.accept.is_none()
+                || self
+                    .accept_dense
+                    .as_ref()
+                    .and_then(AdaptiveDfa::dense)
+                    .is_some())
+    }
+    #[cfg(test)]
+    fn backend_names(&self) -> (&'static str, Option<&'static str>) {
+        (
+            if self.dense.as_ref().and_then(AdaptiveDfa::dense).is_some() {
+                "dense"
+            } else {
+                "hybrid"
+            },
+            self.accept.as_ref().map(|_| {
+                if self
+                    .accept_dense
+                    .as_ref()
+                    .and_then(AdaptiveDfa::dense)
+                    .is_some()
+                {
+                    "dense"
+                } else {
+                    "hybrid"
+                }
+            }),
+        )
+    }
+    #[cfg(test)]
+    fn automata_memory_usage(&self) -> usize {
+        fn table_bytes(adaptive: Option<&AdaptiveDfa>) -> usize {
+            adaptive.and_then(AdaptiveDfa::dense).map_or(0, |table| {
+                table.memory_usage() + std::mem::size_of_val(table)
+            })
+        }
+        self.dfa.get_nfa().memory_usage()
+            + std::mem::size_of_val(&self.dfa)
+            + self.accept.as_ref().map_or(0, |(dfa, _)| {
+                dfa.get_nfa().memory_usage() + std::mem::size_of_val(dfa)
+            })
+            + table_bytes(self.dense.as_ref())
+            + table_bytes(self.accept_dense.as_ref())
+    }
+    #[cfg(test)]
+    fn cache_memory_usage(&self) -> usize {
         let caches = self.caches.get();
-        let accept = self
-            .accept
-            .as_ref()
-            .map_or(0, |(dfa, _)| dfa.memory_usage());
-        self.dfa.memory_usage()
-            + accept
-            + caches.seek.memory_usage()
+        caches.seek.memory_usage()
             + caches
                 .accept
                 .as_ref()
@@ -2630,16 +3036,18 @@ impl SingleSeek {
     }
 }
 
-/// The lazy DFA of a single regex's seek or accept seek, or `None` for one
-/// whose automaton would exceed `MAX_NFA_STATES` or that does not build.
-fn single_dfa(hir: &Hir) -> Option<hybrid::DFA> {
+/// Compile the bounded Thompson NFA once and return whether its measured and
+/// estimated size also permits a dense DFA attempt.
+fn single_nfa(hir: &Hir) -> Option<(thompson::NFA, bool)> {
     // Cut a seek that is clearly too large before compiling it: a compile
     // of a seek with nested counted repetitions can take far longer than
     // the automaton it would keep. (`derive_accept` estimated the accept
     // seek's Unicode classes already.)
-    if nfa_states_estimate(hir) > MAX_NFA_STATES {
+    let estimated_states = nfa_states_estimate(hir);
+    if estimated_states > MAX_NFA_STATES {
         return None;
     }
+    let dense_eligible = estimated_states <= MAX_SINGLE_DENSE_ESTIMATED_NFA_STATES;
     // The seeks use ASCII look-arounds only, so the DFA never quits.
     let nfa = thompson::Compiler::new()
         .configure(
@@ -2650,9 +3058,17 @@ fn single_dfa(hir: &Hir) -> Option<hybrid::DFA> {
         )
         .build_from_hir(hir)
         .ok()?;
-    if nfa.states().len() > MAX_NFA_STATES {
+    let actual_states = nfa.states().len();
+    if actual_states > MAX_NFA_STATES {
         return None;
     }
+    Some((
+        nfa,
+        dense_eligible && actual_states <= MAX_SINGLE_BITSET_NFA_STATES,
+    ))
+}
+
+fn build_single_hybrid(nfa: thompson::NFA) -> Option<hybrid::DFA> {
     hybrid::Builder::new()
         .configure(
             hybrid::Config::new()
@@ -2663,6 +3079,30 @@ fn single_dfa(hir: &Hir) -> Option<hybrid::DFA> {
         .ok()
 }
 
+/// Keep the original hybrid DFA inline. The additional state is present only
+/// when this NFA meets the bitset and assertion guards.
+fn single_dfa_adaptive(
+    hir: &Hir,
+    limits: Option<SingleDenseLimits>,
+    threshold: usize,
+    eager: bool,
+) -> Option<(hybrid::DFA, Option<AdaptiveDfa>)> {
+    let (nfa, eligible) = single_nfa(hir)?;
+    let dense = if let Some(limits) = limits
+        && eligible
+        && SingleTable::supports(&nfa)
+    {
+        let adaptive = AdaptiveDfa::new(limits, threshold);
+        if eager {
+            adaptive.initialize_dense_with(|| SingleTable::build(&nfa, limits).map(Box::new));
+        }
+        Some(adaptive)
+    } else {
+        None
+    };
+    Some((build_single_hybrid(nfa)?, dense))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2671,9 +3111,17 @@ mod tests {
         ONIG_OPTION_CAPTURE_GROUP, ONIG_OPTION_IGNORECASE, ONIG_OPTION_WORD_IS_ASCII,
         OnigOptionType,
     };
-    use crate::regcomp::onig_new_for_scanner;
+    use crate::regcomp::{onig_new_for_scanner, onig_new_for_single_seek};
     use crate::regsyntax::OnigSyntaxOniguruma;
     use crate::scanner::{Scanner, ScannerConfig, ScannerFindOptions};
+
+    /// The production catalog's Django email domain and URL expressions.
+    const DJANGO_EMAIL_LOCAL: &str = r#"(^[-!#$%&'*+/=?^_`{}|~0-9A-Z]+(\.[-!#$%&'*+/=?^_`{}|~0-9A-Z]+)*\z|^"([\001-\010\013\014\016-\037!#-\[\]-\177]|\\[\001-\011\013\014\016-\177])*"\z)"#;
+    const DJANGO_DOMAIN: &str = r"^[a-z¡-￿0-9](?:[a-z¡-￿0-9-]{0,61}[a-z¡-￿0-9])?(?:\.(?!-)[a-z¡-￿0-9-]{1,63}(?<!-))*\.(?!-)(?:[a-z¡-￿-]{2,63}|xn--[a-z0-9]{1,59})(?<!-)\z";
+    const DJANGO_URL: &str = r"^(?:[a-z0-9.+-]*)://(?:[^\s:@/]+(?::[^\s:@/]*)?@)?(?:(?:0|25[0-5]|2[0-4][0-9]|1[0-9]?[0-9]?|[1-9][0-9]?)(?:\.(?:0|25[0-5]|2[0-4][0-9]|1[0-9]?[0-9]?|[1-9][0-9]?)){3}|\[[0-9a-f:.]+\]|([a-z¡-￿0-9](?:[a-z¡-￿0-9-]{0,61}[a-z¡-￿0-9])?(?:\.(?!-)[a-z¡-￿0-9-]{1,63}(?<!-))*\.(?!-)(?:[a-z¡-￿-]{2,63}|xn--[a-z0-9]{1,59})(?<!-)\.?|localhost))(?::[0-9]{1,5})?(?:[/?#][^\s]*)?\z";
+    const DJANGO_OPTIONS: OnigOptionType = ONIG_OPTION_CAPTURE_GROUP
+        .union(ONIG_OPTION_IGNORECASE)
+        .union(crate::oniguruma::ONIG_OPTION_SINGLELINE);
 
     fn seek_with(
         pattern: &str,
@@ -2692,6 +3140,719 @@ mod tests {
 
     fn seek(pattern: &str) -> Option<Seek> {
         seek_with(pattern, ONIG_OPTION_CAPTURE_GROUP).unwrap()
+    }
+
+    fn single_seek_with(
+        pattern: &str,
+        options: OnigOptionType,
+        dense_limits: Option<SingleDenseLimits>,
+    ) -> Option<SingleSeek> {
+        let (_, seek, accept) = onig_new_for_single_seek(
+            pattern.as_bytes(),
+            options,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+            false,
+            true,
+        )
+        .unwrap();
+        SingleSeek::build_with_dense_limits(&seek?, accept.as_ref(), dense_limits)
+    }
+
+    fn adaptive_single_seek_with(
+        pattern: &str,
+        options: OnigOptionType,
+        dense_limits: Option<SingleDenseLimits>,
+        threshold: usize,
+    ) -> Option<SingleSeek> {
+        let (_, seek, accept) = onig_new_for_single_seek(
+            pattern.as_bytes(),
+            options,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+            false,
+            true,
+        )
+        .unwrap();
+        SingleSeek::build_with_adaptive_policy(&seek?, accept.as_ref(), dense_limits, threshold)
+    }
+
+    fn production_single_seek(pattern: &str, options: OnigOptionType) -> Option<SingleSeek> {
+        let (_, seek, accept) = onig_new_for_single_seek(
+            pattern.as_bytes(),
+            options,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+            false,
+            true,
+        )
+        .unwrap();
+        SingleSeek::build(&seek?, accept.as_ref())
+    }
+
+    fn char_boundaries(text: &str) -> Vec<usize> {
+        text.char_indices()
+            .map(|(index, _)| index)
+            .chain(std::iter::once(text.len()))
+            .collect()
+    }
+
+    impl SingleSeek {
+        fn adaptive_consultations(&self) -> (Option<usize>, Option<usize>) {
+            (
+                self.dense.as_ref().map(AdaptiveDfa::consultation_count),
+                self.accept_dense
+                    .as_ref()
+                    .map(AdaptiveDfa::consultation_count),
+            )
+        }
+    }
+
+    /// Show why the estimate/bitset guards include the Django email local
+    /// part and excludes the larger domain and URL seek and accept NFAs.
+    #[test]
+    fn django_catalog_nfa_size_diagnostic() {
+        eprintln!(
+            "small dense eligibility: estimated NFA states <= {}, actual <=64; final DFA <= {} B; determinization scratch <= {} B",
+            MAX_SINGLE_DENSE_ESTIMATED_NFA_STATES,
+            SINGLE_DENSE_DFA_SIZE_LIMIT,
+            SINGLE_DENSE_DETERMINIZE_SIZE_LIMIT,
+        );
+        let local_options = DJANGO_OPTIONS;
+        for (name, pattern, options, expected_eligible) in [
+            (
+                "django_email_local_part",
+                DJANGO_EMAIL_LOCAL,
+                local_options,
+                true,
+            ),
+            ("django_email_domain", DJANGO_DOMAIN, DJANGO_OPTIONS, false),
+            ("django_url_regex", DJANGO_URL, DJANGO_OPTIONS, false),
+        ] {
+            let (_, seek, accept) = onig_new_for_single_seek(
+                pattern.as_bytes(),
+                options,
+                &ONIG_ENCODING_UTF8,
+                &OnigSyntaxOniguruma,
+                false,
+                true,
+            )
+            .unwrap();
+            let Seek::Pattern(seek) = seek.expect("catalog pattern has a seek") else {
+                panic!("{name} seek is not a pattern");
+            };
+            let mut hirs = vec![("seek", seek.decode())];
+            if let Some(accept) = accept.as_ref() {
+                hirs.push(("accept", accept.code.decode()));
+            }
+            if name == "django_email_local_part" {
+                assert_eq!(hirs.len(), 1, "local-part seek is exact");
+            }
+            let mut seek_eligible = false;
+            for (kind, hir) in hirs {
+                let gate_estimate = nfa_states_estimate(&hir);
+                let estimated = if kind == "accept" {
+                    states_estimate(&hir, true)
+                } else {
+                    gate_estimate
+                };
+                let (nfa, eligible) = single_nfa(&hir).expect("catalog NFA builds");
+                let actual = nfa.states().len();
+                assert_eq!(
+                    eligible,
+                    gate_estimate <= MAX_SINGLE_DENSE_ESTIMATED_NFA_STATES
+                        && actual <= MAX_SINGLE_BITSET_NFA_STATES
+                );
+                assert_eq!(
+                    eligible,
+                    kind == "seek" && expected_eligible,
+                    "{name} {kind} eligibility under the small policy"
+                );
+                eprintln!(
+                    "{name} {kind}: estimated_states={estimated}, dense_gate_estimate={gate_estimate}, actual_states={actual}, dense_eligible={eligible}"
+                );
+                if kind == "seek" {
+                    seek_eligible = eligible;
+                }
+            }
+            assert_eq!(seek_eligible, expected_eligible, "{name} selection");
+        }
+    }
+
+    /// Dense seeks answer exactly like the retained hybrid implementation,
+    /// including look-around context, UTF-8 classes, accept-seek rejection
+    /// triggers, and searches that begin inside a subject.
+    #[test]
+    fn dense_single_seeks_match_the_hybrid_fallback() {
+        let cases = [
+            (
+                r"\A(?:ab|cd)[0-9]{1,3}\z",
+                ONIG_OPTION_CAPTURE_GROUP,
+                &["ab7", "x ab7", "cd123", "ab1234", "zz", "abc"] as &[&str],
+            ),
+            (
+                r"(?i)k+\z",
+                ONIG_OPTION_CAPTURE_GROUP | ONIG_OPTION_IGNORECASE,
+                &["k", "Kk", "\u{212A}k", "xk", "k "] as &[&str],
+            ),
+            (
+                r"(?m)^あ+$",
+                ONIG_OPTION_CAPTURE_GROUP,
+                &["あ", "x\nあ\n", "あい", "xあ"] as &[&str],
+            ),
+            (
+                r"[é-ü]+x(?i:[ß])?",
+                ONIG_OPTION_CAPTURE_GROUP,
+                &["éx", "üx", "éxß", "éxss", "x", "éy"] as &[&str],
+            ),
+        ];
+
+        let dense_limits = Some(PREFERRED_SINGLE_DENSE_LIMITS);
+        for (pattern, options, subjects) in cases {
+            let dense = single_seek_with(pattern, options, dense_limits)
+                .unwrap_or_else(|| panic!("no single seek for {pattern:?}"));
+            let hybrid =
+                single_seek_with(pattern, options, None).expect("the hybrid fallback builds");
+
+            for text in subjects {
+                for start in char_boundaries(text) {
+                    assert_eq!(
+                        dense.search(text.as_bytes(), start),
+                        hybrid.search(text.as_bytes(), start),
+                        "seek for {pattern:?} on {text:?} from {start}"
+                    );
+                    assert_eq!(
+                        dense.accept_answer(text.as_bytes(), start),
+                        hybrid.accept_answer(text.as_bytes(), start),
+                        "accept seek for {pattern:?} on {text:?} from {start}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A tiny dense budget rejects determinization and uses the hybrid DFA;
+    /// when a table builds, searches use it while the hybrid pool is retained.
+    #[test]
+    fn dense_single_seek_is_bounded_and_falls_back_to_hybrid() {
+        let pattern = r"\A(?:ab|cd)[0-9]{1,3}\z";
+        let dense = single_seek_with(
+            pattern,
+            ONIG_OPTION_CAPTURE_GROUP,
+            Some(SingleDenseLimits {
+                dfa_bytes: SINGLE_DENSE_DFA_SIZE_LIMIT,
+                determinize_bytes: SINGLE_DENSE_DETERMINIZE_SIZE_LIMIT,
+            }),
+        )
+        .expect("seek builds");
+        assert!(dense.uses_dense_dfas());
+
+        assert!(dense.memory_usage() <= SINGLE_DENSE_DFA_SIZE_LIMIT);
+
+        let forced = single_seek_with(
+            pattern,
+            ONIG_OPTION_CAPTURE_GROUP,
+            Some(SingleDenseLimits {
+                dfa_bytes: 0,
+                determinize_bytes: 0,
+            }),
+        )
+        .expect("hybrid fallback builds after dense rejection");
+        assert_eq!(forced.backend_names().0, "hybrid");
+
+        for text in ["ab1", "cd123", "ab1234", "zz"] {
+            assert_eq!(
+                dense.search(text.as_bytes(), 0),
+                forced.search(text.as_bytes(), 0)
+            );
+        }
+    }
+
+    /// Adaptive seeks run the hybrid DFA until the exact per-DFA consultation
+    /// threshold, then publish one immutable dense DFA. The pool remains for
+    /// the hybrid accept member until that member promotes as well.
+    #[test]
+    fn adaptive_single_seek_promotes_each_dfa_after_its_consultation_threshold() {
+        let pattern = r"[é-ü]+x(?i:[ß])?";
+        let adaptive = adaptive_single_seek_with(
+            pattern,
+            ONIG_OPTION_CAPTURE_GROUP,
+            Some(PREFERRED_SINGLE_DENSE_LIMITS),
+            2,
+        )
+        .expect("adaptive seek builds");
+        let hybrid = single_seek_with(pattern, ONIG_OPTION_CAPTURE_GROUP, None)
+            .expect("forced-hybrid reference builds");
+        assert_eq!(adaptive.backend_names(), ("hybrid", Some("hybrid")));
+        assert_eq!(adaptive.adaptive_consultations(), (Some(0), Some(0)));
+
+        assert_eq!(
+            adaptive.search("éx".as_bytes(), 0),
+            hybrid.search("éx".as_bytes(), 0)
+        );
+        assert_eq!(
+            adaptive.accept_answer("éx".as_bytes(), 0),
+            hybrid.accept_answer("éx".as_bytes(), 0)
+        );
+        assert_eq!(adaptive.adaptive_consultations(), (Some(1), Some(1)));
+        assert_eq!(adaptive.backend_names(), ("hybrid", Some("hybrid")));
+
+        assert_eq!(
+            adaptive.search("éxß".as_bytes(), 0),
+            hybrid.search("éxß".as_bytes(), 0)
+        );
+        assert_eq!(adaptive.backend_names(), ("dense", Some("hybrid")));
+        assert_eq!(adaptive.adaptive_consultations(), (Some(2), Some(1)));
+
+        assert_eq!(
+            adaptive.accept_answer("éxß".as_bytes(), 0),
+            hybrid.accept_answer("éxß".as_bytes(), 0)
+        );
+        assert_eq!(adaptive.backend_names(), ("dense", Some("dense")));
+        assert_eq!(adaptive.adaptive_consultations(), (Some(2), Some(2)));
+
+        // Once both immutable tables have been published, calls no longer
+        // consult the retained hybrid DFAs or mutate the counters.
+        for text in ["éx", "éxß", "x", "éy"] {
+            assert_eq!(
+                adaptive.search(text.as_bytes(), 0),
+                hybrid.search(text.as_bytes(), 0)
+            );
+            assert_eq!(
+                adaptive.accept_answer(text.as_bytes(), 0),
+                hybrid.accept_answer(text.as_bytes(), 0)
+            );
+        }
+        assert_eq!(adaptive.adaptive_consultations(), (Some(2), Some(2)));
+    }
+
+    /// A rejected bounded promotion is memoized once and leaves the hybrid
+    /// backend as the exact fallback for all later calls.
+    #[test]
+    fn adaptive_single_seek_memoizes_dense_rejection_and_keeps_hybrid() {
+        let pattern = r"(?:ab|cd)[0-9]{1,3}";
+        let adaptive = adaptive_single_seek_with(
+            pattern,
+            ONIG_OPTION_CAPTURE_GROUP,
+            Some(SingleDenseLimits {
+                dfa_bytes: 0,
+                determinize_bytes: 0,
+            }),
+            2,
+        )
+        .expect("adaptive seek builds");
+        let hybrid = single_seek_with(pattern, ONIG_OPTION_CAPTURE_GROUP, None)
+            .expect("forced-hybrid reference builds");
+
+        for _ in 0..2 {
+            assert_eq!(
+                adaptive.search("cd123".as_bytes(), 0),
+                hybrid.search("cd123".as_bytes(), 0)
+            );
+        }
+        let adaptive_dfa = adaptive.dense.as_ref().expect("seek is adaptive");
+        assert!(adaptive_dfa.promotion_attempted());
+        assert!(matches!(adaptive_dfa.dense_decision.get(), Some(None)));
+        assert_eq!(adaptive.adaptive_consultations().0, Some(2));
+        assert_eq!(adaptive.backend_names().0, "hybrid");
+
+        for text in ["ab7", "cd123", "cd1234", "none"] {
+            assert_eq!(
+                adaptive.search(text.as_bytes(), 0),
+                hybrid.search(text.as_bytes(), 0)
+            );
+        }
+        assert_eq!(adaptive.adaptive_consultations().0, Some(2));
+        assert!(matches!(adaptive_dfa.dense_decision.get(), Some(None)));
+    }
+
+    /// A panic during dense construction cannot leave a poisoned OnceLock or
+    /// cause an unbounded retry: later calls keep using the retained hybrid.
+    #[test]
+    fn adaptive_single_seek_promotion_panic_falls_back_without_retry() {
+        let pattern = r"[é-ü]+x(?i:[ß])?";
+        let adaptive = adaptive_single_seek_with(
+            pattern,
+            ONIG_OPTION_CAPTURE_GROUP,
+            Some(PREFERRED_SINGLE_DENSE_LIMITS),
+            1,
+        )
+        .expect("adaptive seek builds");
+        let hybrid = single_seek_with(pattern, ONIG_OPTION_CAPTURE_GROUP, None)
+            .expect("forced-hybrid reference builds");
+        let adaptive_dfa = adaptive.dense.as_ref().expect("seek is adaptive");
+        let attempts = AtomicUsize::new(0);
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            adaptive_dfa.initialize_dense_with(|| {
+                attempts.fetch_add(1, Ordering::Relaxed);
+                panic!("injected dense builder panic");
+            });
+        }));
+        assert!(panic.is_err());
+        assert_eq!(attempts.load(Ordering::Relaxed), 1);
+        assert!(adaptive_dfa.promotion_attempted());
+        assert!(adaptive_dfa.dense_decision.get().is_none());
+
+        // The failed initializer is never called again, and search remains
+        // equivalent to a separately built hybrid DFA.
+        adaptive_dfa.initialize_dense_with(|| {
+            attempts.fetch_add(1, Ordering::Relaxed);
+            None
+        });
+        assert_eq!(attempts.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            adaptive.search("éxß".as_bytes(), 0),
+            hybrid.search("éxß".as_bytes(), 0)
+        );
+        assert_eq!(adaptive.backend_names().0, "hybrid");
+        assert_eq!(adaptive.adaptive_consultations().0, Some(0));
+    }
+
+    /// Concurrent calls share one immutable publication while each thread
+    /// retains its own hybrid cache until the shared promotion completes.
+    #[test]
+    fn adaptive_single_seek_promotes_safely_across_threads() {
+        let pattern = r"[é-ü]+x(?i:[ß])?";
+        let adaptive = Arc::new(
+            adaptive_single_seek_with(
+                pattern,
+                ONIG_OPTION_CAPTURE_GROUP,
+                Some(PREFERRED_SINGLE_DENSE_LIMITS),
+                64,
+            )
+            .expect("adaptive seek builds"),
+        );
+        let hybrid = Arc::new(
+            single_seek_with(pattern, ONIG_OPTION_CAPTURE_GROUP, None)
+                .expect("forced-hybrid reference builds"),
+        );
+        let mut workers = Vec::new();
+        for _ in 0..4 {
+            let adaptive = Arc::clone(&adaptive);
+            let hybrid = Arc::clone(&hybrid);
+            workers.push(std::thread::spawn(move || {
+                for iteration in 0..24 {
+                    let text = if iteration % 2 == 0 { "éx" } else { "éxß" };
+                    assert_eq!(
+                        adaptive.search(text.as_bytes(), 0),
+                        hybrid.search(text.as_bytes(), 0)
+                    );
+                    assert_eq!(
+                        adaptive.accept_answer(text.as_bytes(), 0),
+                        hybrid.accept_answer(text.as_bytes(), 0)
+                    );
+                }
+            }));
+        }
+        for worker in workers {
+            worker.join().expect("worker completed without panic");
+        }
+        assert_eq!(adaptive.backend_names(), ("dense", Some("dense")));
+        assert_eq!(adaptive.adaptive_consultations(), (Some(64), Some(64)));
+    }
+
+    /// The bounded eager helper keeps the larger domain and URL patterns on
+    /// the hybrid backend.
+    #[test]
+    fn django_catalog_single_seek_backend_diagnostic() {
+        eprintln!(
+            concat!(
+                "single-dense eligibility: estimated_states<={}, actual_states<=64; ",
+                "dfa_bytes<={}, ",
+                "determinize_scratch_bytes<={}; ",
+                "hybrid fallback retained if any dense condition fails"
+            ),
+            MAX_SINGLE_DENSE_ESTIMATED_NFA_STATES,
+            SINGLE_DENSE_DFA_SIZE_LIMIT,
+            SINGLE_DENSE_DETERMINIZE_SIZE_LIMIT,
+        );
+        let mut dense_seek = false;
+        let mut dense_accept = false;
+        for (name, pattern, subjects) in [
+            (
+                "django_email_domain",
+                DJANGO_DOMAIN,
+                &[
+                    "example.com",
+                    "straße.de",
+                    "strasse.de",
+                    "a-.com",
+                    "localhost",
+                ] as &[&str],
+            ),
+            (
+                "django_url_regex",
+                DJANGO_URL,
+                &[
+                    "http://example.com/",
+                    "http://straße.de/",
+                    "http://strasse.de/",
+                    "http://-a.com/",
+                    "http://localhost/",
+                    "not a url",
+                ] as &[&str],
+            ),
+        ] {
+            let seek =
+                single_seek_with(pattern, DJANGO_OPTIONS, Some(PREFERRED_SINGLE_DENSE_LIMITS))
+                    .unwrap_or_else(|| panic!("no seek for {name}"));
+            let hybrid = single_seek_with(pattern, DJANGO_OPTIONS, None)
+                .unwrap_or_else(|| panic!("no hybrid seek for {name}"));
+            let (seek_backend, accept_backend) = seek.backend_names();
+            dense_seek |= seek_backend == "dense";
+            dense_accept |= accept_backend == Some("dense");
+            assert!(seek.has_accept(), "{name} keeps its accept seek");
+            assert_eq!(
+                seek_backend, "hybrid",
+                "{name} exceeds the small-table guards"
+            );
+            assert_eq!(
+                accept_backend,
+                Some("hybrid"),
+                "{name} accept exceeds the gate"
+            );
+            assert!(
+                seek.automata_memory_usage() <= 2 * SINGLE_DENSE_DFA_SIZE_LIMIT,
+                "{name} diagnostic exceeds the combined small-table cap"
+            );
+            let mut comparisons = 0;
+            for text in subjects {
+                for start in char_boundaries(text) {
+                    comparisons += 1;
+                    assert_eq!(
+                        seek.search(text.as_bytes(), start),
+                        hybrid.search(text.as_bytes(), start),
+                        "{name} seek on {text:?} from {start}"
+                    );
+                    assert_eq!(
+                        seek.accept_answer(text.as_bytes(), start),
+                        hybrid.accept_answer(text.as_bytes(), start),
+                        "{name} accept seek on {text:?} from {start}"
+                    );
+                }
+            }
+            eprintln!(
+                concat!(
+                    "{}: seek={}, accept={:?}; ",
+                    "configured automata_only={} B, warmed_current_thread_caches={} B; ",
+                    "forced_hybrid automata_only={} B, warmed_current_thread_caches={} B; ",
+                    "each backend ran search and accept_answer at {} ",
+                    "character-boundary positions; cache sizes are after those calls ",
+                    "(pool bookkeeping excluded)"
+                ),
+                name,
+                seek_backend,
+                accept_backend,
+                seek.automata_memory_usage(),
+                seek.cache_memory_usage(),
+                hybrid.automata_memory_usage(),
+                hybrid.cache_memory_usage(),
+                comparisons,
+            );
+        }
+        assert!(
+            !dense_seek,
+            "large catalog seeks stay hybrid under the small gate"
+        );
+        assert!(
+            !dense_accept,
+            "large catalog accepts stay hybrid under the small gate"
+        );
+    }
+
+    /// Exercise the actual production promotion policy on Django's catalog
+    /// validators. The memory values distinguish automata retained by the
+    /// `SingleSeek` (including the hybrid after promotion) from this thread's
+    /// warmed hybrid caches; Pool bookkeeping and other threads' caches are
+    /// excluded.
+    #[test]
+    fn django_catalog_adaptive_single_seek_diagnostic() {
+        eprintln!(
+            concat!(
+                "production adaptive policy: estimated_states<={}, actual<=64, text anchors only, promotion_after={} actual DFA consultations, ",
+                "dense_bytes<={}, determinize_scratch_bytes<={}; ",
+                "hybrid NFA/backend and per-thread caches remain allocated after promotion"
+            ),
+            MAX_SINGLE_DENSE_ESTIMATED_NFA_STATES,
+            SINGLE_DENSE_PROMOTION_THRESHOLD,
+            SINGLE_DENSE_DFA_SIZE_LIMIT,
+            SINGLE_DENSE_DETERMINIZE_SIZE_LIMIT,
+        );
+        let mut dense_seek = false;
+        let mut dense_accept = false;
+        let mut local_part_promoted = false;
+        let local_options = DJANGO_OPTIONS;
+        for (name, pattern, options, text, eligible) in [
+            (
+                "django_email_local_part",
+                DJANGO_EMAIL_LOCAL,
+                local_options,
+                "john.doe",
+                true,
+            ),
+            (
+                "django_email_domain",
+                DJANGO_DOMAIN,
+                DJANGO_OPTIONS,
+                "example.com",
+                false,
+            ),
+            (
+                "django_url_regex",
+                DJANGO_URL,
+                DJANGO_OPTIONS,
+                "http://example.com/",
+                false,
+            ),
+        ] {
+            let adaptive = production_single_seek(pattern, options)
+                .unwrap_or_else(|| panic!("no production seek for {name}"));
+            let initial_backends = adaptive.backend_names();
+            assert_eq!(initial_backends.0, "hybrid");
+
+            let initial_automata = adaptive.automata_memory_usage();
+            if eligible {
+                assert_eq!(adaptive.adaptive_consultations(), (Some(0), None));
+                assert_eq!(initial_backends.1, None, "local-part seek is exact");
+                for _ in 0..(SINGLE_DENSE_PROMOTION_THRESHOLD - 1) {
+                    let _ = adaptive.search(text.as_bytes(), 0);
+                }
+                assert_eq!(adaptive.backend_names(), ("hybrid", None));
+                let before_automata = adaptive.automata_memory_usage();
+                let before_caches = adaptive.cache_memory_usage();
+                let before_counts = adaptive.adaptive_consultations();
+                assert_eq!(before_counts, (Some(63), None));
+
+                let _ = adaptive.search(text.as_bytes(), 0);
+                let after_backends = adaptive.backend_names();
+                let after_automata = adaptive.automata_memory_usage();
+                let after_caches = adaptive.cache_memory_usage();
+                let after_counts = adaptive.adaptive_consultations();
+                local_part_promoted = after_backends.0 == "dense";
+                dense_seek |= local_part_promoted;
+                dense_accept |= after_backends.1 == Some("dense");
+                eprintln!(
+                    concat!(
+                        "{} eligible: initial_automata={} B; before_promotion={:?}, ",
+                        "automata={} B, warmed_current_thread_caches={} B; ",
+                        "after={:?}, automata={} B, retained_current_thread_caches={} B; counts={:?}"
+                    ),
+                    name,
+                    initial_automata,
+                    before_counts,
+                    before_automata,
+                    before_caches,
+                    after_backends,
+                    after_automata,
+                    after_caches,
+                    after_counts,
+                );
+                assert_eq!(after_counts, (Some(64), None));
+                assert!(after_automata >= before_automata);
+            } else {
+                assert_eq!(adaptive.adaptive_consultations(), (None, None));
+                for _ in 0..SINGLE_DENSE_PROMOTION_THRESHOLD {
+                    let _ = adaptive.search(text.as_bytes(), 0);
+                    let _ = adaptive.accept_answer(text.as_bytes(), 0);
+                }
+                let after_backends = adaptive.backend_names();
+                let after_automata = adaptive.automata_memory_usage();
+                let after_caches = adaptive.cache_memory_usage();
+                eprintln!(
+                    concat!(
+                        "{} ineligible: initial_automata={} B; after_64_search_and_accept={:?}, ",
+                        "automata={} B, warmed_current_thread_caches={} B; counts={:?}"
+                    ),
+                    name,
+                    initial_automata,
+                    after_backends,
+                    after_automata,
+                    after_caches,
+                    adaptive.adaptive_consultations(),
+                );
+                assert_eq!(after_backends, ("hybrid", Some("hybrid")));
+                assert_eq!(adaptive.adaptive_consultations(), (None, None));
+                assert_eq!(after_automata, initial_automata);
+            }
+        }
+        assert!(
+            local_part_promoted && dense_seek,
+            "production policy promotes the eligible local-part seek"
+        );
+        assert!(
+            !dense_accept,
+            "catalog accepts exceed the small-table guards"
+        );
+    }
+
+    /// A mixed pair keeps a pool only for its hybrid member. Both methods
+    /// still answer like the all-hybrid pair.
+    #[test]
+    fn mixed_dense_and_hybrid_seek_uses_only_hybrid_caches() {
+        let pattern = r"[é-ü]+x(?i:[ß])?";
+        let (_, seek, accept) = onig_new_for_single_seek(
+            pattern.as_bytes(),
+            ONIG_OPTION_CAPTURE_GROUP,
+            &ONIG_ENCODING_UTF8,
+            &OnigSyntaxOniguruma,
+            false,
+            true,
+        )
+        .unwrap();
+        let seek = seek.unwrap();
+        let hybrid = SingleSeek::build_with_dense_limits(&seek, accept.as_ref(), None)
+            .expect("hybrid pair builds");
+        let mixed = SingleSeek::build_with_separate_dense_limits(
+            &seek,
+            accept.as_ref(),
+            Some(PREFERRED_SINGLE_DENSE_LIMITS),
+            Some(SingleDenseLimits {
+                dfa_bytes: 0,
+                determinize_bytes: 0,
+            }),
+        )
+        .expect("mixed pair builds");
+        assert_eq!(mixed.backend_names(), ("dense", Some("hybrid")));
+
+        for text in ["éx", "éxß", "éxss", "x", "éy"] {
+            assert_eq!(
+                mixed.search(text.as_bytes(), 0),
+                hybrid.search(text.as_bytes(), 0)
+            );
+            assert_eq!(
+                mixed.accept_answer(text.as_bytes(), 0),
+                hybrid.accept_answer(text.as_bytes(), 0)
+            );
+        }
+
+        let reverse_mixed = SingleSeek::build_with_separate_dense_limits(
+            &seek,
+            accept.as_ref(),
+            Some(SingleDenseLimits {
+                dfa_bytes: 0,
+                determinize_bytes: 0,
+            }),
+            Some(PREFERRED_SINGLE_DENSE_LIMITS),
+        )
+        .expect("reverse mixed pair builds");
+        assert_eq!(reverse_mixed.backend_names(), ("hybrid", Some("dense")));
+
+        for text in ["éx", "éxß", "éxss", "x", "éy"] {
+            assert_eq!(
+                reverse_mixed.search(text.as_bytes(), 0),
+                hybrid.search(text.as_bytes(), 0)
+            );
+            assert_eq!(
+                reverse_mixed.accept_answer(text.as_bytes(), 0),
+                hybrid.accept_answer(text.as_bytes(), 0)
+            );
+        }
+    }
+
+    #[test]
+    fn dense_single_seek_stays_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<SingleSeek>();
     }
 
     /// The seek of `pattern` under `options` in regex syntax, or what it is
@@ -3278,5 +4439,93 @@ mod tests {
         assert!(stats.built && stats.cache_clears > 0, "{stats:?}");
         assert_eq!(want, [(1, 0, 1), (0, 2, 4), (0, 4, 6)]);
         assert_eq!(got, want);
+    }
+    /// Check the new bitset path against the retained library implementation,
+    /// including empty input, anchors evaluated at EOI, Unicode bytes, and
+    /// nonzero starts with every possible predecessor byte.
+    #[test]
+    fn single_table_matches_hybrid_at_every_byte_context() {
+        for pattern in [
+            r"",
+            r"a*",
+            r"\Aa+\z",
+            r"\z\A",
+            r"(?:ab|a)\z",
+            r"[a-z]+",
+            r"é+",
+            r"a\z",
+            r"(?:a?|b)*c",
+            r"[^x]+",
+            r"\A(?:a|bc){0,3}\z",
+        ] {
+            let nfa = thompson::Compiler::new()
+                .configure(
+                    thompson::Config::new()
+                        .utf8(false)
+                        .which_captures(thompson::WhichCaptures::None),
+                )
+                .build(pattern)
+                .unwrap();
+            let dfa = build_single_hybrid(nfa.clone()).unwrap();
+            let mut cache = dfa.create_cache();
+            let table = SingleTable::build(&nfa, PREFERRED_SINGLE_DENSE_LIMITS).unwrap();
+            for previous in 0..=256 {
+                for suffix in [
+                    "", "a", "aa", "ab", "ba", "abc", "\n", "a\n", "a\r\n", "é", "éa",
+                ] {
+                    let mut text = vec![];
+                    if previous < 256 {
+                        text.push(previous as u8);
+                    }
+                    let start = text.len();
+                    text.extend_from_slice(suffix.as_bytes());
+                    let expected = dfa
+                        .try_search_fwd(
+                            &mut cache,
+                            &Input::new(&text).span(start..text.len()).earliest(true),
+                        )
+                        .unwrap()
+                        .is_some();
+                    assert_eq!(
+                        table.search(&text, start),
+                        expected,
+                        "{pattern:?} previous={previous} suffix={suffix:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn single_table_guards_bitset_width_and_assertions() {
+        let mut saw_64 = false;
+        let mut saw_65 = false;
+        for count in 1..=80 {
+            let nfa = thompson::Compiler::new()
+                .configure(thompson::Config::new().utf8(false))
+                .build(&format!("a{{{count}}}"))
+                .unwrap();
+            let size = nfa.states().len();
+            saw_64 |= size == 64;
+            saw_65 |= size == 65;
+            assert_eq!(SingleTable::supports(&nfa), size <= 64);
+            if size > 64 {
+                assert!(SingleTable::build(&nfa, PREFERRED_SINGLE_DENSE_LIMITS).is_none());
+            }
+            if size == 64 {
+                let table = SingleTable::build(&nfa, PREFERRED_SINGLE_DENSE_LIMITS).unwrap();
+                assert!(table.search("a".repeat(count).as_bytes(), 0));
+                assert!(!table.search("a".repeat(count - 1).as_bytes(), 0));
+            }
+        }
+        assert!(saw_64 && saw_65);
+        for pattern in [r"(?m)^a+$", r"(?-u:\b)a", r"(?-u:\b{start-half})a"] {
+            let nfa = thompson::Compiler::new()
+                .configure(thompson::Config::new().utf8(false))
+                .build(pattern)
+                .unwrap();
+            assert!(!SingleTable::supports(&nfa));
+            assert!(SingleTable::build(&nfa, PREFERRED_SINGLE_DENSE_LIMITS).is_none());
+        }
     }
 }
