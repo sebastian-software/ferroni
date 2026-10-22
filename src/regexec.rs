@@ -3468,6 +3468,66 @@ fn greedy_char_loop(
     s
 }
 
+/// Choose the negated byte-class test once per run, outside the character
+/// loop. Keeping the choice in its closure makes each byte dispatch on
+/// `ascii_fast`, even though the class cannot change during the run.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn greedy_not_byte_class_loop(
+    stack: &mut Vec<StackEntry>,
+    pcode: usize,
+    enc: OnigEncoding,
+    str_data: &[u8],
+    start: usize,
+    right_range: usize,
+    end: usize,
+    bsp: &BitSet,
+    ascii_fast: CClassAsciiFastKind,
+) -> usize {
+    // A delimiter search can skip a long ASCII run. The ASCII check is
+    // essential for byte input: a malformed multibyte head may consume an
+    // ASCII delimiter as a trail byte, in which case the character walker
+    // below must decide where the run ends.
+    if right_range.saturating_sub(start) >= 32 {
+        let text = &str_data[start..right_range];
+        let found = match ascii_fast {
+            CClassAsciiFastKind::Eq(c) => Some(memchr::memchr(c, text)),
+            CClassAsciiFastKind::EqFoldLower(lower) => {
+                Some(memchr::memchr2(lower, lower.to_ascii_uppercase(), text))
+            }
+            CClassAsciiFastKind::None => None,
+        };
+        if let Some(found) = found {
+            let len = found.unwrap_or(text.len());
+            if text[..len].is_ascii() {
+                let stop = start + len;
+                push_char_run(stack, pcode, enc, str_data, start, stop, true, true);
+                return stop;
+            }
+        }
+    }
+    macro_rules! run {
+        ($member:expr) => {{
+            let member = $member;
+            greedy_char_loop(
+                stack,
+                pcode,
+                enc,
+                str_data,
+                start,
+                right_range,
+                member,
+                |x| member(str_data[x]).then(|| advance_char_to_end(enc, str_data, x, end)),
+            )
+        }};
+    }
+    match ascii_fast {
+        CClassAsciiFastKind::Eq(c) => run!(|b| b != c),
+        CClassAsciiFastKind::EqFoldLower(lower) => run!(|b: u8| b >= 0x80 || (b | 0x20) != lower),
+        CClassAsciiFastKind::None => run!(|b| !bitset_at(bsp, b as usize)),
+    }
+}
+
 /// Greedy run of a bounded single-character loop (`C{min,max}`, Rust-only
 /// ADR-008) from `start`: up to `max` characters, and `None` when fewer than
 /// `min` match.
@@ -5436,23 +5496,16 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     ascii_fast,
                 } = op.payload
                 {
-                    let excluded = |b: u8| match ascii_fast {
-                        CClassAsciiFastKind::Eq(c) => b == c,
-                        CClassAsciiFastKind::EqFoldLower(lower) => b < 0x80 && (b | 0x20) == lower,
-                        CClassAsciiFastKind::None => bitset_at(bsp, b as usize),
-                    };
-                    s = greedy_char_loop(
+                    s = greedy_not_byte_class_loop(
                         &mut stack,
                         p + 1,
                         enc,
                         str_data,
                         s,
                         right_range,
-                        |b| !excluded(b),
-                        |x| {
-                            (!excluded(str_data[x]))
-                                .then(|| advance_char_to_end(enc, str_data, x, end))
-                        },
+                        end,
+                        bsp,
+                        ascii_fast,
                     );
                     p += 1;
                 } else {
@@ -13685,12 +13738,15 @@ mod tests {
         // are exactly the boundaries of the forward scan. Truncated and
         // stray multibyte sequences make `prev_char_head` disagree with
         // those boundaries, so the star opcodes must not rely on it there.
-        let inputs: [&[u8]; 5] = [
+        let inputs: [&[u8]; 8] = [
             b"x\xc3ab",
             b"\xc3\xa9\xa9ab",
             b"ab\xe2\x82a b",
             b"\xf0\x9f\x98a b",
             b"a\xc3\xa9\x80b",
+            b"abcQq\"\\ab",
+            b"ab\xc3\"q",
+            "aéQ𝄞b".as_bytes(),
         ];
         for (class, opcode) in [
             ("[\\x{80}-\\x{10ffff}]", OpCode::CClassMbStar),
@@ -13698,6 +13754,8 @@ mod tests {
             ("[^\\x{100}]", OpCode::CClassMbNotStar),
             ("[^\"\\x{100}]", OpCode::CClassMixNotStar),
             ("[^\"]", OpCode::CClassNotStar),
+            ("[^\"\\\\]", OpCode::CClassNotStar),
+            ("[^qQ]", OpCode::CClassNotStar),
             ("\\w", OpCode::WordStar),
         ] {
             for tail in ["(?=.b)", "(?=a)", "(?= )"] {
@@ -13721,6 +13779,56 @@ mod tests {
                         (pos, region.beg[0], region.end[0])
                     };
                     assert_eq!(run(&star_reg), run(&generic_reg), "{star} on {input:x?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negated_byte_class_ascii_runs_preserve_captures_and_backtracking() {
+        let _limits = shared_limits();
+        for class in ["[^\"]", "[^qQ]", "[^\"\\\\]"] {
+            let star = compile_full(format!("({class}*)(?=.b)").as_bytes());
+            let counted = compile_full(format!("({class}{{0,512}})(?=.b)").as_bytes());
+            assert!(has_opcode(&star, OpCode::CClassNotStar), "{class}");
+            for prefix_len in [0, 31, 32, 33, 127] {
+                for suffix in [
+                    &b"xb\"b"[..],
+                    b"xbQqb",
+                    b"xb\0b",
+                    b"\xc3\"xb",
+                    b"\xc3\xa9\x80xb",
+                    "éxb𝄞b".as_bytes(),
+                ] {
+                    let mut input = vec![b'a'; prefix_len];
+                    input.extend_from_slice(suffix);
+                    // Include a delimiter just outside the search extent and
+                    // a backward search. A byte API start may split UTF-8.
+                    for (start, range) in [
+                        (0, input.len()),
+                        (prefix_len, input.len()),
+                        (input.len(), 0),
+                        (0, prefix_len),
+                    ] {
+                        let run = |reg: &RegexType| {
+                            let (pos, region) = onig_search(
+                                reg,
+                                &input,
+                                input.len(),
+                                start,
+                                range,
+                                Some(OnigRegion::new()),
+                                ONIG_OPTION_NONE,
+                            );
+                            let region = region.unwrap();
+                            (pos, region.beg, region.end)
+                        };
+                        assert_eq!(
+                            run(&star),
+                            run(&counted),
+                            "{class}, {input:x?}, start={start}, range={range}"
+                        );
+                    }
                 }
             }
         }

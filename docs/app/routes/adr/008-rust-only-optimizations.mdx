@@ -289,6 +289,14 @@ Upstream's `\X` is the atomic group `(?>\O(?:\Y\O)*)`: a multiline any-character
 - **Impact**: `(?<=x|a*b)` over 1,000 characters 1.49 s → 96 ms (C: 583 ms); `(?<!x|a*b)c` 4.25 ms → 0.27 ms (C: 1.70 ms), measured after the matcher fixes of the same pass.
 - **Bounds**: one lazy backtrack entry per run, as for every star opcode, so a match stack limit counts the run once rather than per character; no extra memory.
 
+#### Specialized negated byte-class runs (`src/regexec.rs`)
+
+- **Trigger**: the existing `CClassNotStar` instruction. Its equality, ASCII case-pair, or bitset test is selected once per run, instead of inside each character test. Equality and case-pair runs with at least 32 bytes remaining also try `memchr` or `memchr2`, accepting the result only when the entire skipped prefix is ASCII.
+- **Execution**: the specialized character walker and the ASCII scan create the same lazy backtrack entry as the original loop. A non-ASCII prefix keeps the character walker: a malformed UTF-8 head can consume an ASCII delimiter as a trail byte, so finding that byte alone cannot decide the run. Bytecode, captures, character boundaries, and retry/stack bookkeeping are unchanged.
+- **Bounds**: no new allocation, dependency, unsafe code, or compiled-pattern data. The extra scans are linear in the current run. The measured comparison executable's text segment grows by 16 KiB (0.25%); downstream code size depends on its build.
+- **Validation**: C compatibility and integration suites, the prefilter self-check with serial tests, and differential comparisons with bounded character repeats over ASCII, Unicode, malformed UTF-8, captures, backtracking, and forward/backward search ranges.
+- **Impact**: local Apple M1 Ultra steady-batch measurements against `7e67f04`, three paired processes per case with padded environments: Fluent Bit Nginx −14.3%, Apache −6.3%, ferrolink attribute splitting −3.9%, and markup scanning −4.0%. A follow-up across eight environment alignments measured markup at −3.4%, with cl100k at +0.9% and the short two-grapheme case at +1.9%. These are case-specific elapsed-time changes, not a whole-application or cross-platform claim. The [local diagnostic](https://github.com/sebastian-software/ferroni/tree/main/benches/diagnostics/negated-class-runs-20261022) retains all 29 executable production/tokenizer cases, alignment-sensitive controls, raw samples, source provenance, and validation logs.
+
 #### Counted character repeats (`src/regcomp.rs`, `src/regexec.rs`)
 
 - **Trigger**: a greedy `C{n,m}` (`m >= 2`, with a range C does not expand inline) or `C{n,}` (`n >= 2`) whose body is one character instruction that cannot be empty: a class with no multibyte members (negated or not), one ASCII byte (also case-folded), or `.`. Lazy ranges, captures, multibyte literals and classes whose case folding adds multibyte members keep `Repeat`.
