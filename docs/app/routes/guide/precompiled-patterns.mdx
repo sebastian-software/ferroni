@@ -1,0 +1,132 @@
+---
+order: 2.5
+title: Precompiled Scanner Patterns
+---
+
+# Precompiled Scanner Patterns
+
+Enable the optional `precompiled` feature to ship compiled scanner patterns
+alongside a grammar. A [shared pattern cache](/guide/scanner#sharing-compiled-patterns-between-scanners)
+saves work within one process. An archive lets a later process or browser
+session reuse that compilation.
+
+Use this when the same grammar ships to many consumers or is loaded on every
+start. You still supply the pattern strings and build scanners normally.
+
+## Enable archive support
+
+```toml
+[dependencies]
+ferroni = { version = "2", features = ["precompiled"] }
+```
+
+## Generate the archive before shipping
+
+Run this in a build tool or asset-generation step. Build every static scanner
+set into one cache with the configuration your application will use, then
+write the archive alongside your grammar assets:
+
+```rust no_run
+use ferroni::prelude::*;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = ScannerConfig::default();
+    let mut cache = ScannerPatternCache::new();
+    let pattern_sets: &[&[&str]] = &[
+        &[r"\b(?:const|let|return)\b", r"\b\d+\b"],
+        &[r#""[^"]*""#, r"\b\d+\b"],
+    ];
+
+    for patterns in pattern_sets {
+        Scanner::with_pattern_cache(patterns, &config, &mut cache)?;
+    }
+    assert_eq!(cache.len(), 3); // The number pattern is shared.
+    std::fs::write("patterns.ferroni", cache.export_precompiled()?)?;
+    Ok(())
+}
+```
+
+The export contains the cache's decoded patterns, not just the last scanner's
+set. If your asset generator is a separate Rust package, enable `precompiled`
+there too. Match its `dfa-prefilter` feature setting to the consumer's; a
+different setting prevents reuse.
+
+## Load the archive when the application starts
+
+Attach the source before building scanners. Treat the archive as an optional
+asset so a missing file or an unsupported archive can use normal compilation:
+
+```rust no_run
+use ferroni::prelude::*;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = ScannerConfig::default();
+    let mut cache = ScannerPatternCache::new();
+    if let Ok(bytes) = std::fs::read("patterns.ferroni") {
+        match PrecompiledPatterns::from_bytes(bytes) {
+            Ok(source) => cache.add_precompiled(source),
+            Err(error) => eprintln!("Skipping pattern archive: {error}"),
+        }
+    }
+    assert!(cache.is_empty()); // Opening loads the index, not the programs.
+
+    let mut scanner = Scanner::with_pattern_cache(
+        &[r"\b(?:const|let|return)\b", r"\b\d+\b"],
+        &config,
+        &mut cache,
+    )?;
+    assert_eq!(cache.len(), 2); // Only these two programs were requested.
+    assert_eq!(
+        scanner.find_next_match("const answer = 42", 0, ScannerFindOptions::NONE)
+            .unwrap().index,
+        0,
+    );
+    Ok(())
+}
+```
+
+Keep this cache for subsequent scanner construction. Each requested program
+and its stored prefilter seek decode once, then scanners share the decoded
+entry. `PrecompiledPatterns::len()` counts indexed programs; cache `len()`
+counts only decoded or newly compiled patterns.
+
+For browser WebAssembly, fetch the archive through your host integration and
+pass the resulting bytes to `PrecompiledPatterns::from_bytes`. The filesystem
+read above is only an example for native applications; Ferroni provides no
+browser fetch API.
+
+## Handle changes and fallback
+
+Keep the original patterns. A missing entry, a compile-setting mismatch, or a
+corrupt program falls back to normal compilation. If opening the archive
+returns an error, leave the cache without that source, as above. Pattern text,
+syntax, options, backtracking optimization, and process-wide compile settings
+must match the producer. Use `source.validate_pattern(pattern, &config, false)`
+to check an entry while diagnosing unexpected compilation; `false` selects the
+normal backtracking mode used by these examples.
+
+Runtime-resolved end/while patterns compile normally when absent. Callout
+patterns are omitted from exports because their callbacks belong to the
+producing process. Rebuild the archive when you update a grammar or its compile
+settings. The format has its own version, independent of the crate version;
+an incompatible format is rejected and the compiler remains available.
+
+Use archives from a trusted producer. Structural validation does not prove
+that a program implements its claimed pattern text. See the
+[cache API](https://docs.rs/ferroni/latest/ferroni/scanner/struct.ScannerPatternCache.html#method.add_precompiled)
+and [ADR-018](/adr/018-precompiled-scanner-patterns) for the compatibility and
+validation contract.
+
+## What the measurements cover
+
+In two local runs on an Apple M1 Ultra, loading archives reduced construction
+time for captured scanner sets by 55–58% for C++, about 61% for SCSS, and
+13–14% for Java, compared with compiling into a fresh shared pattern cache.
+The measurements include archive indexing, decoding, validation, scanner
+assembly, and teardown. They exclude asset downloads and full highlighting,
+and do not measure warmed search throughput. Archive loading still allocates
+and rebuilds process-local search accelerators.
+
+The [measurement report and raw samples](https://github.com/sebastian-software/ferroni/blob/main/benches/precompiled_results/2026-10-22/README.md)
+describe the fixtures and method. Measure startup with your own grammar assets
+before deciding whether the archive size and loading cost are worthwhile.

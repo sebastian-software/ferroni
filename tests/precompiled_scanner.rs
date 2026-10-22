@@ -1,4 +1,3 @@
-#![cfg(feature = "precompiled")]
 //! Archive loading against captured UTF-16 scanner calls from Ferriki.
 use ferroni::{
     OnigString, PrecompiledPatterns, Scanner, ScannerConfig, ScannerFindOptions,

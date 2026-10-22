@@ -35,6 +35,11 @@ export function ScannerSection() {
     >
       <HighlightedRust caption="highlight.rs" html={scannerHtml} />
       <ScannerWalkthrough />
+      <p className="fam-note">
+        Loading the same grammar on every start? Enable <code>precompiled</code> to ship a pattern
+        archive and decode programs as scanners request them. Keep one shared cache for the session.{" "}
+        <Link to="/guide/precompiled-patterns">Reuse compilation across starts</Link>
+      </p>
       <Relations current="ferroni" />
     </Section>
   );
