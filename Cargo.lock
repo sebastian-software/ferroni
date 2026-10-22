@@ -226,7 +226,7 @@ dependencies = [
 
 [[package]]
 name = "ferroni"
-version = "2.5.1"
+version = "2.5.2"
 dependencies = [
  "aho-corasick",
  "bitflags",
