@@ -86,3 +86,70 @@ fn captured_scanner_sets_preserve_tokens_and_captures() {
         );
     }
 }
+
+/// Issue #448: the optimizer merges a look-behind's one-byte class with the
+/// same class right after it into `CClassRun`, a body the VM accepts. Such
+/// programs must export, load and match like compiled ones.
+#[test]
+fn look_behind_class_runs_round_trip() {
+    let patterns = [
+        r"(?<=[?!])[?!]+",
+        r"(?<=[ab])[ab]+",
+        r"(?<=[ab])[ab]",
+        r"(?<=[ab])[ab]+x",
+        r"x(?<=[ab])[ab]+",
+        r"(?<![ab])[ab]+",
+        r"(?<=[ab][ab])[ab]",
+    ];
+    let subjects = [
+        "",
+        "a",
+        "ab",
+        "aab",
+        "xab",
+        "xabbx",
+        "b?!!",
+        "!?",
+        "?!?!",
+        "ba x abbbx",
+    ];
+    let config = ScannerConfig::default();
+    for pattern in patterns {
+        let mut build = ScannerPatternCache::new();
+        let mut compiled = Scanner::with_pattern_cache(&[pattern], &config, &mut build).unwrap();
+        let blob = build
+            .export_precompiled()
+            .unwrap_or_else(|e| panic!("{pattern}: {e}"));
+        let source = PrecompiledPatterns::from_bytes(blob).unwrap();
+        assert_eq!(
+            source.validate_pattern(pattern, &config, false),
+            Ok(true),
+            "{pattern}"
+        );
+        let mut cache = ScannerPatternCache::new();
+        cache.add_precompiled(source);
+        let mut loaded = Scanner::with_pattern_cache(&[pattern], &config, &mut cache).unwrap();
+        for subject in subjects {
+            for start in 0..=subject.len() {
+                let found = |scanner: &mut Scanner| {
+                    scanner
+                        .find_next_match(subject, start, ScannerFindOptions::NONE)
+                        .map(|m| {
+                            (
+                                m.index,
+                                m.captures()
+                                    .iter()
+                                    .map(|c| (c.start, c.end))
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                };
+                assert_eq!(
+                    found(&mut loaded),
+                    found(&mut compiled),
+                    "{pattern} on {subject:?} from {start}"
+                );
+            }
+        }
+    }
+}
