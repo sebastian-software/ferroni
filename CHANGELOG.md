@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/sebastian-software/ferroni/compare/v2.5.0...v2.5.1) (2026-10-22)
+
+
+### Performance Improvements
+
+* **scanner:** speed up loading precompiled patterns ([#450](https://github.com/sebastian-software/ferroni/issues/450)) ([a86dadb](https://github.com/sebastian-software/ferroni/commit/a86dadba655e03a04bb54740d2ef3d861206b5c9)), closes [#449](https://github.com/sebastian-software/ferroni/issues/449)
+
 ## [2.5.0](https://github.com/sebastian-software/ferroni/compare/v2.4.0...v2.5.0) (2026-10-22)
 
 
