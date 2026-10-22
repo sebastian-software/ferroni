@@ -13,6 +13,10 @@ session reuse that compilation.
 Use this when the same grammar ships to many consumers or is loaded on every
 start. You still supply the pattern strings and build scanners normally.
 
+Archives are available through `ScannerPatternCache`, including for a scanner
+with a single expression. The `Regex` API has no archive constructor; loading
+an archive supplies programs for `Scanner::with_pattern_cache`.
+
 ## Enable archive support
 
 ```toml
@@ -94,6 +98,29 @@ For browser WebAssembly, fetch the archive through your host integration and
 pass the resulting bytes to `PrecompiledPatterns::from_bytes`. The filesystem
 read above is only an example for native applications; Ferroni provides no
 browser fetch API.
+
+## Keep compiled patterns in your project
+
+You can commit the generated `patterns.ferroni` alongside your pattern
+definitions. The export is deterministic for the same compiled entries and
+settings, regardless of insertion order. Generate it with a small Rust asset
+tool using the export example above, and regenerate it when the patterns or
+compile settings change.
+
+Ship the file with your application and load it as above. To embed it in a
+Rust binary, pass `include_bytes!("assets/patterns.ferroni").as_slice()` to
+`PrecompiledPatterns::from_bytes` instead of reading a file. That path is
+relative to the Rust source file containing the macro; the archive must exist
+before the application compiles. Both paths use the same lazy decoding and
+fallback behavior.
+
+Keep the pattern definitions in version control too: scanners still need
+their text and settings to select entries and compile missing ones. The
+archive uses a versioned format independent of Rust memory layout, so it can
+be shared by compatible native and WebAssembly builds. Match the producer's
+and consumer's feature flags and compile settings. An unsupported format
+returns an error when opened; leave that source out of the cache to use normal
+compilation. Regenerate the archive after an incompatible format change.
 
 ## Handle changes and fallback
 

@@ -1,20 +1,20 @@
 {
   "format_version": 1,
-  "started_utc": "2026-10-21T10:55:41.225667+00:00",
+  "started_utc": "2026-10-22T20:52:15.130618+00:00",
   "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
   "machine": "arm64",
   "cpu_count": 6,
   "corpus": "production",
-  "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39588030348, attempt 1.",
-  "commit": "8796aef33af2f874a0fdf56685f831cf175a7cd0",
+  "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1.",
+  "commit": "817d2b349b88cec0b2c130e416a3caa90220e129",
   "git_status": "",
   "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.1",
   "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
   "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
   "build_profile": "bench, thin LTO, features onigmo",
-  "binary_sha256": "a67ddea3fef5f0f0b13d1c75e581446a4c704037378a5a0a1d8c766342129b56",
+  "binary_sha256": "bd00dbd898e91457ff9de0ccb4e250a09fd9cc23614263216684bcba918182e8",
   "corpus_sha256": "f371ab7da91906b81bb609019b00f1788e80916e313c289219ca98177c3362a5",
-  "cargo_lock_sha256": "702ab5ad15ef543141825ac6ae7efa477e1fbd0f7ca85f3afb9513c542bebd3d",
+  "cargo_lock_sha256": "389060ccf7a2441e59d6adec50ee5ec8ec8fd8f6307963be8057f8e76474d094",
   "rustflags": "",
   "engines": [
     "rust",
@@ -101,7 +101,7 @@
     "--timeout",
     "120",
     "--host-note",
-    "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39588030348, attempt 1."
+    "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1."
   ],
   "order_policy": "seeded case shuffle; rotated engine order, reversed on alternating repetitions",
   "environment_alignment": {
@@ -121,7 +121,7 @@
     "CARGO_PROFILE_BENCH_LTO": null
   },
   "pcre2_build": "PCRE2_SYS_STATIC=1; bundled source from locked pcre2-sys",
-  "source_snapshot_sha256": "9136bee95770e67aff8bf5c9d25ff5fa873711523b930ec8611ae885cfb73953",
+  "source_snapshot_sha256": "8509f26a0989ad4141408df1112e87c6d27c13e3a78dea8556aa302639c5c398",
   "native_sources": {
     "oniguruma": {
       "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -133,20 +133,20 @@
     }
   },
   "environment_sizes": {
-    "1": 8768
+    "1": 8640
   },
   "hosts": [
     {
       "only_run": 1,
-      "started_utc": "2026-10-21T10:55:41.225667+00:00",
+      "started_utc": "2026-10-22T20:52:15.130618+00:00",
       "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
       "cpu_count": 6,
-      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39588030348, attempt 1.",
+      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1.",
       "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.1",
       "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
       "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
-      "binary_sha256": "a67ddea3fef5f0f0b13d1c75e581446a4c704037378a5a0a1d8c766342129b56",
-      "source_snapshot_sha256": "9136bee95770e67aff8bf5c9d25ff5fa873711523b930ec8611ae885cfb73953",
+      "binary_sha256": "bd00dbd898e91457ff9de0ccb4e250a09fd9cc23614263216684bcba918182e8",
+      "source_snapshot_sha256": "8509f26a0989ad4141408df1112e87c6d27c13e3a78dea8556aa302639c5c398",
       "native_sources": {
         "oniguruma": {
           "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -168,23 +168,23 @@
         "--timeout",
         "120",
         "--host-note",
-        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39588030348, attempt 1."
+        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1."
       ],
       "environment_sizes": {
-        "1": 8768
+        "1": 8640
       }
     },
     {
       "only_run": 2,
-      "started_utc": "2026-10-21T10:55:36.749787+00:00",
+      "started_utc": "2026-10-22T20:52:14.684165+00:00",
       "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
       "cpu_count": 6,
-      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39588030348, attempt 1.",
+      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1.",
       "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.1",
       "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
       "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
-      "binary_sha256": "a67ddea3fef5f0f0b13d1c75e581446a4c704037378a5a0a1d8c766342129b56",
-      "source_snapshot_sha256": "ce28149e6f6907adc111d2dffebb8b315d0861e49e88f6e67274ac5b4608d5a5",
+      "binary_sha256": "bd00dbd898e91457ff9de0ccb4e250a09fd9cc23614263216684bcba918182e8",
+      "source_snapshot_sha256": "ff2c2441a4f6f31b232e58b8558840f18d5496fb83bd0d9b602d990b81357dcc",
       "native_sources": {
         "oniguruma": {
           "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -206,23 +206,23 @@
         "--timeout",
         "120",
         "--host-note",
-        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39588030348, attempt 1."
+        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1."
       ],
       "environment_sizes": {
-        "2": 8792
+        "2": 8664
       }
     },
     {
       "only_run": 3,
-      "started_utc": "2026-10-21T10:55:39.467757+00:00",
+      "started_utc": "2026-10-22T20:52:16.637043+00:00",
       "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
       "cpu_count": 6,
-      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39588030348, attempt 1.",
+      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1.",
       "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.1",
       "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
       "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
-      "binary_sha256": "a67ddea3fef5f0f0b13d1c75e581446a4c704037378a5a0a1d8c766342129b56",
-      "source_snapshot_sha256": "71dd937a819ec15d20a32b8a753213b954a2b82964e924730d05d90506ab66af",
+      "binary_sha256": "bd00dbd898e91457ff9de0ccb4e250a09fd9cc23614263216684bcba918182e8",
+      "source_snapshot_sha256": "c82ddc24e468ae051459b964d7476b62d43d3aa9350277651db67473ebb2f346",
       "native_sources": {
         "oniguruma": {
           "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -244,10 +244,10 @@
         "--timeout",
         "120",
         "--host-note",
-        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39588030348, attempt 1."
+        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1."
       ],
       "environment_sizes": {
-        "3": 8816
+        "3": 8688
       }
     }
   ]

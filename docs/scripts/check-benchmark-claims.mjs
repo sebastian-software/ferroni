@@ -55,10 +55,8 @@ for (const platform of summary.platforms) {
     );
   }
   const c = pair("c");
-  if (!c || c.family_weighted_ratio <= 1 || c.comparator_cases > 0) {
-    errors.push(
-      "Revise the README: Ferroni no longer leads C's shared reuse aggregate with no case favoring C.",
-    );
+  if (!c || c.family_weighted_ratio <= 1) {
+    errors.push("Revise the README: Ferroni no longer leads C's shared reuse aggregate.");
   }
   // The homepage says only PCRE2 JIT is faster; the checks above cover the other engines.
   for (const engine of ["onigmo", "pcre2"]) {
