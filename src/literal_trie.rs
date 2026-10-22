@@ -319,7 +319,7 @@ impl LiteralTrie {
     }
 
     /// The case-fold data of a folded trie.
-    #[cfg(feature = "dfa-prefilter")]
+    #[cfg(any(feature = "dfa-prefilter", feature = "precompiled"))]
     pub(crate) fn folds(&self) -> Option<&CaseFolds> {
         self.folds.as_deref()
     }

@@ -1,0 +1,85 @@
+---
+order: 18
+title: "Precompiled Scanner Patterns"
+---
+
+# Precompiled Scanner Patterns
+
+## Status
+
+Accepted. Additive Rust API extension to ADR-001, following ADR-008.
+
+## Context
+
+A `ScannerPatternCache` already shares compiled patterns within one process.
+Consumers also need to reuse that work across process starts and browser
+sessions, and publish compiled patterns alongside TextMate grammars. Decoding
+an entire grammar eagerly can cost more than compiling the few patterns a
+highlight needs. [Issue #444](https://github.com/sebastian-software/ferroni/issues/444)
+records the motivating Ferriki prototype and its first-use measurements.
+
+## Decision
+
+The optional `precompiled` feature adds an indexed archive source to
+`ScannerPatternCache`. Opening an archive retains its bytes and checks its
+index. A cache miss decodes only the requested pattern, validates it, and
+rebuilds its process-local search accelerators. An absent, incompatible, or
+invalid entry falls back to another source and then the normal compiler.
+Resolved end/while backreferences need no special handling: a pattern absent
+from the archive compiles as before.
+
+The explicit binary schema belongs to the scanner extension. It does not
+change C-ported compiler or VM control flow. Its format version is independent
+of the crate version. An incompatible bytecode layout or meaning, Unicode
+table revision, seek encoding, or optimizer semantic change requires a format
+version bump. Readers reject unsupported versions; they do not guess at a
+migration. Patch releases that preserve these contracts can share archives.
+The schema uses fixed integer widths and explicit variant tags, never Rust
+memory layout or pointers. Binary membership maps take 32 bytes; nonbinary
+optimizer skip maps use run-length encoding where smaller than raw bytes.
+
+Store the prefilter's `SeekCode` in each program. Deriving it again would
+require the discarded tuned tree and repeat a material part of compilation.
+Lazy DFA and meta automata remain runtime work. Finders, Aho-Corasick plans,
+trie nodes, and bytecode-derived search plans are rebuilt from checked data;
+tree-derived literal-prefix and required-literal facts are retained. There is
+no serialized automaton or function pointer.
+
+Keys include pattern text, syntax, compile options, rewrite mode, prefilter
+mode, and the producing process's case-fold, capture, nesting, AST-budget,
+and user-defined-property settings. Prefilter build capability also matches;
+a build without the DFA feature cannot supply a seek to one with it. Warmup
+scheduling is excluded because it does not change a compiled pattern.
+Callout programs are omitted: registered functions belong to their process.
+The existing requirement to clear a cache after changing global compile
+settings still applies.
+
+The codec adds no dependencies (ADR-009). Serde over the full internal object
+graph would couple the format to implementation fields and include runtime
+objects that need rebuilding anyway. A separate explicit schema makes version
+changes reviewable and keeps ordinary builds unchanged.
+
+## Consequences
+
+Archives are optional accelerators. The caller keeps original pattern text and
+can discard an incompatible archive without breaking grammar loading. Cache
+`len` counts decoded patterns; clearing it keeps attached archive sources.
+Removing sources releases their bytes once their last shared handle is dropped.
+Already-built scanners retain their compiled programs.
+
+The loader bounds byte lengths, allocations, instruction counts and seek depth,
+and checks opcode/payload pairings, jump and table targets, captures, repeats,
+class ranges, fused lookbehind bodies, and trie/fold references. Checksums detect
+accidental corruption; validation still runs with a recomputed checksum. These
+checks do not establish that a producer's program implements its claimed
+pattern text. Consumers must obtain archives from a trusted producer, just as
+they obtain their grammar definitions. The format is not an authentication or
+sandbox boundary.
+
+`compat_prefilter_differential` exercises archive round trips over the existing
+compat pairs; `precompiled_scanner` replays captured C++, SCSS and Java scanner
+calls. The loader fuzz target mutates both raw archives and valid archives with
+recomputed checksums. `scanner_compile_bench` compares fresh-cache compilation
+with archive indexing, per-pattern decoding, assembly, and teardown. These
+construction measurements exclude downloads and do not predict full-page
+highlighting latency.

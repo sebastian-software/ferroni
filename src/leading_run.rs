@@ -90,6 +90,34 @@ pub(crate) struct LiteralPrefix {
 }
 
 impl LiteralPrefix {
+    #[cfg(feature = "precompiled")]
+    pub(crate) fn precompiled_parts(&self) -> (Vec<u8>, BitSet, bool, Option<u64>) {
+        (
+            self.finder.needle().to_vec(),
+            self.class,
+            self.multibyte,
+            self.retry_bound,
+        )
+    }
+
+    #[cfg(feature = "precompiled")]
+    pub(crate) fn from_precompiled(
+        needle: Vec<u8>,
+        class: BitSet,
+        multibyte: bool,
+        retry_bound: Option<u64>,
+    ) -> Option<Self> {
+        if needle.is_empty() || needle[0] >= 0x80 || bitset_at(&class, needle[0] as usize) {
+            return None;
+        }
+        Some(Self {
+            finder: memchr::memmem::Finder::new(&needle).into_owned(),
+            class,
+            multibyte,
+            retry_bound,
+        })
+    }
+
     /// Whether a per-match retry limit lets the search leave attempts out.
     #[inline]
     pub(crate) fn skippable(&self, retry_limit_in_match: u64) -> bool {

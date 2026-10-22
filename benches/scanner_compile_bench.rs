@@ -66,6 +66,47 @@ fn bench_compile(c: &mut Criterion) {
                 drop(black_box(scanners));
             });
         });
+        #[cfg(feature = "precompiled")]
+        {
+            use ferroni::scanner::PrecompiledPatterns;
+            use std::sync::Arc;
+            let mut build = ScannerPatternCache::new();
+            for patterns in &references {
+                Scanner::with_pattern_cache(patterns, &config, &mut build).unwrap();
+            }
+            let blob: Arc<[u8]> = build.export_precompiled().unwrap().into();
+            let indexed = PrecompiledPatterns::from_bytes(blob.clone()).unwrap();
+            for patterns in &references {
+                for pattern in patterns {
+                    assert!(indexed.validate_pattern(pattern, &config, false).unwrap());
+                }
+            }
+            eprintln!(
+                "{name}: {} programs, {} archive bytes",
+                indexed.len(),
+                blob.len()
+            );
+            // Include opening the complete index, decoding requested programs,
+            // scanner assembly, and teardown. Export, file I/O, and downloads
+            // remain outside, as fixture loading does in the compiler lane.
+            group.bench_function(format!("{name}_precompiled"), |b| {
+                b.iter(|| {
+                    let mut cache = ScannerPatternCache::new();
+                    cache.add_precompiled(
+                        PrecompiledPatterns::from_bytes(black_box(blob.clone())).unwrap(),
+                    );
+                    let scanners: Vec<_> = references
+                        .iter()
+                        .map(|patterns| {
+                            Scanner::with_pattern_cache(black_box(patterns), &config, &mut cache)
+                                .unwrap()
+                        })
+                        .collect();
+                    drop(black_box(cache));
+                    drop(black_box(scanners));
+                });
+            });
+        }
     }
     group.finish();
 }

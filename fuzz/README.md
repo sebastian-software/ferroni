@@ -10,6 +10,7 @@ published `ferroni` package.
 
 | Target | What it exercises |
 | --- | --- |
+| `precompiled-loader` | Raw archives and mutations of valid scanner archives, with recomputed corruption checks, through index parsing and per-pattern bytecode/seek validation. It decodes programs without executing mutated instructions. |
 | `pattern-compile` | `onig_new` over arbitrary pattern bytes, with the first two bytes selecting one of six syntaxes and one of seven option sets. |
 | `pattern-match` | Compiling an arbitrary pattern and searching arbitrary bytes with `onig_search_with_param`, then checking that the reported match and every capture group stay inside the haystack. |
 | `scanner-api` | `Scanner::new` over arbitrary patterns, then walking `find_next_match` across arbitrary text from an input-chosen start position, checking that every match is in range and on a character boundary. |
@@ -42,6 +43,7 @@ Install [`cargo-fuzz`](https://github.com/rust-fuzz/cargo-fuzz) and run a target
 with nightly Rust:
 
 ```sh
+cargo +nightly fuzz run precompiled-loader -- -max_len=16384
 cargo +nightly fuzz run pattern-compile -- -dict=fuzz/ferroni.dict -max_len=16384
 cargo +nightly fuzz run pattern-match   -- -dict=fuzz/ferroni.dict -max_len=16384
 cargo +nightly fuzz run scanner-api     -- -dict=fuzz/ferroni.dict -max_len=16384
