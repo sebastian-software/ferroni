@@ -25,6 +25,7 @@ fn guide_pages_present() -> bool {
     let manifest_dir = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
     [
         "getting-started",
+        "scanner",
         "untrusted-input",
         "compatibility",
         "coming-from-regex",

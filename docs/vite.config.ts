@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 
-import examples from "./app/data/home-code.json";
-import walkthrough from "./app/data/regex-walkthrough.json";
+import examples from "./app/data/home-code.json" with { type: "json" };
+import walkthrough from "./app/data/regex-walkthrough.json" with { type: "json" };
 
 const cargoToml = readFileSync("../Cargo.toml", "utf8");
 const version = /^version\s*=\s*"(.+)"/m.exec(cargoToml)?.[1] ?? "0.0.0";
@@ -58,7 +58,7 @@ export default defineConfig({
     sampleHighlight(),
     ardo({
       title: "Ferroni",
-      description: "Oniguruma-compatible regex engine",
+      description: "Oniguruma regex in pure Rust. Familiar API, TextMate scanner, no C toolchain.",
       githubPages: false,
       siteUrl: "https://ferroni.dev",
 

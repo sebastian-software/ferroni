@@ -1,12 +1,15 @@
 //! # Ferroni — Oniguruma's regex engine in pure Rust
 //!
-//! Ferroni is a line-by-line port of [Oniguruma](https://github.com/kkos/oniguruma),
-//! the backtracking engine behind TextMate grammars, jq and PHP's mbregex. It
-//! keeps Oniguruma's syntax and semantics for ASCII and UTF-8, and it needs no
-//! C toolchain and no bindings. Ferroni is feature-complete for its scope and
-//! maintained, with no feature work planned; the
-//! [project status](https://github.com/sebastian-software/ferroni#project-status)
-//! says what is and is not covered.
+//! Bring your Oniguruma patterns to Rust. Ferroni combines look-behind,
+//! backreferences and recursion with a familiar [`Regex`] API and a
+//! multi-pattern [`Scanner`] for tokenizers and TextMate runtimes. Cargo handles
+//! the build, including WebAssembly, without a C compiler or bindings.
+//!
+//! The engine is a line-by-line port of [Oniguruma](https://github.com/kkos/oniguruma)
+//! for ASCII and UTF-8. It is feature-complete and maintained; the
+//! [project status](https://ferroni.dev/#project-status) explains the scope.
+//! Start with the [getting started guide](https://ferroni.dev/guide/getting-started)
+//! or the [Scanner guide](https://ferroni.dev/guide/scanner) for a runnable walkthrough.
 //!
 //! ## When to use Ferroni
 //!
@@ -211,9 +214,11 @@
 //!
 //! ## Low-level C API
 //!
-//! Every C entry point is ported under its original name, so upstream code and
-//! documentation translate directly. `onig_new` compiles a pattern and
-//! `onig_search` searches it. Use these when you need something the idiomatic
+//! The ported C entry points retain their original names. Rust ownership replaces
+//! C allocation and cleanup functions; the
+//! [compatibility guide](https://ferroni.dev/guide/compatibility#what-ferroni-covers)
+//! lists those omissions. `onig_new` compiles a pattern and `onig_search` searches
+//! it. Use these when you need something the idiomatic
 //! layer does not expose yet
 //! ([guide](https://ferroni.dev/guide/getting-started#the-low-level-c-api)):
 //!
@@ -385,6 +390,10 @@ struct ReadmeDoctests;
 #[cfg(all(doctest, ferroni_guide_docs))]
 #[doc = include_str!("../docs/app/routes/guide/getting-started.mdx")]
 struct GettingStartedDoctests;
+
+#[cfg(all(doctest, ferroni_guide_docs))]
+#[doc = include_str!("../docs/app/routes/guide/scanner.mdx")]
+struct ScannerGuideDoctests;
 
 #[cfg(all(doctest, ferroni_guide_docs))]
 #[doc = include_str!("../docs/app/routes/guide/untrusted-input.mdx")]

@@ -1,13 +1,14 @@
 ---
-order: 3
+order: 4
 title: Compatibility
 ---
 
 # Compatibility
 
 A pattern that works in C Oniguruma should work the same way in Ferroni. This
-page says what that promise covers, where Ferroni differs on purpose, how the
-promise is checked, and how the port is built to keep it.
+page gives you the evidence to evaluate a move: supported syntax and
+encodings, intentional differences, and the upstream tests that check the port.
+Start with the scope table, then dig into the proof as far as you need.
 
 ## Why a line-by-line port
 
@@ -29,12 +30,12 @@ Ferroni ports ASCII and UTF-8, two of Oniguruma's 29 encodings
 modes are included, from Oniguruma and Ruby to Perl, Python, Java and POSIX.
 For the projects built on Oniguruma's syntax, that means:
 
-| Project                           | Status       | What it means                                                                                         |
-| --------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------- |
-| TextMate grammars, VS Code, Shiki | Covered      | vscode-oniguruma compiles every pattern as UTF-8. Ferroni's scanner keeps its API and UTF-16 offsets. |
-| jq                                | Covered      | jq matches on UTF-8 text, which Ferroni handles in full.                                              |
-| PHP mbregex                       | UTF-8 only   | `mb_ereg` in Shift_JIS, EUC-JP or another non-UTF-8 encoding is not covered.                          |
-| Ruby                              | Not a target | Ruby runs Onigmo, a fork of Oniguruma with its own history and encodings.                             |
+| Project                           | Status       | What it means                                                                                              |
+| --------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
+| TextMate grammars, VS Code, Shiki | Covered      | vscode-oniguruma compiles every pattern as UTF-8. Ferroni's scanner keeps its API and UTF-16 offsets.      |
+| Patterns from jq                  | UTF-8        | Ferroni supports the UTF-8 regex layer; replacing jq's engine requires a separate application integration. |
+| PHP mbregex                       | UTF-8 only   | `mb_ereg` in Shift_JIS, EUC-JP or another non-UTF-8 encoding is not covered.                               |
+| Ruby                              | Not a target | Ruby runs Onigmo, a fork of Oniguruma with its own history and encodings.                                  |
 
 These parts of the C library are not ported:
 
