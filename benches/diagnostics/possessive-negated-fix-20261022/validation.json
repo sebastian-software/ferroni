@@ -1,0 +1,52 @@
+{
+  "full_test_command": "PCRE2_SYS_STATIC=1 cargo test --locked --offline --features ffi,prefilter-self-check -- --test-threads=1",
+  "full_test_exit_code": 0,
+  "test_result_summaries": 28,
+  "passed": 2775,
+  "ignored": 4,
+  "source_test_count_command": "./scripts/count-tests.sh",
+  "source_test_counts": {
+    "unit": 546,
+    "integration": 2124,
+    "total": 2670
+  },
+  "focused_differential_comparisons": 155520,
+  "checks_passed": [
+    "cargo fmt --all --check",
+    "PCRE2_SYS_STATIC=1 cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings",
+    "RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --locked --offline",
+    "cargo deny --all-features --locked --offline check",
+    "./scripts/check-workflow-pins.sh",
+    "./scripts/readme-family.sh check",
+    "./scripts/check-readme-figures.sh",
+    "python3 scripts/check-production-corpus.py",
+    "node docs/scripts/check-benchmark-claims.mjs"
+  ],
+  "not_run": [
+    "hosted CI",
+    "instrumented coverage",
+    "full Node documentation build",
+    "external Ferriki corpus"
+  ],
+  "source_sha256": "b455b94b4edc1a3f0c8fb8b4ea788c534cda6aaf78dd9620da27175458a5c8ef",
+  "full_test_log": "final-tests.log",
+  "selected_binary": "helper02",
+  "selected_binary_rebuild": "byte-identical complete binary",
+  "restoration_check": "Fresh build after restoring helper02 is byte-identical to the full-matrix and wider-confirmation executable; source hash matches the earlier full test suite.",
+  "restored_focused_test_log": "restored-helper02-tests.log",
+  "performance_data_audit": {
+    "processes": 3968,
+    "pairs": 1984,
+    "criterion_samples": 117120,
+    "all_phases_complete_and_serial": true,
+    "all_binary_runner_and_source_hashes_verified": true
+  },
+  "delivery_checks_passed": [
+    "cargo fmt --all --check",
+    "git diff --check",
+    "oxfmt 0.66.0 on changed Markdown, MDX, and report JSON",
+    "Python 3.14 py_compile for diagnostic scripts",
+    "node docs/scripts/check-benchmark-claims.mjs",
+    "16-phase completeness and provenance audits"
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "baseline_commit": "164bb809cea91c478fb5614d5c423922fc150197",
+  "cpu": "Apple M1 Ultra",
+  "physical_memory_bytes": 68719476736,
+  "logical_cpus": 20,
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+  "profile": "bench, opt-level=3, lto=thin, default target CPU",
+  "features": ["dfa-prefilter", "ffi"],
+  "pcre2_sys_static": "1",
+  "lock_sha256": "d1e0a33adb5a7760adc928a1a17da3d0e0b9a1385c087d610bf8ed6a41b93421",
+  "corpus_sha256": {
+    "benches/production_regex/catalog.json": "f371ab7da91906b81bb609019b00f1788e80916e313c289219ca98177c3362a5",
+    "benches/tokenizer_regex/catalog.json": "7ddd65db06761271466aa0300e38ff35d333fc06b420b3aa71f14fd1019d3db8"
+  },
+  "selected_source_sha256": "1aae2f74582f18c8b0c7cd90677cbed28be13e9e6307209f8abd268e067c4977",
+  "scope": "Runtime verification without engine edits: 29 steady cases, 16 pairs per case across eight offsets and reversed orders; an eight-pair A/A control for seven selected cases.",
+  "binary_reuse": "Retained immutable executables; all runtime source and lockfile hashes still match the previously validated candidate. No rebuild or source swap.",
+  "comparison_runner_sha256": "3f1d7ec518aa48a000123b6e6188de72cce99e48abacb7f5d5371c7084b480f6",
+  "current_rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+  "host_note": "Interactive local machine, with other user/system processes running. CPU affinity and background tasks are not controlled. pmset reported no recorded thermal/performance warning before timing; no CPU power status was recorded. No task builds or tests run during timing.",
+  "original_evidence": "benches/diagnostics/possessive-negated-runs-20261022/",
+  "retained_binary_hashes": {
+    "baseline": "5f1a458a854e4c4614fb4125b629ea9035439cfb2137e552c8a5911cb9521c4a",
+    "control1": "5f1a458a854e4c4614fb4125b629ea9035439cfb2137e552c8a5911cb9521c4a",
+    "select01": "d272a613b98d638cd47fd5f686c28247da68a0e148db5c337945ad41d8182cf8"
+  },
+  "verification_environment_base_bytes": 4288,
+  "analyzer_sha256": "4f593af27e25033106fc24b090d46d75d6256c651aafffd8e300ff0dd0eef9d3",
+  "thermal_after": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+  "verdict": "Do not merge this candidate as a general performance improvement: the material SemVer hyphen-range regression repeats across both order cycles.",
+  "audit": [
+    {
+      "run": "control-aa",
+      "processes": 112,
+      "complete": true,
+      "load_average_1m_range": [3.41845703125, 6.552734375],
+      "started_utc": "2026-10-22T07:22:04.296440+00:00",
+      "finished_utc": "2026-10-22T07:26:11.127070+00:00"
+    },
+    {
+      "run": "broad",
+      "processes": 928,
+      "complete": true,
+      "load_average_1m_range": [2.564453125, 12.396484375],
+      "started_utc": "2026-10-22T07:26:11.985710+00:00",
+      "finished_utc": "2026-10-22T08:01:44.034710+00:00"
+    }
+  ]
+}
