@@ -5,6 +5,15 @@ use super::{PrecompiledError, Result};
 pub(super) trait Wire: Sized {
     fn write(&self, out: &mut Vec<u8>) -> Result<()>;
     fn read(input: &mut Reader<'_>) -> Result<Self>;
+    /// Read `len` values into a vector allocated once. Integers override it
+    /// to convert their bytes in one pass.
+    fn read_vec(input: &mut Reader<'_>, len: usize) -> Result<Vec<Self>> {
+        let mut values = Vec::with_capacity(len);
+        for _ in 0..len {
+            values.push(Self::read(input)?);
+        }
+        Ok(values)
+    }
 }
 
 pub(super) struct Reader<'a> {
@@ -45,6 +54,11 @@ macro_rules! integer {
         }
         fn read(input: &mut Reader<'_>) -> Result<Self> {
             Ok(Self::from_le_bytes(input.take(size_of::<Self>())?.try_into().map_err(|_| PrecompiledError::InvalidData)?))
+        }
+        fn read_vec(input: &mut Reader<'_>, len: usize) -> Result<Vec<Self>> {
+            let size = len.checked_mul(size_of::<Self>()).ok_or(PrecompiledError::ResourceLimit)?;
+            let (values, _) = input.take(size)?.as_chunks::<{ size_of::<$ty>() }>();
+            Ok(values.iter().map(|value| Self::from_le_bytes(*value)).collect())
         }
     })*};
 }
@@ -88,7 +102,7 @@ impl<T: Wire> Wire for Vec<T> {
             len.checked_mul(size_of::<T>())
                 .ok_or(PrecompiledError::ResourceLimit)?,
         )?;
-        (0..len).map(|_| T::read(input)).collect()
+        T::read_vec(input, len)
     }
 }
 impl<T: Wire, const N: usize> Wire for [T; N] {
@@ -99,11 +113,18 @@ impl<T: Wire, const N: usize> Wire for [T; N] {
         Ok(())
     }
     fn read(input: &mut Reader<'_>) -> Result<Self> {
-        (0..N)
-            .map(|_| T::read(input))
-            .collect::<Result<Vec<_>>>()?
-            .try_into()
-            .map_err(|_| PrecompiledError::InvalidData)
+        // Read in place: a temporary `Vec` would allocate for every array.
+        let mut error = None;
+        let values: [Option<T>; N] = std::array::from_fn(|_| {
+            if error.is_some() {
+                return None;
+            }
+            T::read(input).map_err(|e| error = Some(e)).ok()
+        });
+        if let Some(error) = error {
+            return Err(error);
+        }
+        Ok(values.map(|value| value.expect("every element was read")))
     }
 }
 impl<T: Wire> Wire for Box<T> {

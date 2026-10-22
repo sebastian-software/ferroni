@@ -9,7 +9,7 @@ use wire::{Reader, Wire};
 
 /// Version of the compiled program format, independent of the crate version.
 /// A bytecode, Unicode-data, seek, or optimizer semantic change must bump it.
-pub const PRECOMPILED_FORMAT_VERSION: u32 = 1;
+pub const PRECOMPILED_FORMAT_VERSION: u32 = 2;
 const MAGIC: &[u8; 8] = b"FERRONI\0";
 const MAX_BLOB: usize = 256 * 1024 * 1024;
 const MAX_PROGRAM: usize = 16 * 1024 * 1024;
@@ -150,12 +150,23 @@ fn check_key(bytes: &[u8]) -> Result<()> {
     String::read(&mut input)?;
     input.done()
 }
-// FNV-1a is a corruption check, not authentication. The structural validator
-// still runs after it, including for a maliciously recomputed checksum.
+// A corruption check, not authentication. The structural validator still runs
+// after it, including for a maliciously recomputed checksum. FNV-1a over
+// little-endian 64-bit words with an extra shift per word, then the tail bytes,
+// folded to 32 bits: every load checks its program, and a byte-wise hash made
+// that a third of the load time (format version 1).
 fn checksum(bytes: &[u8]) -> u32 {
-    bytes.iter().fold(2_166_136_261u32, |hash, b| {
-        (hash ^ u32::from(*b)).wrapping_mul(16_777_619)
-    })
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let (words, tail) = bytes.as_chunks::<8>();
+    for word in words {
+        hash = (hash ^ u64::from_le_bytes(*word)).wrapping_mul(PRIME);
+        hash ^= hash >> 29;
+    }
+    for &byte in tail {
+        hash = (hash ^ u64::from(byte)).wrapping_mul(PRIME);
+    }
+    (hash ^ (hash >> 32)) as u32
 }
 impl PrecompiledPatterns {
     /// Open an archive, retaining its bytes and indexing its entries. No regex
@@ -370,13 +381,13 @@ mod tests {
         schema::read_seek(&mut input).expect("seek");
     }
     #[test]
-    fn format_v1_literal_schema_is_pinned() {
+    fn format_v2_literal_schema_is_pinned() {
         let settings = PatternSettings::of(&ScannerConfig::default(), false);
         let (reg, seek) = settings.compile("a").unwrap();
         let mut bytes = Vec::new();
         schema::write_reg(&reg, &mut bytes).unwrap();
-        assert_eq!(PRECOMPILED_FORMAT_VERSION, 1);
-        assert_eq!((checksum(&bytes), bytes.len()), (3_943_381_322, 240));
+        assert_eq!(PRECOMPILED_FORMAT_VERSION, 2);
+        assert_eq!((checksum(&bytes), bytes.len()), (3_233_327_443, 240));
         let mut bytes = Vec::new();
         schema::write_seek(&seek, &mut bytes).unwrap();
         #[cfg(feature = "dfa-prefilter")]

@@ -70,7 +70,9 @@ Already-built scanners retain their compiled programs.
 The loader bounds byte lengths, allocations, instruction counts and seek depth,
 and checks opcode/payload pairings, jump and table targets, captures, repeats,
 class ranges, fused lookbehind bodies, and trie/fold references. Checksums detect
-accidental corruption; validation still runs with a recomputed checksum. These
+accidental corruption; validation still runs with a recomputed checksum.
+Format version 2 replaced version 1's byte-wise FNV-1a with a word-wise variant,
+because every load checks its program's checksum. These
 checks do not establish that a producer's program implements its claimed
 pattern text. Consumers must obtain archives from a trusted producer, just as
 they obtain their grammar definitions. The format is not an authentication or
