@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.4.0](https://github.com/sebastian-software/ferroni/compare/v2.3.0...v2.4.0) (2026-10-22)
+
+
+### Features
+
+* execute registered callout and match callbacks ([23f155c](https://github.com/sebastian-software/ferroni/commit/23f155c23636409388b0c1087226f30afa308426))
+
+
+### Bug Fixes
+
+* initialize scanner cache and correct benchmark docs ([7ae433a](https://github.com/sebastian-software/ferroni/commit/7ae433ad446dcd9ba21de6bb36915abede80f57a))
+* reject regsets beyond u16 dispatch capacity ([ecc0fe9](https://github.com/sebastian-software/ferroni/commit/ecc0fe926f0ac90e66156f111d41d0f7688ac683))
+
+
+### Performance Improvements
+
+* specialize negated byte-class runs ([#441](https://github.com/sebastian-software/ferroni/issues/441)) ([164bb80](https://github.com/sebastian-software/ferroni/commit/164bb809cea91c478fb5614d5c423922fc150197))
+* **vm:** skip discarded choices in possessive negated byte runs ([#443](https://github.com/sebastian-software/ferroni/issues/443)) ([727497b](https://github.com/sebastian-software/ferroni/commit/727497bfdfaf10fb3f951a35d5b4cdb0fcfa28a2))
+
 ## [2.3.0](https://github.com/sebastian-software/ferroni/compare/v2.2.4...v2.3.0) (2026-10-21)
 
 
