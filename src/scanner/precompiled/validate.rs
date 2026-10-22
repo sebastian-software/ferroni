@@ -411,6 +411,9 @@ pub(super) fn program(reg: &RegexType) -> Result<()> {
                         | OpCode::StrMbn
                         | OpCode::CClass
                         | OpCode::CClassNot
+                        // The optimizer merges a one-byte class body with the
+                        // same class after the look-behind (`(?<=[ab])[ab]`).
+                        | OpCode::CClassRun
                         | OpCode::CClassMb
                         | OpCode::CClassMbNot
                         | OpCode::CClassMix
