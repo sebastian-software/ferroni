@@ -677,6 +677,8 @@ pub(crate) const CALLOUT_BUILTIN_MAX: i32 = 1;
 pub(crate) const CALLOUT_BUILTIN_COUNT: i32 = 2;
 pub(crate) const CALLOUT_BUILTIN_CMP: i32 = 3;
 pub(crate) const CALLOUT_BUILTIN_SKIP: i32 = 4;
+pub(crate) const CALLOUT_BUILTIN_MISMATCH: i32 = 5;
+pub(crate) const CALLOUT_BUILTIN_ERROR: i32 = 6;
 
 /// Result codes for callout functions
 pub(crate) const ONIG_CALLOUT_FAIL: i32 = 1;
@@ -690,8 +692,12 @@ pub enum CalloutArg {
     Long(i64),
     /// A character.
     Char(u8),
+    /// A multibyte character used by a user-defined callout argument.
+    CodePoint(OnigCodePoint),
     /// The name of a callout tag.
     Tag(Vec<u8>),
+    /// A tag value supplied as a default by the registration API.
+    TagId(i32),
     /// A string.
     Str(Vec<u8>),
 }
@@ -701,11 +707,21 @@ pub(crate) struct CalloutListEntry {
     pub of: i32,         // 0=contents, 1=name
     pub callout_in: i32, // CALLOUT_IN_PROGRESS / RETRACTION / BOTH
     pub builtin_id: i32, // CALLOUT_BUILTIN_MAX etc., -1 for contents
+    /// Oniguruma name ID for named callouts, or ONIG_NON_NAME_ID for contents.
+    pub name_id: i32,
+    /// The callback captured when this pattern was parsed.
+    pub start_func: Option<crate::regexec::OnigCalloutFunc>,
+    /// The registered end callback is retained for C structural parity. The
+    /// upstream VM snapshots it but invokes `start_func` for both progress
+    /// and retraction; execution therefore deliberately does not call it.
+    pub end_func: Option<crate::regexec::OnigCalloutFunc>,
+    /// Number of arguments supplied in the pattern before defaults were added.
+    pub passed_args_num: i32,
     pub tag: Option<Vec<u8>>,
     pub tag_start: usize, // byte offset of tag start in pattern
     pub tag_end: usize,   // byte offset of tag end in pattern
     pub args: Vec<CalloutArg>,
-    pub content_end: Option<Vec<u8>>, // Content end bytes for content callouts
+    pub content: Option<Vec<u8>>, // Content bytes for contents callouts
 }
 
 // === RepeatRange ===
