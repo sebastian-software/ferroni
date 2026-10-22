@@ -50,15 +50,27 @@ fn recheck(bytes: &mut [u8]) {
         let Some(payload) = bytes.get(start..end) else {
             return;
         };
-        let hash = payload.iter().fold(2_166_136_261u32, |h, b| {
-            (h ^ u32::from(*b)).wrapping_mul(16_777_619)
-        });
+        let hash = checksum(payload);
         let Some(slot) = bytes.get_mut(at + 8..at + 12) else {
             return;
         };
         slot.copy_from_slice(&hash.to_le_bytes());
         at += 12;
     }
+}
+// Mirrors the archive checksum of format version 2.
+fn checksum(bytes: &[u8]) -> u32 {
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let (words, tail) = bytes.as_chunks::<8>();
+    for word in words {
+        hash = (hash ^ u64::from_le_bytes(*word)).wrapping_mul(PRIME);
+        hash ^= hash >> 29;
+    }
+    for &byte in tail {
+        hash = (hash ^ u64::from(byte)).wrapping_mul(PRIME);
+    }
+    (hash ^ (hash >> 32)) as u32
 }
 fuzz_target!(|data: &[u8]| {
     if data.len() > 16_384 {
