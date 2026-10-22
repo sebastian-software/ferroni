@@ -5,15 +5,16 @@ title: Getting Started
 
 # Getting Started
 
-Ferroni continues [Oniguruma](https://github.com/kkos/oniguruma) in Rust. The
-C engine behind TextMate grammars, jq, and PHP's mbregex ended in April 2025;
-Ferroni is a line-by-line port of it. It keeps the C engine's feature set and
-its pattern semantics for ASCII and UTF-8 -- if a pattern works in Oniguruma,
-it works in Ferroni -- and ships a multi-pattern Scanner API of the same shape
-as vscode-oniguruma's for TextMate grammar tokenization. There is no C toolchain and no FFI
-involved: `cargo add ferroni` is the whole setup.
+Let's make a match. Add Ferroni to a Cargo project, run the example below,
+and start extracting named captures with Oniguruma syntax. Then explore
+iteration, replacement and the options your application needs.
+
+Building a tokenizer? Head straight to the [Scanner guide](/guide/scanner).
+Moving an existing application? See [Coming from regex or onig](/guide/coming-from-regex).
 
 ## Install
+
+You'll need Rust 1.94 or newer. In an existing Cargo project, run:
 
 ```bash
 cargo add ferroni
@@ -33,41 +34,51 @@ ferroni = "2"
 Upgrading from 1.x? [Migrating to 2.0](/guide/migrating-to-2) has before and after
 code for each breaking change.
 
-Ferroni's MSRV is Rust 1.94, enforced by a dedicated CI lane. The build script
-only sets cfg flags, so no C toolchain is needed. It compiles C only when the
-benchmark-only `ffi` feature is enabled, and you never need that feature to use
-the crate.
-
-CI tests the crate on Linux, macOS and Windows. It also builds it for
-WebAssembly: for `wasm32-unknown-unknown`, the browser target, and for
-`wasm32-wasip1`, where the library and API tests run under Wasmtime. On
-`wasm32-unknown-unknown` a search must not set a time limit
-([Untrusted input](/guide/untrusted-input#limit-each-search) explains why and what to
-use instead).
-
 ## Your first match
 
-The idiomatic API lives behind one import.
+Starting fresh? Run `cargo new ferroni-demo` and `cd ferroni-demo`, then
+`cargo add ferroni`. Paste this into `src/main.rs`:
 
 ```rust
 use ferroni::prelude::*;
 
 fn main() -> Result<(), RegexError> {
-    let re = Regex::new(r"\d{4}-\d{2}-\d{2}")?;
+    let regex = Regex::new(r"(?<=Date: )(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})")?;
+    let text = "Date: 2026-09-26";
+    let captures = regex.captures(text).expect("the sample date matches");
 
-    let m = re.find("Released on 2026-09-05.").expect("a date");
-    assert_eq!(m.as_str(), "2026-09-05");
-    assert_eq!(m.start(), 12);
-    assert_eq!(m.end(), 22);
-
-    assert!(re.is_match("2026-01-01"));
+    println!("input: {text}");
+    for name in ["year", "month", "day"] {
+        let value = captures.name(name).expect("the named group exists");
+        println!("{name}: {}", value.as_str());
+    }
     Ok(())
 }
 ```
 
-`find` returns the leftmost match. Offsets are **byte** offsets into the
-input, which is what `&str` slicing expects: `&text[m.start()..m.end()]` is
-always valid.
+Run it:
+
+```bash
+cargo run
+```
+
+You'll see:
+
+```text
+input: Date: 2026-09-26
+year: 2026
+month: 09
+day: 26
+```
+
+The look-behind `(?<=Date: )` requires the label without including it in the
+match. The three `(?<name>...)` groups make the date's parts available by name.
+Compile a `Regex` once and reuse it for subsequent searches.
+
+For the whole match without captures, use `find`; for a yes-or-no answer,
+use `is_match`. String searches return **byte offsets**, ready for `&str`
+slicing. When you need to handle a search limit explicitly, use the fallible
+`*_with` methods in [Handling errors](#handling-errors).
 
 ## Captures
 
@@ -216,26 +227,15 @@ assert!(re.is_match("Hello World"));
 
 `RegexBuilder` also exposes `dot_matches_newline`, `multi_line_anchors`,
 `extended`, a raw `option` escape hatch for any `ONIG_OPTION_*` flag, and
-`syntax` for selecting one of the twelve syntax modes (Oniguruma, Ruby, Perl,
-Perl_NG, Python, Java, Emacs, Grep, GNU, POSIX Basic, POSIX Extended, ASIS).
+`syntax_mode` for selecting a typed `Syntax` such as `Syntax::Ruby` or
+`Syntax::Python`. All twelve Oniguruma syntax modes are included.
 
-`dfa` turns on the single-pattern seek of [ADR-008](/adr/008-rust-only-optimizations),
-a lazy DFA built with the regex. It is on by default when the `dfa-prefilter`
-feature is enabled, which is the default, and it has no effect without that
-feature. A standard `is_match` or `find` asks the DFA first: it answers "no
-match" for most texts that do not match. For a pattern whose seek is exact,
-`is_match` can also answer "match" without running the matcher. A
-case-insensitive pattern whose classes have multi-character case folds
-(`(?i)[a-zß]`, where `ß` also matches `ss`) can get a second DFA whose matches
-are all matches of the pattern: `is_match` answers "match" from it, and "no
-match" on a text that contains none of the strings the folds add. Where a retry
-limit would stop the matcher, such a match is the one the matcher finds without
-the limit ([ADR-017](/adr/017-limit-outcomes-relative-to-c)). Every other
-search runs the matcher, so apart from that case the results are the same with
-the option on or off. The DFAs are built during `build`, so the compile takes
-longer, and each thread that searches with the regex keeps a cache of at most
-1 MiB for each. Use `dfa(false)` for a pattern that is compiled once and
-searched rarely, or where memory is tight:
+### Compile once, search many times
+
+Ferroni prepares a DFA search accelerator by default. That adds compilation
+work in exchange for faster repeated searches, and each searching thread
+keeps a cache of at most 1 MiB per DFA. For a pattern you rarely reuse, or
+when memory is tight, use `dfa(false)`:
 
 ```rust
 use ferroni::prelude::*;
@@ -248,10 +248,17 @@ let re = Regex::builder(r"[0-9a-f]{8}-[0-9a-f]{4}")
 assert!(re.is_match("id 0123abcd-0042"));
 ```
 
-## What the C engine buys you
+The accelerator requires the default `dfa-prefilter` Cargo feature. Without
+it, `dfa` has no effect. The [optimization details](/adr/008-rust-only-optimizations)
+explain when the accelerator can answer a search directly; the
+[limit contract](/adr/017-limit-outcomes-relative-to-c) explains how that
+interacts with process-wide limits. The fallible `*_with` searches always run
+the matcher.
 
-These are the features that make Oniguruma compatibility worth having; they
-are not available in most Rust regex crates.
+## Put Oniguruma syntax to work
+
+Find repeated words, extract text after a label, or match a whole grapheme
+cluster. These examples show why you might reach for Ferroni:
 
 ```rust
 use ferroni::prelude::*;
@@ -292,180 +299,20 @@ retry/time/stack safety limits are all supported as well.
 
 ## The Scanner API
 
-Syntax highlighters do not match one pattern at a time. They compile a whole
-TextMate grammar -- hundreds of patterns -- and then ask, for each position in
-a line, which pattern matches next. That is what `Scanner` does, with the same
-shape as
-[vscode-oniguruma](https://github.com/microsoft/vscode-oniguruma), so the
-loop below is the same loop vscode-textmate and Shiki run.
+<span id="utf-16-positions" />
+<span id="scanning-the-same-line-repeatedly" />
+<span id="other-syntaxes-and-options" />
+<span id="sharing-compiled-patterns-between-scanners" />
 
-```rust
-use ferroni::prelude::*;
+Building a tokenizer or a TextMate highlighter? `Scanner` searches a set of
+patterns and returns the earliest match, with captures in byte or UTF-16
+positions. The [Scanner guide](/guide/scanner) walks through the first match,
+a complete tokenization loop and sharing compiled patterns across scanners.
 
-let mut scanner = Scanner::new(&[
-    r"\b(?:const|let|var|function|return)\b", // 0: keyword
-    r#""[^"]*""#,                             // 1: string
-    r"//.*$",                                 // 2: comment
-    r"\b\d+(?:\.\d+)?\b",                     // 3: number
-]).unwrap();
-
-let line = r#"const answer = 42 // the answer"#;
-
-let m = scanner
-    .find_next_match(line, 0, ScannerFindOptions::NONE)
-    .unwrap();
-
-assert_eq!(m.index, 0); // pattern 0, the keyword, matched first
-assert_eq!(m.captures()[0].start, 0);
-assert_eq!(m.captures()[0].end, 5);
-```
-
-`index` is the index of the pattern that matched; the leftmost match across
-all patterns wins. `captures()[0]` is the whole match, the rest are its
-capture groups, all in byte offsets. To tokenize a full line, keep calling
-`find_next_match` with `start_position` set to the end of the previous match.
-
-`Scanner::new` and the default `ScannerConfig` enable capture groups, matching
-vscode-oniguruma. When a pattern mixes named and unnamed groups, all groups
-are returned and numbered backreferences work. If you relied on the former
-Ferroni default, pass `ONIG_OPTION_NONE` explicitly; capture indices after a
-named group may shift when unnamed groups are captured.
-
-Watch for zero-width matches when you write that loop: if a pattern can match
-the empty string, advance to the next character boundary instead of standing
-still. Advancing by a single byte would split a multibyte character and panic
-the next time you slice the line.
-
-### UTF-16 positions
-
-vscode-textmate and Shiki address text in UTF-16 code units, not bytes. Wrap
-the line in an `OnigString` and both the input position and the returned
-offsets are in those units.
-
-```rust
-use ferroni::prelude::*;
-
-let mut scanner = Scanner::new(&["world"]).unwrap();
-let text = OnigString::new("hello 🌍 world");
-
-let m = scanner
-    .find_next_match_utf16(&text, 0, ScannerFindOptions::NONE)
-    .unwrap();
-
-// The emoji is two UTF-16 code units, so "world" starts at 9, not at byte 11.
-assert_eq!(m.captures()[0].start, 9);
-assert_eq!(m.captures()[0].end, 14);
-```
-
-### Scanning the same line repeatedly
-
-A tokenizer walks the same line many times. Pass a stable string id with
-`find_next_match_with_id` (or `find_next_match_utf16_with_id`) and the scanner
-reuses cached results instead of searching again from scratch.
-
-```rust
-use ferroni::prelude::*;
-
-let mut scanner = Scanner::new(&[r"\w+"]).unwrap();
-let line = "two words";
-let string_id = 1;
-
-let mut position = 0;
-let mut tokens = Vec::new();
-while let Some(m) =
-    scanner.find_next_match_with_id(line, string_id, position, ScannerFindOptions::NONE)
-{
-    let whole = &m.captures()[0];
-    tokens.push(&line[whole.start..whole.end]);
-
-    // On a zero-width match, step to the next character boundary -- stepping
-    // one byte could land inside a multibyte character.
-    let next_boundary = whole.start
-        + line[whole.start..]
-            .chars()
-            .next()
-            .map_or(1, char::len_utf8);
-    position = whole.end.max(next_boundary);
-}
-assert_eq!(tokens, ["two", "words"]);
-```
-
-### Other syntaxes and options
-
-`Scanner::with_config` takes a `ScannerConfig` with the compile-time options
-and the syntax variant, mirroring vscode-oniguruma's `IOnigScannerConfig`.
-Start from `ScannerConfig::default()` and chain the `options` and `syntax`
-setters.
-
-```rust
-use ferroni::prelude::*;
-use ferroni::oniguruma::ONIG_OPTION_IGNORECASE;
-
-let config = ScannerConfig::default()
-    .options(ONIG_OPTION_IGNORECASE)
-    .syntax(ScannerSyntax::Ruby);
-let mut scanner = Scanner::with_config(&[r"hello"], &config).unwrap();
-
-assert!(scanner
-    .find_next_match("Hello", 0, ScannerFindOptions::NONE)
-    .is_some());
-```
-
-### Sharing compiled patterns between scanners
-
-A TextMate grammar builds one scanner per rule context, and the same patterns
-recur across them: the C++ grammar's 96 scanners in one captured session hold
-4,026 patterns, only 250 of them distinct. Build those scanners from one
-`ScannerPatternCache` and each distinct pattern is compiled once and shared.
-The scanners behave exactly as scanners built without the cache.
-
-```rust
-use ferroni::prelude::*;
-
-let config = ScannerConfig::default();
-let mut cache = ScannerPatternCache::new();
-
-let mut block = Scanner::with_pattern_cache(&[r"\}", r#""[^"]*""#], &config, &mut cache).unwrap();
-let mut call = Scanner::with_pattern_cache(&[r"\)", r#""[^"]*""#], &config, &mut cache).unwrap();
-assert_eq!(cache.len(), 3); // the string pattern was compiled once
-
-let m = call.find_next_match(r#"f("x")"#, 0, ScannerFindOptions::NONE).unwrap();
-assert_eq!(m.index, 1);
-assert!(block.find_next_match("}", 0, ScannerFindOptions::NONE).is_some());
-```
-
-The cache belongs to you, and nothing is cached process-wide. A pattern is
-reused only under the same options, syntax and backtracking optimization
-setting. Dropping or clearing the cache never affects scanners already built.
-`Scanner::new` and `Scanner::with_config` still compile every pattern they are
-given.
-
-[Ferriki's TextMate runtime](https://github.com/sebastian-software/ferriki/pull/235)
-uses `Scanner::with_pattern_cache` with one caller-owned `ScannerPatternCache`
-per `SyncRegistry`, shared across grammar and injection scanners behind a
-mutex. Registry invalidation (grammar registration or injection changes) and
-disposal clear the cache; directly constructed grammars get an isolated cache.
-
-Scanner lists containing dynamically resolved TextMate backreferences bypass
-shared caching so document-specific `end` and `while` variants are not retained.
-They keep the existing per-rule cache, which invalidates resolved variants when
-captures change. Sharing is all-or-nothing per scanner list, so static members
-of a mixed static/dynamic list also bypass it. The current API was sufficient
-for adoption. Selective reuse of those static members is an optional API
-candidate, not an adoption blocker or a commitment for this guide update.
-
-The [October 10, 2026 measurement report](https://github.com/sebastian-software/ferriki/blob/dc84a14ae618b0606e4916a4cf58f83cc881a6fe/node/benchmarks/scanner-pattern-cache/2026-10-10/README.md)
-compares nine fresh-process samples per language on an Apple M1 Ultra. Median
-time from native addon require to first HTML fell by 71.2% for TypeScript,
-69.3% for TSX, and 63.3% for Astro; C++ and JSON fell by 1.9% and 3.8%.
-Warmed HTML medians stayed within 3.4% of baseline. These are first-render
-gains on the measured fixtures, not a general warmed-throughput improvement.
-
-After loading and highlighting all five grammars, median process RSS snapshots
-were 102.3 MiB without sharing and 68.4 MiB with it. These are coarse
-whole-process snapshots, not cache-allocation or peak-memory measurements;
-allocator retention from the addon hash guard's temporary buffer can also
-affect RSS.
+Jump to [UTF-16 positions](/guide/scanner#utf-16-positions),
+[repeated line scanning](/guide/scanner#scanning-the-same-line-repeatedly),
+[syntax options](/guide/scanner#other-syntaxes-and-options) or
+[pattern sharing](/guide/scanner#sharing-compiled-patterns-between-scanners).
 
 ## Handling errors
 
@@ -485,11 +332,31 @@ println!("{err}");
 message; `MatchStackLimitOver`, `RetryLimitInMatchOver`, `TimeLimitOver`,
 `SubexpCallLimitOver`, and `ParseDepthLimitOver` report the safety limits.
 
+Compilation errors and search outcomes are separate. Plain methods such as
+`find` and `captures` return `None` for both no match and a stopped search.
+For user-supplied text or patterns, use `SearchOptions` with the fallible
+`*_with` methods: `Ok(Some(...))` means a match, `Ok(None)` means no match,
+and `Err(...)` reports a limit or another search error. Start with the
+[untrusted input guide](/guide/untrusted-input#limit-each-search).
+
+## Platforms and build features
+
+Cargo builds Ferroni without a C toolchain. CI tests Linux, macOS, Windows and
+WASI, and builds for browser WebAssembly. The `ffi` and `onigmo` features are
+for this repository's comparison benchmarks; leave them off in applications.
+Avoid `--all-features` when building Ferroni as a dependency, since those
+benchmark features require local C source checkouts.
+
+On `wasm32-unknown-unknown`, use retry limits instead of timeouts: that target
+has no clock. `wasm32-wasip1` supports timeouts. See
+[per-search limits](/guide/untrusted-input#limit-each-search) for examples.
+
 ## The low-level C API
 
-Every C entry point is ported under its original name, so upstream code and
-upstream documentation translate directly. Use it when you need something the
-idiomatic layer does not expose yet.
+The ported C entry points retain their original names. Use them when you
+need an operation the idiomatic layer does not expose. Rust ownership replaces
+C allocation and cleanup functions; the [compatibility guide](/guide/compatibility#what-ferroni-covers)
+lists the intentionally omitted functions.
 
 ```rust
 use ferroni::regcomp::onig_new;
@@ -518,6 +385,7 @@ scope (see [ADR-003](/adr/003-encoding-scope-ascii-and-utf8-only)).
 
 ## Where to go next
 
+- [Scanner guide](/guide/scanner) — build a tokenization loop, use UTF-16 offsets and share compiled patterns.
 - [Untrusted Input](/guide/untrusted-input) -- per-search limits, the
   compile-time backtracking check, and memory safety.
 - [Compatibility](/guide/compatibility) -- what is covered, where Ferroni differs

@@ -1,5 +1,5 @@
 ---
-order: 2
+order: 3
 title: Untrusted Input
 ---
 
@@ -7,9 +7,14 @@ title: Untrusted Input
 
 Regular expressions often meet text that nobody on your team wrote: search
 queries, uploaded documents, log lines, third-party grammars. Sometimes users
-supply the patterns too. Ferroni protects that situation in three layers:
+supply the patterns too. Ferroni gives you three tools for that situation:
 memory safety, limits on how much work one search may do, and a compile-time
 check for patterns that backtrack catastrophically.
+
+Start with a per-search budget and the fallible `*_with` methods below.
+If your application accepts arbitrary patterns and needs a linear-time
+guarantee, choose Rust's `regex` crate. Ferroni's backtracking limits and
+warnings are useful guardrails, but they do not provide that guarantee.
 
 ## Memory safety
 
@@ -101,8 +106,9 @@ A limit left unset in `SearchOptions` keeps its process-wide value, and zero
 turns a limit off for that search. Out of the box, Ferroni uses Oniguruma's
 defaults: at most 10,000,000 backtracks per start position, no limit for the
 search as a whole, and no time limit. Unlike C, the backtracking stack never
-grows past 10,000,000 entries when no stack limit is set, so one hostile line
-cannot exhaust memory. A limit of your own also turns off the search
+grows past 10,000,000 entries when no stack limit is set. That caps this
+stack's growth; it does not cap the application's total memory use.
+A limit of your own also turns off the search
 optimizations whose skipped attempts a limit could observe, among them a
 scanner's pre-filter. The standard `is_match` of a `Regex` may use its
 single-pattern seek, which can report a match that the matcher reaches only

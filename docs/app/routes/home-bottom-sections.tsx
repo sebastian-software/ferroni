@@ -17,18 +17,19 @@ export function ScannerSection() {
       id="fr-scanner"
       layout="split"
       tone="dim"
-      title="The engine under your syntax highlighter"
+      title="Your next highlighter starts here"
       intro={
         <>
-          VS Code and Shiki highlight code with TextMate grammars, and those grammars are written
-          for Oniguruma. Ferroni&rsquo;s Scanner keeps vscode-oniguruma&rsquo;s API, UTF-16 offsets
-          included, and a multi-pattern DFA rules out patterns before any of them runs.
+          Building a tokenizer or a TextMate runtime? Give Ferroni&rsquo;s Scanner a set of patterns
+          and ask which matches next. It follows vscode-oniguruma&rsquo;s scanning model, with
+          UTF-16 positions for editor integrations. Your runtime handles the grammar rules and
+          scopes; Ferroni handles the regex work.
         </>
       }
       note={
         <>
           <a href="https://ferriki.dev">Ferriki</a>, a Shiki-compatible highlighter in Rust, runs on
-          it. <Link to="/guide/getting-started#the-scanner-api">The Scanner API in the guide</Link>
+          it. <Link to="/guide/scanner">Build your first scanner</Link>
         </>
       }
     >
@@ -49,13 +50,14 @@ export function SafetySection() {
     <Section
       id="fr-safety"
       layout="split"
-      title="Memory-safe where C was not"
+      tone="dim"
+      title="Powerful patterns. Practical guardrails."
       intro={
         <>
-          C Oniguruma fixed five memory-safety CVEs in 2019. Ferroni&rsquo;s engine is safe Rust:
-          ten unsafe sites remain, all linking parse-tree nodes, none in buffer or string code. For
-          hostile input, give a search a time or retry limit, and let the compiler flag risky
-          patterns.
+          Buffer and string processing use safe Rust. Ten unsafe sites remain, all linking
+          parse-tree nodes. Ferroni also gives you per-search time and retry limits, plus a
+          compile-time check that flags common backtracking risks. Set limits when input comes from
+          outside your application; use the fallible search methods to handle a limit explicitly.
         </>
       }
       note={
@@ -80,19 +82,22 @@ export function StartSection() {
   return (
     <Section
       id="fr-run"
-      tone="dim"
       title="From cargo add to first match"
       intro={
         <>
-          No C compiler, no bindgen: Cargo builds Ferroni like any other crate. CI tests it on
-          Linux, macOS, Windows and WASI, and builds it for the browser. Its <code>Regex</code> API
-          will look familiar if you know the <code>regex</code> crate.
+          Add Ferroni, paste this into <code>src/main.rs</code>, and run <code>cargo run</code>.
+          This example uses look-behind to find a date after its label, then reads the year, month
+          and day by name. If you know the <code>regex</code> crate, you&rsquo;ll feel at home.
         </>
       }
       note={
-        <a href="https://github.com/sebastian-software/ferroni/blob/main/examples/website_sample.rs">
-          The output comes from running this example: cargo run --example website_sample
-        </a>
+        <>
+          <Link to="/guide/getting-started">Create a project and run the example</Link>
+          {" · "}
+          <a href="https://github.com/sebastian-software/ferroni/blob/main/examples/website_sample.rs">
+            Source and verified output
+          </a>
+        </>
       }
     >
       <HomeRunSample />
@@ -106,14 +111,15 @@ export function StartSection() {
 
 const fit = [
   {
-    name: "TextMate grammars, VS Code, Shiki",
-    status: "Covered",
+    name: "TextMate runtimes and tokenizers",
+    status: "Scanner API",
     settled: true,
-    detail: "The Scanner keeps vscode-oniguruma's API and its UTF-16 offsets.",
+    detail:
+      "Find the next match across patterns, with byte or UTF-16 offsets. Your runtime interprets the grammar.",
   },
   {
     name: "Rust code on C Oniguruma",
-    status: "Covered",
+    status: "Rust API",
     settled: true,
     detail: (
       <>
@@ -123,13 +129,14 @@ const fit = [
     ),
   },
   {
-    name: "jq",
-    status: "Covered",
+    name: "Patterns from jq",
+    status: "UTF-8 patterns",
     settled: true,
-    detail: "jq matches on UTF-8 text, which Ferroni handles in full.",
+    detail:
+      "Run Oniguruma patterns over UTF-8 text. Integrating Ferroni into jq is a separate application change.",
   },
   {
-    name: "PHP mbregex",
+    name: "Patterns from PHP mbregex",
     status: "UTF-8 only",
     detail: "Shift_JIS, EUC-JP and the other non-UTF-8 encodings are not covered.",
   },
@@ -176,7 +183,7 @@ export function FitSection() {
 const maintenance = [
   {
     heading: "Bug fixes",
-    text: "Bugs and differences from C Oniguruma get fixed.",
+    text: "Report a bug or an unexpected difference from C Oniguruma. Compatibility stays the priority.",
   },
   {
     heading: "Unicode",
@@ -198,7 +205,7 @@ export function StatusSection() {
       id="project-status"
       tone="dim"
       title="Feature-complete and maintained"
-      intro="The scope is complete: Oniguruma syntax for ASCII and UTF-8, plus the scanner. No feature work is planned; the upkeep continues."
+      intro="Ready to build on: Oniguruma syntax for ASCII and UTF-8, plus the scanner. The feature scope is complete. Maintenance focuses on correctness, Unicode, toolchains and security; new features are not planned."
       note={
         <>
           Issues are welcome; pull requests keep{" "}
@@ -233,7 +240,7 @@ export function ClosingSection() {
       actions={
         <>
           <Link to="/guide/getting-started" className="fam-btn fam-btn-primary">
-            Read the guide <Mark name="arrow" className="icon" size={18} />
+            Run your first match <Mark name="arrow" className="icon" size={18} />
           </Link>
           <Link to="/perf/regex-workloads" className="fam-btn fam-btn-ghost">
             Benchmarks
@@ -250,9 +257,9 @@ export function ClosingSection() {
       }
     >
       <p className="fam-intro">
-        The guide takes you from a first match to captures, scanner loops and per-search limits.
-        Moving an existing application? Start with the{" "}
-        <Link to="/guide/compatibility">compatibility guide</Link>.
+        Start with a working example, then make it yours. Building a highlighter? Follow the{" "}
+        <Link to="/guide/scanner">Scanner guide</Link>. Bringing an existing application? Check the{" "}
+        <Link to="/guide/coming-from-regex">regex and onig migration notes</Link>.
       </p>
     </ClosingAction>
   );

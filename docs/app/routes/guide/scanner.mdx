@@ -1,0 +1,215 @@
+---
+order: 2
+title: Scanner Guide
+---
+
+# Scanner Guide
+
+Build a tokenizer with one question: which of these patterns matches next?
+Ferroni's `Scanner` compiles a pattern set and returns the earliest match,
+including its capture groups. It follows vscode-oniguruma's scanning model,
+with byte offsets for Rust and UTF-16 positions for editor integrations.
+
+Add Ferroni with `cargo add ferroni`, or follow the
+[project setup](/guide/getting-started#install). You do not need C or a
+JavaScript runtime.
+
+A scanner is the regex layer of a TextMate highlighter. Your runtime still
+loads grammars, maintains rule stacks and assigns scopes. For a complete
+Shiki-compatible highlighter, see [Ferriki](https://ferriki.dev).
+
+## Find the next token
+
+Start with four patterns for keywords, strings, comments and numbers. The
+first search finds `const`, pattern 0:
+
+```rust
+use ferroni::prelude::*;
+
+let mut scanner = Scanner::new(&[
+    r"\b(?:const|let|var|function|return)\b", // 0: keyword
+    r#""[^"]*""#,                             // 1: string
+    r"//.*$",                                 // 2: comment
+    r"\b\d+(?:\.\d+)?\b",                     // 3: number
+]).unwrap();
+
+let line = r#"const answer = 42 // the answer"#;
+
+let m = scanner
+    .find_next_match(line, 0, ScannerFindOptions::NONE)
+    .unwrap();
+
+assert_eq!(m.index, 0); // pattern 0, the keyword, matched first
+assert_eq!(m.captures()[0].start, 0);
+assert_eq!(m.captures()[0].end, 5);
+```
+
+`index` is the index of the pattern that matched; the leftmost match across
+all patterns wins. When patterns tie at the same position, the one listed
+first wins. `captures()[0]` is the whole match, the rest are its
+capture groups, all in byte offsets. To tokenize a full line, keep calling
+`find_next_match` with `start_position` set to the end of the previous match.
+
+`Scanner::new` and the default `ScannerConfig` enable capture groups, matching
+vscode-oniguruma. When a pattern mixes named and unnamed groups, all groups
+are returned and numbered backreferences work. If you relied on the former
+Ferroni default, pass `ONIG_OPTION_NONE` explicitly; capture indices after a
+named group may shift when unnamed groups are captured.
+
+Watch for zero-width matches when you write that loop: if a pattern can match
+the empty string, advance to the next character boundary instead of standing
+still. Advancing by a single byte would split a multibyte character and panic
+the next time you slice the line.
+
+## UTF-16 positions
+
+vscode-textmate and Shiki address text in UTF-16 code units, not bytes. Wrap
+the line in an `OnigString` and both the input position and the returned
+offsets are in those units.
+
+```rust
+use ferroni::prelude::*;
+
+let mut scanner = Scanner::new(&["world"]).unwrap();
+let text = OnigString::new("hello 🌍 world");
+
+let m = scanner
+    .find_next_match_utf16(&text, 0, ScannerFindOptions::NONE)
+    .unwrap();
+
+// The emoji is two UTF-16 code units, so "world" starts at 9, not at byte 11.
+assert_eq!(m.captures()[0].start, 9);
+assert_eq!(m.captures()[0].end, 14);
+```
+
+## Scanning the same line repeatedly
+
+A tokenizer walks the same line many times. Pass a stable string id with
+`find_next_match_with_id` (or `find_next_match_utf16_with_id`) and the scanner
+reuses cached results instead of searching again from scratch. Use a different
+id when the text changes, so cached results always belong to the same content.
+
+```rust
+use ferroni::prelude::*;
+
+let mut scanner = Scanner::new(&[r"\w+"]).unwrap();
+let line = "two words";
+let string_id = 1;
+
+let mut position = 0;
+let mut tokens = Vec::new();
+while let Some(m) =
+    scanner.find_next_match_with_id(line, string_id, position, ScannerFindOptions::NONE)
+{
+    let whole = &m.captures()[0];
+    tokens.push(&line[whole.start..whole.end]);
+
+    // On a zero-width match, step to the next character boundary -- stepping
+    // one byte could land inside a multibyte character.
+    let next_boundary = whole.start
+        + line[whole.start..]
+            .chars()
+            .next()
+            .map_or(1, char::len_utf8);
+    position = whole.end.max(next_boundary);
+}
+assert_eq!(tokens, ["two", "words"]);
+```
+
+## Other syntaxes and options
+
+`Scanner::with_config` takes a `ScannerConfig` with the compile-time options
+and the syntax variant, mirroring vscode-oniguruma's `IOnigScannerConfig`.
+Start from `ScannerConfig::default()` and chain the `options` and `syntax`
+setters.
+
+```rust
+use ferroni::prelude::*;
+use ferroni::oniguruma::ONIG_OPTION_IGNORECASE;
+
+let config = ScannerConfig::default()
+    .options(ONIG_OPTION_IGNORECASE)
+    .syntax(ScannerSyntax::Ruby);
+let mut scanner = Scanner::with_config(&[r"hello"], &config).unwrap();
+
+assert!(scanner
+    .find_next_match("Hello", 0, ScannerFindOptions::NONE)
+    .is_some());
+```
+
+## Sharing compiled patterns between scanners
+
+A TextMate grammar builds one scanner per rule context, and the same patterns
+recur across them: the C++ grammar's 96 scanners in one captured session hold
+4,026 patterns, only 250 of them distinct. Build those scanners from one
+`ScannerPatternCache` and each distinct pattern is compiled once and shared.
+The scanners behave exactly as scanners built without the cache.
+
+```rust
+use ferroni::prelude::*;
+
+let config = ScannerConfig::default();
+let mut cache = ScannerPatternCache::new();
+
+let mut block = Scanner::with_pattern_cache(&[r"\}", r#""[^"]*""#], &config, &mut cache).unwrap();
+let mut call = Scanner::with_pattern_cache(&[r"\)", r#""[^"]*""#], &config, &mut cache).unwrap();
+assert_eq!(cache.len(), 3); // the string pattern was compiled once
+
+let m = call.find_next_match(r#"f("x")"#, 0, ScannerFindOptions::NONE).unwrap();
+assert_eq!(m.index, 1);
+assert!(block.find_next_match("}", 0, ScannerFindOptions::NONE).is_some());
+```
+
+The cache belongs to you, and nothing is cached process-wide. A pattern is
+reused only under the same options, syntax and backtracking optimization
+setting. Dropping or clearing the cache never affects scanners already built.
+`Scanner::new` and `Scanner::with_config` still compile every pattern they are
+given.
+
+<details>
+<summary>Ferriki integration and measured first-render gains</summary>
+
+[Ferriki's TextMate runtime](https://github.com/sebastian-software/ferriki/pull/235)
+uses `Scanner::with_pattern_cache` with one caller-owned `ScannerPatternCache`
+per `SyncRegistry`, shared across grammar and injection scanners behind a
+mutex. Registry invalidation (grammar registration or injection changes) and
+disposal clear the cache; directly constructed grammars get an isolated cache.
+
+Scanner lists containing dynamically resolved TextMate backreferences bypass
+shared caching so document-specific `end` and `while` variants are not retained.
+They keep the existing per-rule cache, which invalidates resolved variants when
+captures change. Sharing is all-or-nothing per scanner list, so static members
+of a mixed static/dynamic list also bypass it.
+
+The [October 10, 2026 measurement report](https://github.com/sebastian-software/ferriki/blob/dc84a14ae618b0606e4916a4cf58f83cc881a6fe/node/benchmarks/scanner-pattern-cache/2026-10-10/README.md)
+compares nine fresh-process samples per language on an Apple M1 Ultra. Median
+time from native addon require to first HTML fell by 71.2% for TypeScript,
+69.3% for TSX, and 63.3% for Astro; C++ and JSON fell by 1.9% and 3.8%.
+Warmed HTML medians stayed within 3.4% of baseline. These are first-render
+gains on the measured fixtures, not a general warmed-throughput improvement.
+
+After loading and highlighting all five grammars, median process RSS snapshots
+were 102.3 MiB without sharing and 68.4 MiB with it. These are coarse
+whole-process snapshots, not cache-allocation or peak-memory measurements;
+allocator retention from the addon hash guard's temporary buffer can also
+affect RSS.
+
+</details>
+
+## Bound work on untrusted input
+
+Scanners backtrack too, and they respect the process-wide retry, stack and
+time limits described in the [untrusted input guide](/guide/untrusted-input#the-defaults).
+Unlike `Regex::find_with`, scanner searches return `Option<ScannerMatch>`:
+a limit that stops a search before a match appears is reported as `None`.
+There is no scanner method that returns that limit as an error or accepts
+per-search `SearchOptions`.
+
+For browser WebAssembly, leave time limits unset and use retry limits. The
+`wasm32-unknown-unknown` target has no clock.
+
+## Keep building
+
+- [Scanner API reference](https://docs.rs/ferroni/latest/ferroni/struct.Scanner.html) — all constructors, search methods and options.
+- [Compatibility](/guide/compatibility) — supported syntax, encodings and upstream tests.
+- [Scanner architecture](/adr/006-scanner-api) — the scanning model and pattern cache contract.

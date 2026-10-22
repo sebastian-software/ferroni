@@ -1,5 +1,5 @@
 ---
-order: 4
+order: 5
 title: Coming from regex or onig
 ---
 
@@ -7,20 +7,21 @@ import { SyntaxExamples } from "../../components/home-examples";
 
 # Coming from regex or onig
 
-Ferroni keeps Oniguruma's semantics, so a few defaults differ from the
+Keep the API habits you know, and check the defaults that matter. Ferroni
+keeps Oniguruma's semantics, so a few defaults differ from the
 [`regex`](https://crates.io/crates/regex) crate. The
 [`onig`](https://crates.io/crates/onig) crate wraps the C library and shares
 those defaults; its API maps onto Ferroni's at the end of this page. Each
-difference below is visible in a single call. The outputs were checked against
-Ferroni 1.9.2 and `regex` 1.13.
+difference below has a runnable example, checked by Ferroni's doctests. The
+`regex` comparison was recorded with version 1.13.
 
-| Behavior                                    | Ferroni                                                                     | `regex`                               |
-| ------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------- |
-| `^abc$` on `"x\nabc\ny"`                    | matches: `^` and `$` are line anchors                                       | no match without `(?m)`               |
-| `(?<y>\d+)-(\d+)`, group 2                  | not captured (`get(2)` is `None`) unless `ONIG_OPTION_CAPTURE_GROUP` is set | both groups captured                  |
-| `a*` with `find_iter` over `"ab"`           | `0..1`, `1..1`, `2..2`                                                      | `0..1`, `2..2`                        |
-| `captures_len()` on `(a)(b)`                | `2`: excludes group 0                                                       | `3`: includes group 0                 |
-| `Match::as_str` on a match of invalid UTF-8 | panics; use `as_bytes`                                                      | not applicable (separate `bytes` API) |
+| Behavior                                    | Ferroni                                                               | `regex`                               |
+| ------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------- |
+| `^abc$` on `"x\nabc\ny"`                    | matches: `^` and `$` are line anchors                                 | no match without `(?m)`               |
+| `(?<y>\d+)-(\d+)`, group 2                  | not captured (`get(2)` is `None`) unless `capture_group(true)` is set | both groups captured                  |
+| `a*` with `find_iter` over `"ab"`           | `0..1`, `1..1`, `2..2`                                                | `0..1`, `2..2`                        |
+| `captures_len()` on `(a)(b)`                | `2`: excludes group 0                                                 | `3`: includes group 0                 |
+| `Match::as_str` on a match of invalid UTF-8 | panics; use `as_bytes`                                                | not applicable (separate `bytes` API) |
 
 ## Anchors
 
@@ -46,11 +47,10 @@ assert!(!anchored.is_match(text));
 ## Capture groups
 
 When a pattern has named groups, Oniguruma does not capture the unnamed
-groups unless `ONIG_OPTION_CAPTURE_GROUP` is set. Set it on the builder to get
+groups unless capture groups are explicitly enabled. Set the builder option to get
 the `regex` crate's behavior:
 
 ```rust
-use ferroni::oniguruma::ONIG_OPTION_CAPTURE_GROUP;
 use ferroni::prelude::*;
 
 let default = Regex::new(r"(?<y>\d+)-(\d+)").unwrap();
@@ -59,7 +59,7 @@ assert_eq!(caps.name("y").unwrap().as_str(), "12");
 assert!(caps.get(2).is_none());
 
 let regex_like = Regex::builder(r"(?<y>\d+)-(\d+)")
-    .option(ONIG_OPTION_CAPTURE_GROUP)
+    .capture_group(true)
     .build()
     .unwrap();
 let caps = regex_like.captures("12-34").unwrap();
@@ -68,7 +68,7 @@ assert_eq!(caps.get(2).unwrap().as_str(), "34");
 
 The Scanner API is the exception: `Scanner::new` and the default
 `ScannerConfig` capture unnamed groups too, to match vscode-oniguruma. See
-[The Scanner API](/guide/getting-started#the-scanner-api).
+[The Scanner guide](/guide/scanner).
 
 ## Empty matches
 
@@ -134,8 +134,10 @@ Ferroni is a 1:1 port of Oniguruma, and its goal is that a pattern which works
 in C Oniguruma works the same way in Ferroni. TextMate grammars, jq and PHP's
 mbregex depend on that behavior, so changing a default would break them. The
 [ADR-001](/adr/001-one-to-one-parity-with-c-original) records this decision.
-Every difference above is a builder option or a documented method, so the
-`regex` behavior is one call away.
+Builder options and the methods above let you adapt common behaviors.
+Empty-match iteration is a semantic difference: filtering empty matches
+removes all of them, rather than reproducing the `regex` crate's exact
+iteration behavior.
 
 ## Mapping from the `onig` crate
 

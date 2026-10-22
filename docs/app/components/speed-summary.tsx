@@ -13,9 +13,10 @@ function CompileTradeoff() {
     .sort((a, b) => a - b);
   return (
     <p className="fr-speed-tradeoff">
-      <strong>Where C still wins: compiling.</strong> C Oniguruma prepares a pattern{" "}
-      {compile[0].toFixed(1)}–{factor(compile[1])} faster, so a pattern used once favors C. Ferroni
-      pays off when a pattern runs many times, as in highlighters, parsers and validators.
+      <strong>Built for reuse.</strong> Compile once and keep searching: that is where Ferroni
+      shines in these workloads. C Oniguruma prepares patterns {compile[0].toFixed(1)}–
+      {factor(compile[1])} faster on the measured aggregate, so check compilation and first-use
+      results if your application rarely reuses a pattern.
     </p>
   );
 }

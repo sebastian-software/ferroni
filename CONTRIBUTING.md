@@ -1,8 +1,14 @@
 # Contributing to Ferroni
 
-Thanks for your interest in contributing! Ferroni is a 1:1 Rust port of the
-[Oniguruma](https://github.com/kkos/oniguruma) regex engine, and contributions
-that maintain that structural fidelity are welcome.
+Welcome! Help keep Oniguruma's regex engine going strong in Rust. Bug reports,
+clearer examples, Unicode updates and fixes are all useful contributions.
+Ferroni is feature-complete; the focus is correctness and maintenance.
+
+The engine is a 1:1 port of [Oniguruma](https://github.com/kkos/oniguruma).
+Changes to ported code preserve its module mapping and control flow. Start
+with [ADR-001](https://ferroni.dev/adr/001-one-to-one-parity-with-c-original)
+before changing engine code; documentation fixes are a good way to get familiar
+with the project.
 
 ## Getting Started
 
@@ -10,7 +16,12 @@ that maintain that structural fidelity are welcome.
 git clone https://github.com/sebastian-software/ferroni.git
 cd ferroni
 cargo build
+cargo test
 ```
+
+That is enough to build and run the default test suites. C sources are only
+needed for comparison benchmarks and checks that enable the `ffi` or `onigmo`
+features. Before opening a pull request, run the [local checks](#local-checks).
 
 Ferroni's MSRV is frozen at Rust 1.94 while the crate is in maintenance mode.
 Ferroni no longer follows the family's rolling four-releases-below-stable floor
@@ -152,9 +163,15 @@ cargo deny --all-features --locked check
 ./scripts/check-readme-figures.sh
 ```
 
-`--all-features` includes `ffi`, so run
-`./scripts/prepare-oniguruma-sources.sh` before the clippy command. Pull
-request titles must be Conventional Commits; a CI lane checks them.
+`--all-features` includes the C comparison features. Prepare both pinned
+source checkouts before the clippy command:
+
+```bash
+./scripts/prepare-oniguruma-sources.sh
+./scripts/prepare-onigmo-sources.sh
+```
+
+Pull request titles must be Conventional Commits; a CI lane checks them.
 
 The documentation site in `docs/` is a Node workspace declared in
 `.repometa.json`. It carries the org formatter configuration, so format it from
@@ -166,6 +183,17 @@ pnpm install --frozen-lockfile
 pnpm format:check   # pnpm format rewrites
 pnpm verify         # lint, typecheck, format, benchmark claims, and production build
 ```
+
+If syntax highlighting fails while downloading assets, use the same pinned
+GitHub mirror as CI. The legacy asset host can return HTTP 403:
+
+```bash
+export FERRIKI_ASSETS_BASE_URL=https://raw.githubusercontent.com/sebastian-software/ferriki
+pnpm verify
+```
+
+The setting also applies to `pnpm dev`. Ferriki still verifies the assets
+against the release's pinned hashes.
 
 The home page's run sample is generated from `examples/website_sample.rs`
 into `docs/app/data/regex-sample.json`. Its highlighted syntax examples and

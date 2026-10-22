@@ -5,7 +5,6 @@ import { patternHtml } from "virtual:ferroni-sample";
 import capabilities from "../data/regex-capabilities.json";
 import walkthrough from "../data/regex-walkthrough.json";
 import { PatternExample } from "./pattern-example";
-import { RegexFeatureMatrix } from "./regex-feature-matrix";
 
 type Feature = (typeof capabilities.features)[number];
 
@@ -32,25 +31,26 @@ export function SyntaxSection() {
   return (
     <Section
       id="fr-syntax"
-      title="Run the patterns regex rejects"
+      title="Give your patterns room to work"
       intro={
         <>
-          Rust&rsquo;s <code>regex</code> crate leaves out look-around and backreferences to
-          guarantee linear time. When your patterns need them, Ferroni runs them as Oniguruma does,
-          in all twelve of its syntax modes. Of the Rust engines below, it is the only one with
-          every feature in the table.
+          Match a repeated word. Look behind a label. Call a named group recursively. Ferroni brings
+          Oniguruma&rsquo;s full syntax to Rust, in all twelve syntax modes. It covers every feature
+          in our checked syntax matrix, the only Rust engine in that comparison to do so.
+          Rust&rsquo;s <code>regex</code> crate is a great choice when you need its linear-time
+          guarantee.
         </>
       }
       note={
         <>
-          Each mark is an executable check against the pinned engines.{" "}
-          <Link to="/perf/regex-workloads">The matrix with its notes</Link>
+          These matches come from running Ferroni.{" "}
+          <Link to="/perf/regex-workloads#syntax-coverage">Compare syntax support</Link>
           {" · "}
           <Link to="/guide/coming-from-regex#syntax-beyond-the-regex-crate">Worked examples</Link>
         </>
       }
     >
-      <RegexFeatureMatrix />
+      <SyntaxExamples />
     </Section>
   );
 }

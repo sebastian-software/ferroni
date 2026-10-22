@@ -21,7 +21,7 @@ export const meta: MetaFunction = () => [
   {
     name: "description",
     content:
-      "Oniguruma's regex engine in memory-safe Rust: look-behind, backreferences, recursion and the TextMate scanner, checked against every upstream UTF-8 test and faster than the C original on reused patterns. No C compiler required.",
+      "Bring your Oniguruma patterns to Rust. Look-behind, backreferences, recursion and a TextMate scanner, with a familiar API and no C toolchain. Start with a working example.",
   },
 ];
 
@@ -50,22 +50,22 @@ function HeroSection() {
     <ProjectHero
       icon="ferroni"
       title={<span translate="no">Ferroni</span>}
-      what="Oniguruma’s regex engine, in memory-safe Rust."
+      what="Your Oniguruma patterns. Pure Rust."
       lede={
         <>
-          Run Oniguruma&rsquo;s full syntax, from look-behind to recursion, and the scanner that
-          syntax highlighters drive. Ferroni passes every upstream UTF-8 test and, once a pattern is
-          compiled, matches {speedupOverC()} faster than the C original.
+          Keep the look-behind, backreferences and recursion your patterns rely on. Get a familiar
+          Rust API, a scanner for syntax highlighters, and a Cargo build for Linux, macOS, Windows
+          and WebAssembly. No C compiler, no bindgen. Let&rsquo;s make a match.
         </>
       }
       actions={
         <>
           <Link to="/guide/getting-started" className="fam-btn fam-btn-primary">
-            Get started <Mark name="arrow" className="icon" size={18} />
+            Run your first match <Mark name="arrow" className="icon" size={18} />
           </Link>
-          <a href="https://github.com/sebastian-software/ferroni" className="fam-btn fam-btn-ghost">
-            <Mark name="github" className="icon" size={18} /> GitHub
-          </a>
+          <Link to="/guide/scanner" className="fam-btn fam-btn-ghost">
+            Explore the Scanner
+          </Link>
         </>
       }
       install={<code translate="no">cargo add ferroni</code>}
@@ -79,23 +79,52 @@ function HeroSection() {
 }
 
 /*
- * The four claims the page then argues one by one. The parity count is the
- * total of the table in guide/compatibility.mdx; the unsafe count is the
- * output of scripts/count-unsafe.sh, as in ADR-002.
+ * The parity count is the total of the table in guide/compatibility.mdx.
  */
-function WhySection() {
+function EngineEvidence() {
   const arm = comparison("macos-arm64", "c").family_weighted_ratio;
   const x86 = comparison("linux-x86-64", "c").family_weighted_ratio;
+  return (
+    <EvidenceFigures
+      figures={[
+        {
+          label: "Faster than C",
+          value: factor(arm),
+          detail: <>Reused patterns on ARM64; {factor(x86)} on x86-64</>,
+        },
+        {
+          label: "Upstream tests",
+          value: "2,974",
+          detail: "Every UTF-8 test of C Oniguruma passes",
+        },
+        {
+          label: "Syntax modes",
+          value: "12",
+          detail: "From Oniguruma and Ruby to Python",
+        },
+        {
+          label: "Unicode",
+          value: "18.0",
+          detail: "C Oniguruma ships 16.0",
+        },
+      ]}
+    />
+  );
+}
+
+function WhySection() {
   return (
     <Section
       id="fr-why"
       layout="split"
-      title="Oniguruma ended. The engine goes on."
+      tone="dim"
+      title="An established engine. A Rust future."
       intro={
         <>
-          Oniguruma matches the patterns in every TextMate grammar, in PHP&rsquo;s mbstring and in
-          jq. Its C project closed in April 2025. Ferroni continues the engine in Rust, ported
-          function by function, and makes it faster and safer than it was.
+          Oniguruma powers regex matching in TextMate grammars, PHP&rsquo;s mbstring and jq. Its C
+          project closed in April 2025. Ferroni carries that work forward, ported function by
+          function and checked against every upstream UTF-8 test. On the published workloads,
+          compiled patterns run {speedupOverC()} faster than C Oniguruma.
         </>
       }
       note={
@@ -105,30 +134,7 @@ function WhySection() {
         </>
       }
     >
-      <EvidenceFigures
-        figures={[
-          {
-            label: "Faster than C",
-            value: factor(arm),
-            detail: <>Reused patterns on ARM64; {factor(x86)} on x86-64</>,
-          },
-          {
-            label: "Upstream tests",
-            value: "2,974",
-            detail: "Every UTF-8 test of C Oniguruma passes",
-          },
-          {
-            label: "Unsafe sites",
-            value: "10",
-            detail: "None in buffer or string code",
-          },
-          {
-            label: "Unicode",
-            value: "18.0",
-            detail: "C Oniguruma ships 16.0",
-          },
-        ]}
-      />
+      <EngineEvidence />
     </Section>
   );
 }
@@ -140,14 +146,15 @@ function SpeedSection() {
   return (
     <Section
       id="fr-speed"
-      tone="dim"
-      title="Only a JIT is faster"
+      title="Compile once. Put it to work."
       intro={
         <>
           Ferroni runs compiled patterns in an interpreter and generates no machine code at runtime.
           On {summary.case_count} regex tasks taken from Django, Rails, WordPress and eight other
-          projects, it outpaces every engine measured except PCRE2&rsquo;s JIT, and still wins{" "}
-          {jitWins[0] === jitWins[1] ? jitWins[0] : jitWins.join(" to ")} of those tasks.
+          projects, Ferroni is faster in each aggregate comparison except against PCRE2&rsquo;s JIT.
+          Each pair uses the tasks both engines can run. Ferroni even leads the JIT on{" "}
+          {jitWins[0] === jitWins[1] ? jitWins[0] : jitWins.join(" to ")} tasks across the two
+          platforms. The chart shows the shared task counts and the tradeoffs.
         </>
       }
       note={<Link to="/perf/regex-workloads">How the benchmarks work</Link>}
@@ -161,12 +168,12 @@ export default function HomePage() {
   return (
     <div className="fam-page ferroni-home">
       <HeroSection />
+      <StartSection />
       <WhySection />
-      <SpeedSection />
       <SyntaxSection />
       <ScannerSection />
+      <SpeedSection />
       <SafetySection />
-      <StartSection />
       <FitSection />
       <StatusSection />
       <ClosingSection />
