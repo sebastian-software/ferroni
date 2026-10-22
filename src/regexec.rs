@@ -3574,10 +3574,12 @@ fn pop_star_choices(stack: &mut Vec<StackEntry>, pc: usize) {
 /// so the run consumes exactly what the unoptimized `PUSH; CCLASS_NOT; JUMP`
 /// loop consumes. Out of line: negated loops are long (strings, comments),
 /// and their code inlined into `match_at_impl` slowed unrelated patterns.
+/// A possessive run (`BACKTRACK = false`) needs neither the choices nor the
+/// checks that make retracing those choices safe on malformed byte input.
 /// Returns the end of the run.
 #[inline(never)]
 #[allow(clippy::too_many_arguments)]
-fn greedy_char_loop(
+fn greedy_char_loop<const BACKTRACK: bool>(
     stack: &mut Vec<StackEntry>,
     pcode: usize,
     enc: OnigEncoding,
@@ -3607,21 +3609,76 @@ fn greedy_char_loop(
         if next <= s {
             break;
         }
-        single_byte &= next == s + 1;
-        exact_heads &= steps_back_to(enc, str_data, start, s, next);
+        if BACKTRACK {
+            single_byte &= next == s + 1;
+            exact_heads &= steps_back_to(enc, str_data, start, s, next);
+        }
         s = next;
     }
-    push_char_run(
-        stack,
-        pcode,
-        enc,
-        str_data,
-        start,
-        s,
-        single_byte,
-        exact_heads,
-    );
+    if BACKTRACK {
+        push_char_run(
+            stack,
+            pcode,
+            enc,
+            str_data,
+            start,
+            s,
+            single_byte,
+            exact_heads,
+        );
+    }
     s
+}
+
+/// Keep possessive-run selection outside the shared VM dispatch. Explicit
+/// stack limits retain the choices that the following pop would discard.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn run_negated_byte_star(
+    stack: &mut Vec<StackEntry>,
+    pcode: usize,
+    reg: &RegexType,
+    str_data: &[u8],
+    start: usize,
+    right_range: usize,
+    end: usize,
+    match_stack_limit: u32,
+    bsp: &BitSet,
+    ascii_fast: CClassAsciiFastKind,
+) -> (usize, usize) {
+    let fuse = match_stack_limit == 0
+        && reg
+            .ops
+            .get(pcode)
+            .is_some_and(|next| next.opcode == OpCode::PopStarChoices);
+    #[cfg(test)]
+    let fuse = fuse && !NEGATED_STAR_FUSION_DISABLED.with(Cell::get);
+    let stop = if fuse {
+        greedy_not_byte_class_loop::<false>(
+            stack,
+            pcode,
+            reg.enc,
+            str_data,
+            start,
+            right_range,
+            end,
+            bsp,
+            ascii_fast,
+        )
+    } else {
+        greedy_not_byte_class_loop::<true>(
+            stack,
+            pcode,
+            reg.enc,
+            str_data,
+            start,
+            right_range,
+            end,
+            bsp,
+            ascii_fast,
+        )
+    };
+    (stop, pcode + usize::from(fuse))
 }
 
 /// Choose the negated byte-class test once per run, outside the character
@@ -3629,7 +3686,7 @@ fn greedy_char_loop(
 /// `ascii_fast`, even though the class cannot change during the run.
 #[inline(never)]
 #[allow(clippy::too_many_arguments)]
-fn greedy_not_byte_class_loop(
+fn greedy_not_byte_class_loop<const BACKTRACK: bool>(
     stack: &mut Vec<StackEntry>,
     pcode: usize,
     enc: OnigEncoding,
@@ -3657,7 +3714,9 @@ fn greedy_not_byte_class_loop(
             let len = found.unwrap_or(text.len());
             if text[..len].is_ascii() {
                 let stop = start + len;
-                push_char_run(stack, pcode, enc, str_data, start, stop, true, true);
+                if BACKTRACK {
+                    push_char_run(stack, pcode, enc, str_data, start, stop, true, true);
+                }
                 return stop;
             }
         }
@@ -3665,7 +3724,7 @@ fn greedy_not_byte_class_loop(
     macro_rules! run {
         ($member:expr) => {{
             let member = $member;
-            greedy_char_loop(
+            greedy_char_loop::<BACKTRACK>(
                 stack,
                 pcode,
                 enc,
@@ -4556,6 +4615,8 @@ thread_local! {
     static ASCII_CASE_INSENSITIVE_BACKREFS_DISABLED: Cell<bool> = const { Cell::new(false) };
     /// Differential reference for fused look-behind character walks.
     static FUSED_LOOK_BEHIND_ASCII_BATCHES_DISABLED: Cell<bool> = const { Cell::new(false) };
+    /// Executes possessive negated byte stars as the original star/pop pair.
+    static NEGATED_STAR_FUSION_DISABLED: Cell<bool> = const { Cell::new(false) };
 }
 
 #[inline(always)]
@@ -5711,18 +5772,18 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     ascii_fast,
                 } = op.payload
                 {
-                    s = greedy_not_byte_class_loop(
+                    (s, p) = run_negated_byte_star(
                         &mut stack,
                         p + 1,
-                        enc,
+                        reg,
                         str_data,
                         s,
                         right_range,
                         end,
+                        match_stack_limit,
                         bsp,
                         ascii_fast,
                     );
-                    p += 1;
                 } else {
                     goto_fail = true;
                 }
@@ -5751,7 +5812,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
 
             OpCode::CClassMbNotStar => {
                 if let OperationPayload::CClassMb { ref mb } = op.payload {
-                    s = greedy_char_loop(
+                    s = greedy_char_loop::<true>(
                         &mut stack,
                         p + 1,
                         enc,
@@ -5783,7 +5844,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
 
             OpCode::CClassMixNotStar => {
                 if let OperationPayload::CClassMix { ref bsp, ref mb } = op.payload {
-                    s = greedy_char_loop(
+                    s = greedy_char_loop::<true>(
                         &mut stack,
                         p + 1,
                         enc,
@@ -14101,6 +14162,151 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn negated_star_fusion_preserves_results_captures_and_retries() {
+        let _limits = shared_limits();
+        let patterns = [
+            r#"([^\"]*+)"#,
+            r#"([^\"]*+)\"x|([^\"]*)b"#,
+            r#"([^qQ]*+)Q"#,
+            r#"([^\"\\]*+)(?:x|y)"#,
+            r#"(?:(a)|([^\"]*+))\""#,
+            r#"(?=([^\"]*+))a"#,
+            r#"([^\"]*+)\1"#,
+            r#"(?:[^\"]*+z|a*)"#,
+        ];
+        let suffixes: &[&[u8]] = &[
+            b"",
+            b"xb\"x",
+            b"abQqb",
+            b"a\0b",
+            b"\xc3\"b",
+            b"\xe2\x82",
+            b"\x80ab",
+            b"\xffab",
+            "éa𝄞b\"x".as_bytes(),
+        ];
+        let mut comparisons = 0;
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            for pattern in patterns {
+                let reg = regcomp::onig_new(
+                    pattern.as_bytes(),
+                    ONIG_OPTION_NONE,
+                    enc,
+                    &crate::regsyntax::OnigSyntaxOniguruma,
+                )
+                .unwrap();
+                assert!(
+                    reg.ops.windows(2).any(|pair| {
+                        pair[0].opcode == OpCode::CClassNotStar
+                            && pair[1].opcode == OpCode::PopStarChoices
+                    }),
+                    "{pattern}"
+                );
+                for prefix in [0, 31, 32, 33, 127] {
+                    for suffix in suffixes {
+                        let mut input = vec![b'a'; prefix];
+                        input.extend_from_slice(suffix);
+                        for end in [input.len(), input.len().saturating_sub(1)] {
+                            for (start, range) in [(0, end), (end, 0), (0, prefix.min(end))] {
+                                for option in [
+                                    ONIG_OPTION_NONE,
+                                    ONIG_OPTION_FIND_LONGEST,
+                                    ONIG_OPTION_FIND_NOT_EMPTY,
+                                ] {
+                                    for (retry, search_retry, stack) in [
+                                        (0, 0, 0),
+                                        (1, 0, 0),
+                                        (0, 1, 0),
+                                        (0, 7, 0),
+                                        (0, 0, 1),
+                                        (0, 0, 320),
+                                    ] {
+                                        let mp = OnigMatchParam {
+                                            retry_limit_in_match: retry,
+                                            retry_limit_in_search: search_retry,
+                                            match_stack_limit: stack,
+                                            ..onig_new_match_param()
+                                        };
+                                        for with_region in [false, true] {
+                                            let run = |disabled| {
+                                                NEGATED_STAR_FUSION_DISABLED
+                                                    .with(|v| v.set(disabled));
+                                                let mut msa = MatchArg::from_param(
+                                                    &reg,
+                                                    option,
+                                                    with_region.then(OnigRegion::new),
+                                                    start,
+                                                    &mp,
+                                                );
+                                                let result = search_in_range_inner(
+                                                    &reg, &input, end, start, range, end, &mut msa,
+                                                );
+                                                NEGATED_STAR_FUSION_DISABLED.with(|v| v.set(false));
+                                                (
+                                                    result,
+                                                    msa.region.map(|r| (r.num_regs, r.beg, r.end)),
+                                                    msa.retry_limit_in_search_counter,
+                                                )
+                                            };
+                                            assert_eq!(
+                                                run(false),
+                                                run(true),
+                                                "{} {pattern}, {input:x?}, end={end}, start={start}, range={range}, option={option:?}, limits={retry}/{search_retry}/{stack}, region={with_region}",
+                                                enc.name()
+                                            );
+                                            comparisons += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("{comparisons} possessive negated-star result/capture/retry comparisons");
+    }
+
+    #[test]
+    fn negated_star_fusion_keeps_configured_stack_limit_boundaries() {
+        let _limits = shared_limits();
+        let reg = compile_full(br#"\A(?:([^\"]*+)\"b)+z\z"#);
+        let mut input = b"a\"b".repeat(400);
+        input.push(b'z');
+        let mut saw_limit = false;
+        let mut saw_match = false;
+        for limit in [0, 1, 319, 320, 321, 400, 800, 1200, 2000] {
+            let mp = OnigMatchParam {
+                match_stack_limit: limit,
+                ..onig_new_match_param()
+            };
+            let run = |disabled| {
+                NEGATED_STAR_FUSION_DISABLED.with(|v| v.set(disabled));
+                let (result, region) = onig_search_with_param(
+                    &reg,
+                    &input,
+                    input.len(),
+                    0,
+                    input.len(),
+                    Some(OnigRegion::new()),
+                    ONIG_OPTION_NONE,
+                    &mp,
+                );
+                NEGATED_STAR_FUSION_DISABLED.with(|v| v.set(false));
+                (result, region.map(|r| (r.num_regs, r.beg, r.end)))
+            };
+            let fused = run(false);
+            assert_eq!(fused, run(true), "stack limit {limit}");
+            saw_limit |= fused.0 == ONIGERR_MATCH_STACK_LIMIT_OVER;
+            saw_match |= fused.0 == 0;
+        }
+        assert!(saw_limit && saw_match);
     }
 
     #[test]

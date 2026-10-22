@@ -1,0 +1,88 @@
+{
+  "checks": [
+    {
+      "command": "cargo fmt --all --check",
+      "status": "passed",
+      "log": "selected-fmt.log"
+    },
+    {
+      "command": "PCRE2_SYS_STATIC=1 cargo test --locked --offline --lib negated_star_fusion -- --test-threads=1 --nocapture",
+      "status": "passed",
+      "log": "selected-focused-tests.log"
+    },
+    {
+      "command": "PCRE2_SYS_STATIC=1 cargo test --locked --offline --features ffi -- --test-threads=1",
+      "status": "passed",
+      "log": "selected-full-tests.log"
+    },
+    {
+      "command": "PCRE2_SYS_STATIC=1 cargo test --locked --offline --features prefilter-self-check --lib --test api_test --test compat_prefilter_differential --test scanner_prefilter_regressions -- --test-threads=1",
+      "status": "passed",
+      "log": "selected-prefilter-tests.log"
+    },
+    {
+      "command": "PCRE2_SYS_STATIC=1 cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings",
+      "status": "passed",
+      "log": "selected-clippy.log"
+    },
+    {
+      "command": "RUSTDOCFLAGS=\"-D warnings\" cargo doc --no-deps --locked --offline",
+      "status": "passed",
+      "log": "selected-rustdoc.log"
+    },
+    {
+      "command": "cargo deny --all-features --locked --offline check",
+      "status": "passed",
+      "log": "selected-deny-host.log"
+    },
+    {
+      "command": "python3 scripts/check-production-corpus.py",
+      "status": "passed",
+      "log": "corpus-check.log"
+    },
+    {
+      "command": "./scripts/check-workflow-pins.sh",
+      "status": "passed",
+      "log": "workflow-pins.log"
+    },
+    {
+      "command": "./scripts/readme-family.sh check",
+      "status": "passed",
+      "log": "readme-family-host.log"
+    },
+    {
+      "command": "./scripts/check-readme-figures.sh",
+      "status": "passed",
+      "log": "readme-figures.log"
+    },
+    {
+      "command": "node docs/scripts/check-benchmark-claims.mjs",
+      "status": "passed",
+      "log": "benchmark-claims.log"
+    },
+    {
+      "command": "oxfmt --check docs/app/routes/adr/008-rust-only-optimizations.mdx",
+      "status": "passed",
+      "log": "adr-format.log"
+    }
+  ],
+  "notes": [
+    "The full-test command includes the Rust, C compatibility, integration, and documentation tests; opt-in ignored tests remain ignored.",
+    "Unit and integration tests ran serially to avoid shared global-limit interference.",
+    "The C dependencies emitted existing compiler warnings; Rust Clippy and Rustdoc passed with warnings denied.",
+    "The offline cargo-deny check used the available local advisory database. It reported unused license allowances as warnings.",
+    "Initial sandboxed README and cargo-deny checks could not access the network or lock the advisory cache; host-permission reruns passed. Both attempts are retained."
+  ],
+  "not_run": [
+    "Hosted CI",
+    "Coverage instrumentation",
+    "Full documentation-site build",
+    "External Ferriki corpus"
+  ],
+  "source_test_count": {
+    "command": "./scripts/count-tests.sh",
+    "count": 2670,
+    "log": "test-counts.txt"
+  },
+  "differential_comparisons": 155520
+}

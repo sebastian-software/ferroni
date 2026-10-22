@@ -1,0 +1,102 @@
+{
+  "source_matches_full_test_validation": true,
+  "selected_build_is_byte_identical_to_frozen_binary": true,
+  "head_lockfile_and_corpora_unchanged": true,
+  "all_recorded_binary_and_runner_hashes_verified": true,
+  "source_sha256": "b455b94b4edc1a3f0c8fb8b4ea788c534cda6aaf78dd9620da27175458a5c8ef",
+  "binaries": {
+    "baseline": "5f1a458a854e4c4614fb4125b629ea9035439cfb2137e552c8a5911cb9521c4a",
+    "helper01": "7d3d2026b439cdb7d9344d5d849ac99cc85b8753458064ebb315265460499d53",
+    "helper02": "1fd922dfa539b734b017bbebaaece7ef5ca270b2ef1aee5df4a10c1bf0c72d5a",
+    "helper03": "1acfe517205a41297595e1b76cc87152ec09b4d9906117c28f4335583e52084a",
+    "track001": "7c94b6142c69f31cf7f7af9257f04d22cbf1dfff83e549b4bd27165676ab981c",
+    "control1": "5f1a458a854e4c4614fb4125b629ea9035439cfb2137e552c8a5911cb9521c4a",
+    "fixed001": "606e5d223f7e5a33bd9446e057088c4d3a5d24004f40fe36544d4e1a7e3d9db6",
+    "compact3": "5a779031fc095682a82cd42ca428df912952f46cea2b20c0bfe7def5fc5ff25d",
+    "popleave": "8573e5cbdbc5c5e1d09a95dc824da7ca33d78ad8f3e1b0227a907244bc501aba",
+    "stable01": "b7e7015ff8ff25eb257acd0ad9e209a030a749c87ba60705d8032f0913a2b5cb",
+    "compact4": "b2b1e022927248ac96604a3c976d5d3683106ea15fe5842c5d0459e9c25c9c3a"
+  },
+  "phases": [
+    {
+      "phase": "probe-helper01",
+      "runner": "compare-original.py",
+      "binary_names": ["baseline", "helper01"]
+    },
+    {
+      "phase": "probe-helper02",
+      "runner": "compare-original.py",
+      "binary_names": ["baseline", "helper02"]
+    },
+    {
+      "phase": "probe-helper03",
+      "runner": "compare-original.py",
+      "binary_names": ["baseline", "helper03"]
+    },
+    {
+      "phase": "probe-track001",
+      "runner": "compare-original.py",
+      "binary_names": ["baseline", "track001"]
+    },
+    {
+      "phase": "confirm-helper03",
+      "runner": "compare-original.py",
+      "binary_names": ["baseline", "helper03"]
+    },
+    {
+      "phase": "control-aa",
+      "runner": "compare-original.py",
+      "binary_names": ["baseline", "control1"]
+    },
+    {
+      "phase": "broad",
+      "runner": "compare-original.py",
+      "binary_names": ["baseline", "fixed001"]
+    },
+    {
+      "phase": "probe",
+      "runner": "compare-original.py",
+      "binary_names": ["baseline", "compact3"]
+    },
+    {
+      "phase": "try02",
+      "runner": "compare-original.py",
+      "binary_names": ["baseline", "helper02"]
+    },
+    {
+      "phase": "aaend",
+      "runner": "compare-original.py",
+      "binary_names": ["baseline", "control1"]
+    },
+    {
+      "phase": "final",
+      "runner": "compare-original.py",
+      "binary_names": ["baseline", "helper02"]
+    },
+    {
+      "phase": "pop01",
+      "runner": "compare-fixed-base.py",
+      "binary_names": ["baseline", "popleave"]
+    },
+    {
+      "phase": "sta01",
+      "runner": "compare-fixed-base.py",
+      "binary_names": ["baseline", "stable01"]
+    },
+    {
+      "phase": "cmp04",
+      "runner": "compare-fixed-base.py",
+      "binary_names": ["baseline", "compact4"]
+    },
+    {
+      "phase": "aa64x",
+      "runner": "compare-fixed-base.py",
+      "binary_names": ["baseline", "control1"]
+    },
+    {
+      "phase": "wide2",
+      "runner": "compare-fixed-base.py",
+      "binary_names": ["baseline", "helper02"]
+    }
+  ]
+}

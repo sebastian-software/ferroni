@@ -1,0 +1,144 @@
+{
+  "baseline_commit": "164bb809cea91c478fb5614d5c423922fc150197",
+  "cpu": "Apple M1 Ultra",
+  "physical_memory_bytes": 68719476736,
+  "logical_cpus": 20,
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+  "profile": "bench, opt-level=3, lto=thin, default target CPU",
+  "features": ["dfa-prefilter", "ffi"],
+  "pcre2_sys_static": "1",
+  "host_note": "Interactive local host; system background load and CPU affinity were not controlled. Task builds, tests, profiles, and benchmark timings ran in separate phases. Thermal queries were unavailable inside the sandbox.",
+  "lock_sha256": "d1e0a33adb5a7760adc928a1a17da3d0e0b9a1385c087d610bf8ed6a41b93421",
+  "binaries": {
+    "baseline": "5f1a458a854e4c4614fb4125b629ea9035439cfb2137e552c8a5911cb9521c4a",
+    "three001": "1abaae342bf6edf4b8cf72e2a22d518797f684d06fd3297c94c4a62f63200d17",
+    "direct01": "1b646dbf7ea4398f5ba39b5b4d049ef249a6503ce840610becd89a5c00881adc",
+    "fusion01": "b01661acbd8d6c0d394ef82813e9670b4d941ca537cce80b469ba63279918c61",
+    "fusion02": "acb08f3b750d8eacd07301867e5356c9d5966a309a3cc6bcf9f3ef0418156870",
+    "final001": "09f1ea85bb6cd30b207e0d03b0adb0f5ff8bca50915d285e429015a844e13109",
+    "compact1": "bfe28167a48403f4e9c4ba3cbb2bfe143abaaa82e471415fff1a649545557af6",
+    "compact2": "7ed475f62ab6ef1297986726bf83d2a0aab8842f2fb6bcb4848ffb33e9aec662",
+    "batch001": "136e2703579ab99a3efe172b951627e47bf6e66a509af1af842f43a6eb4677d0",
+    "unroll01": "1b6ee1210dc7147bd37da204fc64fbae3c2ef2276acc927191e05e9b66ecd04b",
+    "select01": "d272a613b98d638cd47fd5f686c28247da68a0e148db5c337945ad41d8182cf8"
+  },
+  "profiled_cases": ["tiktoken_cl100k_base", "ferrolink_markup_scan", "django_email_local_part"],
+  "sampling": "macOS /usr/bin/sample, 5 seconds, 1 ms; each owned process was stopped and reaped afterward",
+  "selected_candidate": "select01",
+  "measured_candidates": {
+    "broad": "final001",
+    "alignment": "fusion01"
+  },
+  "source_patch": "select01.patch in evidence.tar.gz",
+  "code_equivalence": {
+    "baseline": {
+      "sha256": "5f1a458a854e4c4614fb4125b629ea9035439cfb2137e552c8a5911cb9521c4a",
+      "sections": {
+        "__TEXT,__text": {
+          "bytes": 3931384,
+          "sha256": "631e1dfc92f053d4e43827838bc558a3fdeaedf64fe1ec19f88fa68b9ef11799"
+        }
+      }
+    },
+    "fusion01": {
+      "sha256": "b01661acbd8d6c0d394ef82813e9670b4d941ca537cce80b469ba63279918c61",
+      "sections": {
+        "__TEXT,__text": {
+          "bytes": 3935096,
+          "sha256": "9532959a5bfdbfc00b623219bb6ffdbc39266b3f626324248b2f6761a38ebf4e"
+        }
+      }
+    },
+    "final001": {
+      "sha256": "09f1ea85bb6cd30b207e0d03b0adb0f5ff8bca50915d285e429015a844e13109",
+      "sections": {
+        "__TEXT,__text": {
+          "bytes": 3935096,
+          "sha256": "9532959a5bfdbfc00b623219bb6ffdbc39266b3f626324248b2f6761a38ebf4e"
+        }
+      }
+    },
+    "select01": {
+      "sha256": "d272a613b98d638cd47fd5f686c28247da68a0e148db5c337945ad41d8182cf8",
+      "sections": {
+        "__TEXT,__text": {
+          "bytes": 3935096,
+          "sha256": "9532959a5bfdbfc00b623219bb6ffdbc39266b3f626324248b2f6761a38ebf4e"
+        }
+      }
+    },
+    "selected_text_equals_fusion01": true
+  },
+  "corpus_sha256": {
+    "benches/production_regex/catalog.json": "f371ab7da91906b81bb609019b00f1788e80916e313c289219ca98177c3362a5",
+    "benches/tokenizer_regex/catalog.json": "7ddd65db06761271466aa0300e38ff35d333fc06b420b3aa71f14fd1019d3db8"
+  },
+  "selected_source_sha256": "1aae2f74582f18c8b0c7cd90677cbed28be13e9e6307209f8abd268e067c4977",
+  "evidence_audit": {
+    "runs": [
+      {
+        "run": "probe-three",
+        "processes": 36,
+        "pairs": 18,
+        "complete": true
+      },
+      {
+        "run": "probe-direct",
+        "processes": 36,
+        "pairs": 18,
+        "complete": true
+      },
+      {
+        "run": "probe-fusion",
+        "processes": 36,
+        "pairs": 18,
+        "complete": true
+      },
+      {
+        "run": "probe-all-fusion",
+        "processes": 36,
+        "pairs": 18,
+        "complete": true
+      },
+      {
+        "run": "final-all",
+        "processes": 174,
+        "pairs": 87,
+        "complete": true
+      },
+      {
+        "run": "probe-compact",
+        "processes": 42,
+        "pairs": 21,
+        "complete": true
+      },
+      {
+        "run": "probe-compact-inline",
+        "processes": 42,
+        "pairs": 21,
+        "complete": true
+      },
+      {
+        "run": "probe-batch",
+        "processes": 42,
+        "pairs": 21,
+        "complete": true
+      },
+      {
+        "run": "probe-unroll",
+        "processes": 42,
+        "pairs": 21,
+        "complete": true
+      },
+      {
+        "run": "fusion-alignment",
+        "processes": 80,
+        "pairs": 40,
+        "complete": true
+      }
+    ],
+    "total_processes": 566,
+    "source_sha256": "1aae2f74582f18c8b0c7cd90677cbed28be13e9e6307209f8abd268e067c4977"
+  }
+}

@@ -1,0 +1,794 @@
+[
+  {
+    "binary": "three001",
+    "run": "probe-three",
+    "idea": "Two/three excluded bytes via memchr2/memchr3",
+    "summary": [
+      {
+        "case": "ferrolink_markup_scan",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 144571.52227768404,
+        "candidate_ns": 143211.8102800217,
+        "changes_percent": [-0.14314339334803305, -0.9405116417399939, 0.04658013056180188],
+        "median_change_percent": -0.14314339334803305
+      },
+      {
+        "case": "ferrolink_attribute_split",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 93913.37297176236,
+        "candidate_ns": 93364.56709641364,
+        "changes_percent": [-3.047679250694757, 3.7284491698477806, -0.5843745762530994],
+        "median_change_percent": -0.5843745762530994
+      },
+      {
+        "case": "jinja_string_token",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1366.8371073855744,
+        "candidate_ns": 1428.634817344498,
+        "changes_percent": [-1.5265736591273393, 4.4092897495004335, 5.113082634815336],
+        "median_change_percent": 4.4092897495004335
+      },
+      {
+        "case": "tiktoken_cl100k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 124766.98275382766,
+        "candidate_ns": 123081.86724018105,
+        "changes_percent": [-0.9382726413617815, -1.3506101345509336, -0.6158598661633818],
+        "median_change_percent": -0.9382726413617815
+      },
+      {
+        "case": "tiktoken_o200k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 115956.84480947141,
+        "candidate_ns": 115520.28781839984,
+        "changes_percent": [0.10987111618603329, -0.6657881749250083, -0.46674503021474356],
+        "median_change_percent": -0.46674503021474356
+      },
+      {
+        "case": "fluent_bit_nginx",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1073.7388822552814,
+        "candidate_ns": 1074.9907136345016,
+        "changes_percent": [-0.45318065170799615, 0.7962504418727478, 0.26523341097404174],
+        "median_change_percent": 0.26523341097404174
+      }
+    ]
+  },
+  {
+    "binary": "direct01",
+    "run": "probe-direct",
+    "idea": "Direct comparisons for short two/three-byte classes",
+    "summary": [
+      {
+        "case": "ferrolink_markup_scan",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 143399.28593189776,
+        "candidate_ns": 144557.95856097504,
+        "changes_percent": [0.5931515969473722, 1.061448811218657, 2.240690371897136],
+        "median_change_percent": 1.061448811218657
+      },
+      {
+        "case": "ferrolink_attribute_split",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 93317.76415508268,
+        "candidate_ns": 92566.04540010566,
+        "changes_percent": [-2.8937053788029576, -0.8055473272245872, 1.8935268278334805],
+        "median_change_percent": -0.8055473272245872
+      },
+      {
+        "case": "jinja_string_token",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1400.5349676302192,
+        "candidate_ns": 1452.6048742195499,
+        "changes_percent": [4.265445304978965, 3.980856930081522, 3.717858375034777],
+        "median_change_percent": 3.980856930081522
+      },
+      {
+        "case": "tiktoken_cl100k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 123952.28385434355,
+        "candidate_ns": 125031.86629815235,
+        "changes_percent": [2.00442854288132, -0.5351230179029165, -0.16273974617024844],
+        "median_change_percent": -0.16273974617024844
+      },
+      {
+        "case": "tiktoken_o200k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 116130.09612716547,
+        "candidate_ns": 119251.75397573019,
+        "changes_percent": [2.6880696328249076, 0.7931340521609043, 3.79703083434606],
+        "median_change_percent": 2.6880696328249076
+      },
+      {
+        "case": "fluent_bit_nginx",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1089.5246579113705,
+        "candidate_ns": 1082.9196952650238,
+        "changes_percent": [-1.1107122675826586, -0.1532609360431092, 0.4305696057445685],
+        "median_change_percent": -0.1532609360431092
+      }
+    ]
+  },
+  {
+    "binary": "fusion01",
+    "run": "probe-fusion",
+    "idea": "Skip temporary choices and the following pop for possessive byte stars",
+    "summary": [
+      {
+        "case": "ferrolink_markup_scan",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 144074.19720016283,
+        "candidate_ns": 125700.40359608072,
+        "changes_percent": [-11.170249348220118, -10.965878667728123, -12.928133564930967],
+        "median_change_percent": -11.170249348220118
+      },
+      {
+        "case": "ferrolink_attribute_split",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 92247.65390548902,
+        "candidate_ns": 94599.87319196768,
+        "changes_percent": [2.549896053604339, 2.0880736342463235, 1.6623797691846187],
+        "median_change_percent": 2.0880736342463235
+      },
+      {
+        "case": "jinja_string_token",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1375.0833888602988,
+        "candidate_ns": 1276.0738508949323,
+        "changes_percent": [-10.35814039155365, -5.962062091660359, -7.241885767918244],
+        "median_change_percent": -7.241885767918244
+      },
+      {
+        "case": "tiktoken_cl100k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 124887.06235996372,
+        "candidate_ns": 123965.29894943988,
+        "changes_percent": [1.1366890437767951, 1.015133332227669, -1.3450244280893031],
+        "median_change_percent": 1.015133332227669
+      },
+      {
+        "case": "tiktoken_o200k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 115518.88258649487,
+        "candidate_ns": 116469.79138296995,
+        "changes_percent": [1.9157703586401897, 0.4315906398558722, 0.1014845919447005],
+        "median_change_percent": 0.4315906398558722
+      },
+      {
+        "case": "fluent_bit_nginx",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1074.3634549831693,
+        "candidate_ns": 1021.0623273244398,
+        "changes_percent": [-3.6691615018813906, -4.96118212244705, -6.406466578356684],
+        "median_change_percent": -4.96118212244705
+      }
+    ]
+  },
+  {
+    "binary": "fusion02",
+    "run": "probe-all-fusion",
+    "idea": "Extend fusion to multibyte and mixed classes",
+    "summary": [
+      {
+        "case": "ferrolink_markup_scan",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 141408.72542867291,
+        "candidate_ns": 134392.44785189952,
+        "changes_percent": [-4.9907490393591765, -5.36334893057393, -3.7100263402390588],
+        "median_change_percent": -4.9907490393591765
+      },
+      {
+        "case": "ferrolink_attribute_split",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 94398.86034046816,
+        "candidate_ns": 92173.31642817966,
+        "changes_percent": [2.019733609190588, -2.5754222714505115, -1.5776082867670627],
+        "median_change_percent": -1.5776082867670627
+      },
+      {
+        "case": "jinja_string_token",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1362.007411597382,
+        "candidate_ns": 1371.670200937229,
+        "changes_percent": [0.9909510406013178, -4.554143071681372, 0.7319741621985232],
+        "median_change_percent": 0.7319741621985232
+      },
+      {
+        "case": "tiktoken_cl100k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 122954.40090906658,
+        "candidate_ns": 123642.52521351585,
+        "changes_percent": [0.5596581329026185, 0.7463537520606245, 0.6114314544009014],
+        "median_change_percent": 0.6114314544009014
+      },
+      {
+        "case": "tiktoken_o200k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 115256.42400250284,
+        "candidate_ns": 115761.62676224727,
+        "changes_percent": [0.9480715279422292, -1.1050822519815262, 0.6884426377359976],
+        "median_change_percent": 0.6884426377359976
+      },
+      {
+        "case": "fluent_bit_nginx",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1071.0905810213123,
+        "candidate_ns": 1063.6924509031603,
+        "changes_percent": [-1.1464724448927766, -1.837390730780064, -0.6907100341688843],
+        "median_change_percent": -1.1464724448927766
+      }
+    ]
+  },
+  {
+    "binary": "final001",
+    "run": "final-all",
+    "idea": "Byte-star fusion with differential-test toggle",
+    "summary": [
+      {
+        "case": "uuid_shape",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 782.8407235325325,
+        "candidate_ns": 774.9783413749169,
+        "changes_percent": [1.2287577338900624, -0.17502551285697443, -1.0043399533607444],
+        "median_change_percent": -0.17502551285697443
+      },
+      {
+        "case": "uuid_v4",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 349.37763618525656,
+        "candidate_ns": 349.96039528037335,
+        "changes_percent": [0.4483082337773725, 0.23144033485782423, -0.04895524392546369],
+        "median_change_percent": 0.23144033485782423
+      },
+      {
+        "case": "ipv4_validation",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 233.99063928451167,
+        "candidate_ns": 235.33802324546954,
+        "changes_percent": [0.5666908414226679, 1.5161625897636366, 1.3561863739579572],
+        "median_change_percent": 1.3561863739579572
+      },
+      {
+        "case": "ipv6_validation",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 368.8315077560037,
+        "candidate_ns": 369.6404810118342,
+        "changes_percent": [-0.2146668046168032, 0.21933409668613013, 0.46686802772706315],
+        "median_change_percent": 0.21933409668613013
+      },
+      {
+        "case": "semver_version_parse",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 5473.9309501793805,
+        "candidate_ns": 5681.607213997479,
+        "changes_percent": [2.995049384025772, 4.30318501934992, 3.7939145690409903],
+        "median_change_percent": 3.7939145690409903
+      },
+      {
+        "case": "semver_hyphen_range_captures",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 2463.6325002375543,
+        "candidate_ns": 2622.1057030272505,
+        "changes_percent": [6.4835336986087455, 5.653054890408815, 6.610275921743547],
+        "median_change_percent": 6.4835336986087455
+      },
+      {
+        "case": "jinja_string_token",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1397.6552959185422,
+        "candidate_ns": 1365.6489788131803,
+        "changes_percent": [-2.9171133514441006, -1.7947054526145534, -1.085926046072816],
+        "median_change_percent": -1.7947054526145534
+      },
+      {
+        "case": "jinja_integer_token",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 2361.5357227652667,
+        "candidate_ns": 2432.7655262325275,
+        "changes_percent": [3.386964769681211, 3.3443349812771084, 2.2492985276632016],
+        "median_change_percent": 3.3443349812771084
+      },
+      {
+        "case": "jinja_float_token",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 2984.380058211944,
+        "candidate_ns": 3045.2280402327756,
+        "changes_percent": [1.1803355978432961, 0.9724812470515154, 2.0935094247202635],
+        "median_change_percent": 1.1803355978432961
+      },
+      {
+        "case": "django_email_local_part",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1103.5503387350893,
+        "candidate_ns": 1108.4635726928232,
+        "changes_percent": [0.5075536619886689, 0.0804908169063756, 0.23517518205888877],
+        "median_change_percent": 0.23517518205888877
+      },
+      {
+        "case": "django_email_domain",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 13898.190460625037,
+        "candidate_ns": 13886.656835500142,
+        "changes_percent": [-0.2808945445132216, -0.08298652373178728, -0.14902226804697216],
+        "median_change_percent": -0.14902226804697216
+      },
+      {
+        "case": "django_url_regex",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 128544.0198519311,
+        "candidate_ns": 129087.37069510247,
+        "changes_percent": [0.9412078629312814, 0.35777671024384006, 0.42269632130476076],
+        "median_change_percent": 0.42269632130476076
+      },
+      {
+        "case": "fluent_bit_apache",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 770.424678697386,
+        "candidate_ns": 774.3679649377852,
+        "changes_percent": [32.879952712064295, -0.38811752699068336, 0.5118328046119336],
+        "median_change_percent": 0.5118328046119336
+      },
+      {
+        "case": "fluent_bit_nginx",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1084.286502234206,
+        "candidate_ns": 1053.2590902316354,
+        "changes_percent": [-2.923440934099919, -2.1766308781427823, -2.5261277245160696],
+        "median_change_percent": -2.5261277245160696
+      },
+      {
+        "case": "rails_underscore_regex_step",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 3446.2677264800036,
+        "candidate_ns": 3440.0109713610714,
+        "changes_percent": [-1.1064273662625523, -0.4719168860242484, 0.4793212027645488],
+        "median_change_percent": -0.4719168860242484
+      },
+      {
+        "case": "mastodon_hashtag_regex_step",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 4597.9343504927365,
+        "candidate_ns": 4644.076750030456,
+        "changes_percent": [0.8020552842696427, 3.2045723084665134, 0.027344700607589978],
+        "median_change_percent": 0.8020552842696427
+      },
+      {
+        "case": "python_markdown_smart_emphasis_re",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 723.9324532944439,
+        "candidate_ns": 742.1443226545845,
+        "changes_percent": [3.114624334323879, 2.6855199374352434, 0.5905190160669926],
+        "median_change_percent": 2.6855199374352434
+      },
+      {
+        "case": "python_markdown_smart_strong_em_re",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 449.1967626057868,
+        "candidate_ns": 460.00428697354965,
+        "changes_percent": [0.06223832468539303, 2.4059666648238, 3.0756166730902645],
+        "median_change_percent": 2.4059666648238
+      },
+      {
+        "case": "wordpress_shortcode_captures",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 2969.678482094773,
+        "candidate_ns": 2882.1641347093105,
+        "changes_percent": [-1.3075222311592083, -2.9469300435423174, -6.360166529533395],
+        "median_change_percent": -2.9469300435423174
+      },
+      {
+        "case": "symfony_grapheme_chunks_1",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1627.3414964597548,
+        "candidate_ns": 1630.6578355493064,
+        "changes_percent": [0.20378876202482576, 0.23085095436341518, 1.2941530905492105],
+        "median_change_percent": 0.23085095436341518
+      },
+      {
+        "case": "symfony_grapheme_chunks_2",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 418.5440576255749,
+        "candidate_ns": 410.0099242513676,
+        "changes_percent": [-0.6923791797509127, -2.0390047878404927, 2.519796164475596],
+        "median_change_percent": -0.6923791797509127
+      },
+      {
+        "case": "literal_first",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 14.146387116634262,
+        "candidate_ns": 13.99545998014109,
+        "changes_percent": [-34.29284759271678, 0.059210475148496755, -0.3810069391403603],
+        "median_change_percent": -0.3810069391403603
+      },
+      {
+        "case": "literal_middle",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 14.577223122423927,
+        "candidate_ns": 14.571423761706733,
+        "changes_percent": [-0.039783713732644, 0.32798019471798057, 1.4787477468364285],
+        "median_change_percent": 0.32798019471798057
+      },
+      {
+        "case": "literal_end",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 16.37309925814797,
+        "candidate_ns": 16.375141574127397,
+        "changes_percent": [0.012473606537333204, -0.6903317062958436, -0.2279284732847109],
+        "median_change_percent": -0.2279284732847109
+      },
+      {
+        "case": "literal_absent",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 15.311795599380542,
+        "candidate_ns": 15.307229044010548,
+        "changes_percent": [-1.3848554395546109, -0.7422994016549445, 1.7116628938583789],
+        "median_change_percent": -0.7422994016549445
+      },
+      {
+        "case": "ferrolink_markup_scan",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 143752.35014686495,
+        "candidate_ns": 127515.0564462453,
+        "changes_percent": [-10.926303758570388, -11.386076712857395, -11.077443620957062],
+        "median_change_percent": -11.077443620957062
+      },
+      {
+        "case": "ferrolink_attribute_split",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 94964.5272195797,
+        "candidate_ns": 92851.5322421284,
+        "changes_percent": [-1.6695447910160865, -4.1683539039395034, -2.225036062745367],
+        "median_change_percent": -2.225036062745367
+      },
+      {
+        "case": "tiktoken_cl100k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 126557.9799609944,
+        "candidate_ns": 126132.38706891703,
+        "changes_percent": [0.9462457817948522, -0.6950017698675648, 1.2182079611547048],
+        "median_change_percent": 0.9462457817948522
+      },
+      {
+        "case": "tiktoken_o200k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 117735.66315248859,
+        "candidate_ns": 118379.05302991654,
+        "changes_percent": [0.5464698292773518, 0.4390709478152788, -0.11133898129723763],
+        "median_change_percent": 0.4390709478152788
+      }
+    ]
+  },
+  {
+    "binary": "compact1",
+    "run": "probe-compact",
+    "idea": "Out-of-line choice elision, retaining pop dispatch",
+    "summary": [
+      {
+        "case": "ferrolink_markup_scan",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 143395.66095664405,
+        "candidate_ns": 140577.46609872993,
+        "changes_percent": [-2.852489302277328, -1.9653278482158587, -1.794603326646882],
+        "median_change_percent": -1.9653278482158587
+      },
+      {
+        "case": "ferrolink_attribute_split",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 94386.11674510784,
+        "candidate_ns": 95851.09202546741,
+        "changes_percent": [3.5639549636027112, 1.2479173180174996, 1.3124698287638958],
+        "median_change_percent": 1.3124698287638958
+      },
+      {
+        "case": "jinja_string_token",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1388.5129104898456,
+        "candidate_ns": 1352.911140970923,
+        "changes_percent": [-2.656473952891336, -2.572265086176684, 1.8353225625080016],
+        "median_change_percent": -2.572265086176684
+      },
+      {
+        "case": "semver_version_parse",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 5470.084775433331,
+        "candidate_ns": 5577.142633191704,
+        "changes_percent": [0.3440298282632037, 3.052403938533499, 2.312303573905816],
+        "median_change_percent": 2.312303573905816
+      },
+      {
+        "case": "semver_hyphen_range_captures",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 2599.241533743799,
+        "candidate_ns": 2495.102354236241,
+        "changes_percent": [-6.0826386822502965, 2.5244551549692407, -4.380068211080879],
+        "median_change_percent": -4.380068211080879
+      },
+      {
+        "case": "python_markdown_smart_emphasis_re",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 721.5201292944158,
+        "candidate_ns": 740.6089835768959,
+        "changes_percent": [2.785513317051147, 0.24238468053179307, 2.2798983280976515],
+        "median_change_percent": 2.2798983280976515
+      },
+      {
+        "case": "tiktoken_cl100k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 124776.25858912832,
+        "candidate_ns": 122212.58849847536,
+        "changes_percent": [-1.8344565335222218, -2.0546136898484724, -2.037569376360304],
+        "median_change_percent": -2.037569376360304
+      }
+    ]
+  },
+  {
+    "binary": "compact2",
+    "run": "probe-compact-inline",
+    "idea": "Inline the byte walker into the out-of-line wrapper",
+    "summary": [
+      {
+        "case": "ferrolink_markup_scan",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 146060.03902036732,
+        "candidate_ns": 140259.88594054146,
+        "changes_percent": [-4.478734641242166, -4.732301801203176, -3.9710745791441737],
+        "median_change_percent": -4.478734641242166
+      },
+      {
+        "case": "ferrolink_attribute_split",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 96525.62942111332,
+        "candidate_ns": 96731.41218473838,
+        "changes_percent": [1.8400168691673935, 0.5607238015373994, 0.21318976613691198],
+        "median_change_percent": 0.5607238015373994
+      },
+      {
+        "case": "jinja_string_token",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1426.8780402927534,
+        "candidate_ns": 1362.701060678396,
+        "changes_percent": [-5.829250109402251, -7.462460692228823, -3.356650048625598],
+        "median_change_percent": -5.829250109402251
+      },
+      {
+        "case": "semver_version_parse",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 5539.530834549295,
+        "candidate_ns": 5938.37501868422,
+        "changes_percent": [4.270269160516116, 1.201882026926926, 7.279515370719447],
+        "median_change_percent": 4.270269160516116
+      },
+      {
+        "case": "semver_hyphen_range_captures",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 2601.669398382549,
+        "candidate_ns": 2705.0752070957146,
+        "changes_percent": [1.6820768462742164, -2.323434611531605, 9.14915564722536],
+        "median_change_percent": 1.6820768462742164
+      },
+      {
+        "case": "python_markdown_smart_emphasis_re",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 743.0608496999116,
+        "candidate_ns": 740.581607854112,
+        "changes_percent": [-0.6474981236660349, -0.6982848298013211, 0.13438447227722694],
+        "median_change_percent": -0.6474981236660349
+      },
+      {
+        "case": "tiktoken_cl100k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 127863.22429799261,
+        "candidate_ns": 124857.62970578701,
+        "changes_percent": [-1.7846218443784312, -2.42607700881855, -0.08789303085197098],
+        "median_change_percent": -1.7846218443784312
+      }
+    ]
+  },
+  {
+    "binary": "batch001",
+    "run": "probe-batch",
+    "idea": "Scan ASCII runs using Iterator::position",
+    "summary": [
+      {
+        "case": "ferrolink_markup_scan",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 147733.90673631374,
+        "candidate_ns": 149422.28671700193,
+        "changes_percent": [3.920480709789098, 1.142852049327936, 1.5554986497518186],
+        "median_change_percent": 1.5554986497518186
+      },
+      {
+        "case": "ferrolink_attribute_split",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 96389.55884500458,
+        "candidate_ns": 94652.80830067924,
+        "changes_percent": [-1.801803603145491, -2.6281822219149653, -2.2639954466202705],
+        "median_change_percent": -2.2639954466202705
+      },
+      {
+        "case": "jinja_string_token",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1418.4562710654693,
+        "candidate_ns": 1500.3996665946431,
+        "changes_percent": [7.7945936085207945, 2.0194587723014967, 5.865897683160215],
+        "median_change_percent": 5.865897683160215
+      },
+      {
+        "case": "semver_version_parse",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 5544.731698642496,
+        "candidate_ns": 5815.466581510458,
+        "changes_percent": [4.36385114787412, 6.325365472707345, 4.690804433039819],
+        "median_change_percent": 4.690804433039819
+      },
+      {
+        "case": "semver_hyphen_range_captures",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 2494.2043199257805,
+        "candidate_ns": 2679.769808615323,
+        "changes_percent": [6.5924342629003485, -0.6015463160655821, 21.309519399531872],
+        "median_change_percent": 6.5924342629003485
+      },
+      {
+        "case": "python_markdown_smart_emphasis_re",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 751.7941631100082,
+        "candidate_ns": 762.3308017760191,
+        "changes_percent": [27.764866777740103, 1.2444253484806378, 1.0326387253865477],
+        "median_change_percent": 1.2444253484806378
+      },
+      {
+        "case": "tiktoken_cl100k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 128166.59139159093,
+        "candidate_ns": 129222.3126399182,
+        "changes_percent": [2.4734244066156874, 0.7715199555286656, 0.773179585971473],
+        "median_change_percent": 0.773179585971473
+      }
+    ]
+  },
+  {
+    "binary": "unroll01",
+    "run": "probe-unroll",
+    "idea": "Test four ASCII members per loop step",
+    "summary": [
+      {
+        "case": "ferrolink_markup_scan",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 145709.83382029968,
+        "candidate_ns": 155163.411608901,
+        "changes_percent": [5.400528687605766, 7.0657546366252655, 6.815617420862585],
+        "median_change_percent": 6.815617420862585
+      },
+      {
+        "case": "ferrolink_attribute_split",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 95567.62365164525,
+        "candidate_ns": 96924.19792200708,
+        "changes_percent": [4.583685223407952, 0.6029222279904101, 2.40458052965149],
+        "median_change_percent": 2.40458052965149
+      },
+      {
+        "case": "jinja_string_token",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 1408.4719772823446,
+        "candidate_ns": 1513.2136060618286,
+        "changes_percent": [7.436543322756317, 5.284412603696365, 9.01359762587437],
+        "median_change_percent": 7.436543322756317
+      },
+      {
+        "case": "semver_version_parse",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 5786.394326808521,
+        "candidate_ns": 5799.660804977346,
+        "changes_percent": [5.058721582154613, 1.1900053012181333, -0.6371508126503111],
+        "median_change_percent": 1.1900053012181333
+      },
+      {
+        "case": "semver_hyphen_range_captures",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 2637.4782915446285,
+        "candidate_ns": 2608.5530530284577,
+        "changes_percent": [6.125408085338768, -3.175247590301511, -0.47575209916231875],
+        "median_change_percent": -0.47575209916231875
+      },
+      {
+        "case": "python_markdown_smart_emphasis_re",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 736.3707611313589,
+        "candidate_ns": 765.1032759884605,
+        "changes_percent": [4.965090765127611, 2.6161530794736265, 0.8184250731606113],
+        "median_change_percent": 2.6161530794736265
+      },
+      {
+        "case": "tiktoken_cl100k_base",
+        "engine": "rust",
+        "lane": "steady",
+        "baseline_ns": 127091.6277351505,
+        "candidate_ns": 126529.24669149841,
+        "changes_percent": [-1.1542231392743019, -0.44250046495906137, 1.324156951822597],
+        "median_change_percent": -0.44250046495906137
+      }
+    ]
+  }
+]
