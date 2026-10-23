@@ -57,8 +57,8 @@ uses 128 additional heap bytes and one allocation. These are layout observations
 not Rust layout guarantees or proof that the offset alone caused a timing cost.
 The 1029-state IPv6 NFA has no adaptive state.
 
-The prior [feature-only control](../dense-policy-20261022/README.md#controls-and-attribution)
-was slower for Jinja Integer and Semver even without a dense runtime change.
+An earlier feature-only control was slower for Jinja Integer and Semver even
+without a dense runtime change.
 Feature selection and generated-code placement therefore remain attribution
 uncertainties. This refinement removes that feature and unnecessary adaptive
 work from capture/find calls; it does not assign the entire former regression
