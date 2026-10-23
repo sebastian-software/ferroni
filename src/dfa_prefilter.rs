@@ -2493,8 +2493,14 @@ pub(crate) struct SingleSeek {
     accept: Option<(hybrid::DFA, accept::AcceptRejects)>,
     caches: Pool<SingleCaches, CacheMaker>,
     exact: bool,
-    dense: Option<AdaptiveDfa>,
-    accept_dense: Option<AdaptiveDfa>,
+    adaptive: Option<Box<SingleAdaptive>>,
+}
+
+/// Keep optional promotion state out of the hybrid DFA's hot object. NFAs
+/// outside the small-table policy allocate no adaptive metadata.
+struct SingleAdaptive {
+    seek: Option<AdaptiveDfa>,
+    accept: Option<AdaptiveDfa>,
 }
 
 /// A bounded boolean DFA for NFAs that fit in one machine-independent u64
@@ -2914,21 +2920,26 @@ impl SingleSeek {
             accept,
             caches,
             exact: code.exact(),
-            dense,
-            accept_dense,
+            adaptive: (dense.is_some() || accept_dense.is_some()).then(|| {
+                Box::new(SingleAdaptive {
+                    seek: dense,
+                    accept: accept_dense,
+                })
+            }),
         })
     }
 
     /// Boolean search over the complete suffix, with the original hybrid
     /// representation and cache path retained beside the optional table.
     pub(crate) fn search(&self, text: &[u8], start: usize) -> Option<bool> {
-        if let Some(table) = self.dense.as_ref().and_then(AdaptiveDfa::dense) {
+        let Some(adaptive) = self.adaptive_seek() else {
+            return self.search_hybrid(text, start);
+        };
+        if let Some(table) = adaptive.dense() {
             return Some(table.search(text, start));
         }
         let result = self.search_hybrid(text, start);
-        if let Some(adaptive) = &self.dense {
-            adaptive.record_hybrid_consultation(self.dfa.get_nfa());
-        }
+        adaptive.record_hybrid_consultation(self.dfa.get_nfa());
         result
     }
 
@@ -2943,6 +2954,14 @@ impl SingleSeek {
             .map(|found| found.is_some())
     }
 
+    fn adaptive_seek(&self) -> Option<&AdaptiveDfa> {
+        self.adaptive.as_deref()?.seek.as_ref()
+    }
+
+    fn adaptive_accept(&self) -> Option<&AdaptiveDfa> {
+        self.adaptive.as_deref()?.accept.as_ref()
+    }
+
     pub(crate) fn exact(&self) -> bool {
         self.exact
     }
@@ -2952,7 +2971,8 @@ impl SingleSeek {
 
     pub(crate) fn accept_answer(&self, text: &[u8], start: usize) -> Option<bool> {
         let (dfa, rejects) = self.accept.as_ref()?;
-        let found = if let Some(table) = self.accept_dense.as_ref().and_then(AdaptiveDfa::dense) {
+        let adaptive = self.adaptive_accept();
+        let found = if let Some(table) = adaptive.and_then(AdaptiveDfa::dense) {
             table.search(text, start)
         } else {
             let input = Input::new(text).span(start..text.len()).earliest(true);
@@ -2962,7 +2982,7 @@ impl SingleSeek {
                     .ok()
                     .map(|found| found.is_some())
             };
-            if let Some(adaptive) = &self.accept_dense {
+            if let Some(adaptive) = adaptive {
                 adaptive.record_hybrid_consultation(dfa.get_nfa());
             }
             result?
@@ -2984,26 +3004,24 @@ impl SingleSeek {
     }
     #[cfg(test)]
     fn uses_dense_dfas(&self) -> bool {
-        self.dense.as_ref().and_then(AdaptiveDfa::dense).is_some()
+        self.adaptive_seek().and_then(AdaptiveDfa::dense).is_some()
             && (self.accept.is_none()
                 || self
-                    .accept_dense
-                    .as_ref()
+                    .adaptive_accept()
                     .and_then(AdaptiveDfa::dense)
                     .is_some())
     }
     #[cfg(test)]
     fn backend_names(&self) -> (&'static str, Option<&'static str>) {
         (
-            if self.dense.as_ref().and_then(AdaptiveDfa::dense).is_some() {
+            if self.adaptive_seek().and_then(AdaptiveDfa::dense).is_some() {
                 "dense"
             } else {
                 "hybrid"
             },
             self.accept.as_ref().map(|_| {
                 if self
-                    .accept_dense
-                    .as_ref()
+                    .adaptive_accept()
                     .and_then(AdaptiveDfa::dense)
                     .is_some()
                 {
@@ -3026,8 +3044,9 @@ impl SingleSeek {
             + self.accept.as_ref().map_or(0, |(dfa, _)| {
                 dfa.get_nfa().memory_usage() + std::mem::size_of_val(dfa)
             })
-            + table_bytes(self.dense.as_ref())
-            + table_bytes(self.accept_dense.as_ref())
+            + self.adaptive.as_deref().map_or(0, std::mem::size_of_val)
+            + table_bytes(self.adaptive_seek())
+            + table_bytes(self.adaptive_accept())
     }
     #[cfg(test)]
     fn cache_memory_usage(&self) -> usize {
@@ -3204,10 +3223,8 @@ mod tests {
     impl SingleSeek {
         fn adaptive_consultations(&self) -> (Option<usize>, Option<usize>) {
             (
-                self.dense.as_ref().map(AdaptiveDfa::consultation_count),
-                self.accept_dense
-                    .as_ref()
-                    .map(AdaptiveDfa::consultation_count),
+                self.adaptive_seek().map(AdaptiveDfa::consultation_count),
+                self.adaptive_accept().map(AdaptiveDfa::consultation_count),
             )
         }
     }
@@ -3454,7 +3471,7 @@ mod tests {
                 hybrid.search("cd123".as_bytes(), 0)
             );
         }
-        let adaptive_dfa = adaptive.dense.as_ref().expect("seek is adaptive");
+        let adaptive_dfa = adaptive.adaptive_seek().expect("seek is adaptive");
         assert!(adaptive_dfa.promotion_attempted());
         assert!(matches!(adaptive_dfa.dense_decision.get(), Some(None)));
         assert_eq!(adaptive.adaptive_consultations().0, Some(2));
@@ -3484,7 +3501,7 @@ mod tests {
         .expect("adaptive seek builds");
         let hybrid = single_seek_with(pattern, ONIG_OPTION_CAPTURE_GROUP, None)
             .expect("forced-hybrid reference builds");
-        let adaptive_dfa = adaptive.dense.as_ref().expect("seek is adaptive");
+        let adaptive_dfa = adaptive.adaptive_seek().expect("seek is adaptive");
         let attempts = AtomicUsize::new(0);
         let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             adaptive_dfa.initialize_dense_with(|| {
