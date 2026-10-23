@@ -181,6 +181,11 @@ impl RequiredLiterals {
         self.literals().map(<[u8]>::to_vec).collect()
     }
 
+    /// Prepare the immutable searcher without running a search.
+    pub(crate) fn prepare(&self) {
+        self.searcher.get_or_init(|| self.searcher());
+    }
+
     fn searcher(&self) -> Searcher {
         let count = self.ends.len();
         if count == 1 && self.bytes.len() > 1 {
@@ -752,6 +757,23 @@ mod tests {
                 expected,
                 "{literals:?} {from} {end}"
             );
+        }
+    }
+
+    #[test]
+    fn eager_acceleration_prepares_required_literal_searchers() {
+        let _limits = crate::regexec::shared_limits();
+        for (pattern, expected) in [(r"\s*abc", 1), (r"(?:\s+|^)(?:foo|bar)_x", 5)] {
+            let reg = compile(pattern, false).unwrap();
+            let literals = reg.required_literals.as_ref().unwrap();
+            assert!(literals.searcher.get().is_none());
+            let regex = crate::Regex::builder(pattern)
+                .acceleration(crate::AccelerationMode::Eager)
+                .build()
+                .unwrap();
+            let literals = regex.program_for_test().required_literals.as_ref().unwrap();
+            assert!(literals.searcher.get().is_some());
+            assert_eq!(literals.find(b" abc foo_x", 0, 10), Some(expected));
         }
     }
 

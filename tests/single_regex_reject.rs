@@ -15,6 +15,7 @@
 //! offset. With the `ffi` feature, the standard `is_match` of the catalog
 //! patterns is also compared with C Oniguruma.
 
+use ferroni::AccelerationMode;
 use ferroni::api::{Regex, RegexBuilder, SearchOptions};
 use serde_json::Value;
 
@@ -86,11 +87,19 @@ impl Case {
     }
 
     fn compile(&self, dfa: bool) -> Option<Regex> {
+        self.compile_mode(if dfa {
+            AccelerationMode::Auto
+        } else {
+            AccelerationMode::Off
+        })
+    }
+
+    fn compile_mode(&self, mode: AccelerationMode) -> Option<Regex> {
         let mut builder = RegexBuilder::new_bytes(&self.pattern)
             .case_insensitive(self.ignore_case)
             .dot_matches_newline(self.dotall)
             .extended(self.extended)
-            .dfa(dfa);
+            .acceleration(mode);
         if let Some(multiline) = self.multiline {
             builder = builder.multi_line_anchors(multiline);
         }
@@ -362,11 +371,15 @@ fn hand_written_patterns_agree_with_the_matcher() {
     let mut compiled = 0;
     let mut compared = 0;
     for case in hand_written() {
-        for dfa in [true, false] {
-            let Some(re) = case.compile(dfa) else {
+        for mode in [
+            AccelerationMode::Auto,
+            AccelerationMode::Off,
+            AccelerationMode::Eager,
+        ] {
+            let Some(re) = case.compile_mode(mode) else {
                 continue;
             };
-            if dfa {
+            if mode == AccelerationMode::Auto {
                 compiled += 1;
             }
             compared += check_regex(&re, &subjects, true);
@@ -390,11 +403,15 @@ fn catalog_patterns_agree_with_the_matcher() {
     let mut compared = 0;
     let mut compiled = 0;
     for case in &cases {
-        for dfa in [true, false] {
-            let Some(re) = case.compile(dfa) else {
+        for mode in [
+            AccelerationMode::Auto,
+            AccelerationMode::Off,
+            AccelerationMode::Eager,
+        ] {
+            let Some(re) = case.compile_mode(mode) else {
                 continue;
             };
-            if dfa {
+            if mode == AccelerationMode::Auto {
                 compiled += 1;
             }
             compared += check_regex(&re, &subjects, false);
@@ -533,18 +550,23 @@ fn unbounded_retries_are_left_to_the_matcher() {
 #[test]
 fn exact_seek_answers_match_where_the_retry_limit_stops_the_matcher() {
     let pattern = r"^[a-z@.]+@[a-z.]+\.com$";
-    let on = Regex::new(pattern).unwrap();
     let off = RegexBuilder::new(pattern).dfa(false).build().unwrap();
     let text = b"john@doe.com";
     let tight = SearchOptions::new().retry_limit_in_match(1);
     let unlimited = SearchOptions::new().retry_limit_in_match(0);
     assert!(off.is_match_bytes_at_with(text, 0, tight).is_err());
     assert_eq!(off.is_match_bytes_at_with(text, 0, unlimited), Ok(true));
-    assert!(on.is_match_bytes(text));
-    assert!(on.is_match("john@doe.com"));
-    assert!(!on.is_match_bytes(b"john@doe.org"));
-    // The `*_with` methods run the matcher under the caller's limit.
-    assert!(on.is_match_bytes_at_with(text, 0, tight).is_err());
+    for mode in [AccelerationMode::Auto, AccelerationMode::Eager] {
+        let on = RegexBuilder::new(pattern)
+            .acceleration(mode)
+            .build()
+            .unwrap();
+        assert!(on.is_match_bytes(text));
+        assert!(on.is_match("john@doe.com"));
+        assert!(!on.is_match_bytes(b"john@doe.org"));
+        // The `*_with` methods run the matcher under the caller's limit.
+        assert!(on.is_match_bytes_at_with(text, 0, tight).is_err());
+    }
 }
 
 /// The standard `is_match` of the catalog patterns against C Oniguruma, on

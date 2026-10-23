@@ -1118,11 +1118,9 @@ fn case_variants(literals: &[Vec<u8>]) -> Vec<Vec<u8>> {
 }
 
 impl Alternation {
-    /// The first position in `s..limit` where a literal can start, or `s`
-    /// without an automaton. `None` when no literal starts there.
-    fn candidate(&self, reg: &RegexType, text: &[u8], s: usize, limit: usize) -> Option<usize> {
+    fn prepare(&self, reg: &RegexType) -> &Option<aho_corasick::AhoCorasick> {
         let trie = &reg.literal_tries[self.trie_idx];
-        let automaton = self.automaton.get_or_init(|| {
+        self.automaton.get_or_init(|| {
             let mut builder = aho_corasick::AhoCorasick::builder();
             builder.match_kind(aho_corasick::MatchKind::LeftmostFirst);
             if trie.is_case_insensitive() {
@@ -1130,7 +1128,14 @@ impl Alternation {
             } else {
                 builder.build(trie.literals()).ok()
             }
-        });
+        })
+    }
+
+    /// The first position in `s..limit` where a literal can start, or `s`
+    /// without an automaton. `None` when no literal starts there.
+    fn candidate(&self, reg: &RegexType, text: &[u8], s: usize, limit: usize) -> Option<usize> {
+        let trie = &reg.literal_tries[self.trie_idx];
+        let automaton = self.prepare(reg);
         // Without an automaton every position stays a candidate.
         let Some(automaton) = automaton else {
             return Some(s);
@@ -1355,6 +1360,13 @@ fn class_members(class: &BitSet) -> impl Iterator<Item = u8> + '_ {
 }
 
 impl SearchJump {
+    /// Prepare the leading alternation's immutable searcher, if present.
+    pub(crate) fn prepare(&self, reg: &RegexType) {
+        if let Some(alternation) = &self.alternation {
+            alternation.prepare(reg);
+        }
+    }
+
     /// Only the line-start check.
     fn lines() -> Self {
         Self::lines_if(true)
@@ -1978,6 +1990,40 @@ mod tests {
         assert!(jump("ERROR").is_none());
         assert!(jump(r"\d+").is_none());
         assert!(jump(r"(?i)k").is_none());
+    }
+
+    #[test]
+    fn eager_acceleration_prepares_the_alternation_without_searching() {
+        let _limits = crate::regexec::shared_limits();
+        for pattern in [
+            r"\b(?:fn|let|for|while|match)\b",
+            r"(?i)\b(?:fn|let|for|while|match)\b",
+        ] {
+            let regex = crate::Regex::builder(pattern)
+                .acceleration(crate::AccelerationMode::Eager)
+                .build()
+                .unwrap();
+            let reg = compile(pattern, UTF8).unwrap();
+            let alternation = reg
+                .search_jump
+                .as_ref()
+                .unwrap()
+                .alternation
+                .as_ref()
+                .unwrap();
+            assert!(alternation.automaton.get().is_none());
+            let prepared = regex
+                .program_for_test()
+                .search_jump
+                .as_ref()
+                .unwrap()
+                .alternation
+                .as_ref()
+                .unwrap();
+            assert!(prepared.automaton.get().unwrap().is_some());
+            crate::acceleration::prepare_program(regex.program_for_test());
+            assert!(regex.is_match("let x = match y"));
+        }
     }
 
     #[test]

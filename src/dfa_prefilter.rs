@@ -2842,6 +2842,23 @@ fn states_estimate(hir: &Hir, utf8_classes: bool) -> usize {
 }
 
 impl SingleSeek {
+    /// Prepare both eligible boolean tables without counting or simulating
+    /// searches. Failed attempts are memoized just as in adaptive promotion.
+    pub(crate) fn prepare(&self) {
+        if let Some(adaptive) = self.adaptive_seek() {
+            adaptive.initialize_dense_with(|| {
+                SingleTable::build(self.dfa.get_nfa(), adaptive.limits).map(Box::new)
+            });
+        }
+        if let Some(adaptive) = self.adaptive_accept()
+            && let Some((dfa, _)) = &self.accept
+        {
+            adaptive.initialize_dense_with(|| {
+                SingleTable::build(dfa.get_nfa(), adaptive.limits).map(Box::new)
+            });
+        }
+    }
+
     pub(crate) fn build(seek: &Seek, accept: Option<&AcceptCode>) -> Option<Self> {
         // A positive inexact seek still needs the matcher. Keep its original
         // hybrid path; dense promotion pays for complete boolean decisions.
@@ -3012,7 +3029,7 @@ impl SingleSeek {
                     .is_some())
     }
     #[cfg(test)]
-    fn backend_names(&self) -> (&'static str, Option<&'static str>) {
+    pub(crate) fn backend_names(&self) -> (&'static str, Option<&'static str>) {
         (
             if self.adaptive_seek().and_then(AdaptiveDfa::dense).is_some() {
                 "dense"

@@ -14,6 +14,7 @@ mod precompiled;
 #[cfg(feature = "precompiled")]
 pub use precompiled::{PRECOMPILED_FORMAT_VERSION, PrecompiledError, PrecompiledPatterns};
 
+use crate::AccelerationMode;
 use crate::api::Syntax;
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
@@ -212,6 +213,11 @@ pub struct ScannerConfig {
     /// builds the automata. Defaults to 32. See
     /// [`prefilter_warmup`](Self::prefilter_warmup).
     pub prefilter_warmup: u32,
+    /// Preparation policy for optional accelerators. Defaults to
+    /// [`AccelerationMode::Auto`]. `Eager` ignores `prefilter_warmup` and
+    /// prepares suitable helpers before scanner construction returns.
+    /// A false `prefilter` or `Off` disables the DFA prefilter.
+    pub acceleration: AccelerationMode,
 }
 
 /// The default of [`ScannerConfig::prefilter_warmup`].
@@ -224,6 +230,7 @@ impl Default for ScannerConfig {
             syntax: ScannerSyntax::default(),
             prefilter: true,
             prefilter_warmup: PREFILTER_WARMUP,
+            acceleration: AccelerationMode::Auto,
         }
     }
 }
@@ -267,8 +274,8 @@ impl ScannerConfig {
     /// set that decides which patterns can match where, and attempts only
     /// those; without it, every pattern is attempted at the positions its
     /// own optimizer admits. Both find the same match, in the same time
-    /// order, with the same captures. The pre-filter costs more time and
-    /// memory per scanner at construction, and brings the `regex-automata`
+    /// order, with the same captures. The pre-filter costs build time and
+    /// memory under the selected preparation policy, and brings the `regex-automata`
     /// dependency (Cargo feature `dfa-prefilter`, on by default); without
     /// that feature this setting has no effect. A search under a retry,
     /// stack or time limit of your own
@@ -276,6 +283,8 @@ impl ScannerConfig {
     /// not use the pre-filter, so limit errors stay the ones C Oniguruma
     /// reports. See
     /// [ADR-008](https://ferroni.dev/adr/008-rust-only-optimizations).
+    /// `true` selects `Auto`, and `false` selects `Off`. The last call to
+    /// this method or [`acceleration`](Self::acceleration) wins.
     ///
     /// ```
     /// use ferroni::scanner::{Scanner, ScannerConfig, ScannerFindOptions};
@@ -287,11 +296,49 @@ impl ScannerConfig {
     /// ```
     pub const fn prefilter(mut self, prefilter: bool) -> Self {
         self.prefilter = prefilter;
+        self.acceleration = if prefilter {
+            AccelerationMode::Auto
+        } else {
+            AccelerationMode::Off
+        };
+        self
+    }
+
+    /// Choose when optional search accelerators are prepared.
+    ///
+    /// `Auto` uses [`prefilter_warmup`](Self::prefilter_warmup). `Eager` builds
+    /// the set's suitable DFA prefilter and deferred literal searchers before
+    /// construction returns, including when programs come from a pattern
+    /// cache or archive. As with warmup 0, this includes tiny pattern sets
+    /// skipped by the default `Auto` policy. Hybrid transitions and search
+    /// scratch space can still be created while searching. Pattern and size
+    /// guards remain in force.
+    /// Without `dfa-prefilter`, only the literal searchers are prepared.
+    ///
+    /// `Off` disables the additional DFA prefilter, preserving the ordinary
+    /// matcher's compiler optimizations. This does not enable backtracking
+    /// rewrites or change the behavior of caller-supplied search limits.
+    /// The last call to this method or [`prefilter`](Self::prefilter) wins;
+    /// changing the warmup alone does not change the mode.
+    ///
+    /// ```
+    /// use ferroni::{AccelerationMode, Scanner, ScannerConfig};
+    ///
+    /// let config = ScannerConfig::default().acceleration(AccelerationMode::Eager);
+    /// let scanner = Scanner::with_config(&[r"\d+", r"[a-z]+"], &config)?;
+    /// assert_eq!(scanner.prefilter_stats().built, cfg!(feature = "dfa-prefilter"));
+    /// # Ok::<(), ferroni::RegexError>(())
+    /// ```
+    pub const fn acceleration(mut self, mode: AccelerationMode) -> Self {
+        self.acceleration = mode;
+        self.prefilter = !matches!(mode, AccelerationMode::Off);
         self
     }
 
     /// Searches the scanner answers without its pre-filter before it
     /// builds the automata. The default is 32.
+    /// This affects `Auto` only. It neither changes the acceleration mode nor
+    /// delays construction in `Eager`.
     ///
     /// Building the automata of a pattern list takes about as long as a
     /// hundred searches of a typical line, and a TextMate highlighter
@@ -463,6 +510,7 @@ impl ScannerPatternCache {
         &mut self,
         patterns: &[&str],
         settings: PatternSettings,
+        eager: bool,
     ) -> Result<Scanner, RegexError> {
         let at = match self.compiled.iter().position(|(s, _)| *s == settings) {
             Some(at) => at,
@@ -527,9 +575,9 @@ impl ScannerPatternCache {
                     .cloned()
                     .unwrap_or_default();
                 #[cfg(feature = "dfa-prefilter")]
-                let scanner = Scanner::assemble(patterns, settings, parts, automata.clone());
+                let scanner = Scanner::assemble(patterns, settings, parts, automata.clone(), eager);
                 #[cfg(not(feature = "dfa-prefilter"))]
-                let scanner = Scanner::assemble(patterns, settings, parts, ());
+                let scanner = Scanner::assemble(patterns, settings, parts, (), eager);
                 #[cfg(feature = "dfa-prefilter")]
                 if scanner.is_ok() {
                     self.automata
@@ -581,8 +629,12 @@ impl PatternSettings {
             options: config.options,
             syntax: config.syntax,
             optimize_backtracking,
-            prefilter: config.prefilter,
-            prefilter_warmup: config.prefilter_warmup,
+            prefilter: config.prefilter && config.acceleration != AccelerationMode::Off,
+            prefilter_warmup: if config.acceleration == AccelerationMode::Eager {
+                0
+            } else {
+                config.prefilter_warmup
+            },
         }
     }
 
@@ -835,8 +887,9 @@ pub struct ScannerStats {
 
 /// What a scanner's DFA pre-filter covers, from [`Scanner::prefilter_stats`].
 ///
-/// The pre-filter is described at [`ScannerConfig::prefilter`]. Its automata
-/// are built once [`ScannerConfig::prefilter_warmup`] searches it would
+/// The pre-filter is described at [`ScannerConfig::prefilter`]. In `Eager`
+/// mode its suitable automata are built during scanner construction. In
+/// `Auto` they are built once [`ScannerConfig::prefilter_warmup`] searches it would
 /// have decided (ones under the default limits, from a character boundary)
 /// have passed, by the next such search, not when the scanner is
 /// constructed: until then `built` is `false` while `covered` and `own`
@@ -996,7 +1049,12 @@ impl Scanner {
     /// ```
     pub fn with_config(patterns: &[&str], config: &ScannerConfig) -> Result<Scanner, RegexError> {
         let settings = PatternSettings::of(config, false);
-        Self::compile(patterns, settings, |pattern| settings.compile(pattern))
+        Self::compile(
+            patterns,
+            settings,
+            config.acceleration == AccelerationMode::Eager,
+            |pattern| settings.compile(pattern),
+        )
     }
 
     /// Create a scanner with the conservative, experimental AST rewrites
@@ -1008,7 +1066,12 @@ impl Scanner {
         config: &ScannerConfig,
     ) -> Result<Scanner, RegexError> {
         let settings = PatternSettings::of(config, true);
-        Self::compile(patterns, settings, |pattern| settings.compile(pattern))
+        Self::compile(
+            patterns,
+            settings,
+            config.acceleration == AccelerationMode::Eager,
+            |pattern| settings.compile(pattern),
+        )
     }
 
     /// [`Scanner::with_config`], sharing compiled patterns through `cache`.
@@ -1046,7 +1109,11 @@ impl Scanner {
         config: &ScannerConfig,
         cache: &mut ScannerPatternCache,
     ) -> Result<Scanner, RegexError> {
-        cache.scanner(patterns, PatternSettings::of(config, false))
+        cache.scanner(
+            patterns,
+            PatternSettings::of(config, false),
+            config.acceleration == AccelerationMode::Eager,
+        )
     }
 
     /// [`Scanner::with_backtracking_optimization`], sharing compiled
@@ -1058,16 +1125,21 @@ impl Scanner {
         config: &ScannerConfig,
         cache: &mut ScannerPatternCache,
     ) -> Result<Scanner, RegexError> {
-        cache.scanner(patterns, PatternSettings::of(config, true))
+        cache.scanner(
+            patterns,
+            PatternSettings::of(config, true),
+            config.acceleration == AccelerationMode::Eager,
+        )
     }
 
     /// Build a scanner from the compiled form of each pattern and its seek
     /// approximation, which `regex` provides in pattern order. `settings`
     /// are the ones `regex` compiles with. The set holds the seeks until
-    /// its first pre-filtered search builds the automata from them.
+    /// eager preparation or its first pre-filtered search builds the automata.
     fn compile<'p>(
         patterns: &[&'p str],
         settings: PatternSettings,
+        eager: bool,
         mut regex: impl FnMut(&'p str) -> Result<(Arc<RegexType>, SharedSeek), RegexError>,
     ) -> Result<Scanner, RegexError> {
         if patterns.len() > MAX_REGSET_ENTRIES {
@@ -1082,7 +1154,7 @@ impl Scanner {
         let automata = SharedAutomata::default();
         #[cfg(not(feature = "dfa-prefilter"))]
         let automata = ();
-        Self::assemble(patterns, settings, parts, automata)
+        Self::assemble(patterns, settings, parts, automata, eager)
     }
 
     /// Build a scanner from the compiled form of each pattern and its seek
@@ -1094,6 +1166,7 @@ impl Scanner {
         settings: PatternSettings,
         parts: Vec<(Arc<RegexType>, SharedSeek)>,
         automata: SharedAutomata,
+        eager: bool,
     ) -> Result<Scanner, RegexError> {
         let mut caches = Vec::with_capacity(patterns.len());
         let mut regset_regs = Vec::with_capacity(patterns.len());
@@ -1103,6 +1176,9 @@ impl Scanner {
         let mut rewrites = Vec::with_capacity(patterns.len());
 
         for (pattern, (reg, seek)) in patterns.iter().zip(parts) {
+            if eager {
+                crate::acceleration::prepare_program(&reg);
+            }
             rewrites.push(reg.backtrack_rewrites.clone());
             warnings.push(reg.backtrack_warnings.clone());
             caches.push(CacheEntry::new(pattern, reg.anchor));
@@ -1117,6 +1193,10 @@ impl Scanner {
         }
         #[allow(unused_mut)]
         let mut regset = regset.unwrap();
+        #[cfg(feature = "dfa-prefilter")]
+        if eager {
+            crate::regset::onig_regset_prepare_prefilter(&mut regset);
+        }
         #[cfg(feature = "prefilter-self-check")]
         crate::regset::onig_regset_set_self_check_patterns(
             &mut regset,
@@ -3274,6 +3354,62 @@ mod tests {
         ":",
         r"[^}\s]",
     ];
+
+    #[test]
+    fn acceleration_modes_prepare_scanners_before_search() {
+        let _limits = crate::regexec::shared_limits();
+        let eager = ScannerConfig::default()
+            .prefilter(false)
+            .acceleration(AccelerationMode::Eager)
+            .prefilter_warmup(u32::MAX);
+        let auto = eager.clone().prefilter(true).prefilter_warmup(0);
+        let off = eager.clone().prefilter(false);
+        assert_eq!(auto.acceleration, AccelerationMode::Auto);
+        assert_eq!(off.acceleration, AccelerationMode::Off);
+        let mut cache = ScannerPatternCache::new();
+        let mut lazy = Scanner::with_pattern_cache(TINY_JSON_SET, &auto, &mut cache).unwrap();
+        assert!(!lazy.prefilter_stats().built);
+        let mut ready = Scanner::with_pattern_cache(TINY_JSON_SET, &eager, &mut cache).unwrap();
+        assert_eq!(
+            ready.prefilter_stats().built,
+            cfg!(feature = "dfa-prefilter")
+        );
+        assert_eq!(compiled_addresses(&lazy), compiled_addresses(&ready));
+        assert_eq!(cache.len(), TINY_JSON_SET.len());
+        let again = Scanner::with_pattern_cache(TINY_JSON_SET, &eager, &mut cache).unwrap();
+        assert_eq!(
+            again.prefilter_stats().built,
+            cfg!(feature = "dfa-prefilter")
+        );
+        #[cfg(feature = "dfa-prefilter")]
+        assert_eq!(cache.automata.len(), 1);
+        let mut plain = Scanner::with_config(TINY_JSON_SET, &off).unwrap();
+        for text in ["}", "  \"name\": 42", "// comment\n", "é", ""] {
+            for at in text.char_indices().map(|(at, _)| at).chain([text.len()]) {
+                let expected = plain.find_next_match(text, at, ScannerFindOptions::NONE);
+                assert_eq!(
+                    ready.find_next_match(text, at, ScannerFindOptions::NONE),
+                    expected
+                );
+                assert_eq!(
+                    lazy.find_next_match(text, at, ScannerFindOptions::NONE),
+                    expected
+                );
+            }
+        }
+        assert!(!plain.prefilter_stats().built);
+        // Direct writes to the existing public boolean still disable the DFA.
+        let disabled = ScannerConfig {
+            prefilter: false,
+            ..eager
+        };
+        assert!(
+            !Scanner::with_config(TINY_JSON_SET, &disabled)
+                .unwrap()
+                .prefilter_stats()
+                .built
+        );
+    }
 
     /// The automata are built by the search after the warm-up, and the
     /// searches before and after it decide alike.

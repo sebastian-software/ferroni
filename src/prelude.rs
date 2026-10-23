@@ -10,6 +10,7 @@
 //! assert_eq!(m.as_str(), "42");
 //! ```
 
+pub use crate::acceleration::AccelerationMode;
 pub use crate::api::{
     CaptureMatches, CaptureNames, Captures, CapturesIter, FindIter, Match, Regex, RegexBuilder,
     SearchOptions, Syntax, TryCaptureMatches, TryFindIter,

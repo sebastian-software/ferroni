@@ -292,6 +292,7 @@
 // Enable #[coverage(off)] attribute when running under cargo-llvm-cov on nightly.
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
+mod acceleration;
 pub mod api;
 pub mod backtrack_lint;
 pub mod backtrack_rewrite;

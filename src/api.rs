@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
+use crate::AccelerationMode;
 #[cfg(feature = "dfa-prefilter")]
 use crate::dfa_prefilter::SingleSeek;
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
@@ -544,6 +545,11 @@ impl Regex {
     /// The compiled program, shared by every clone of this regex.
     fn program(&self) -> &RegexType {
         &self.inner.program
+    }
+
+    #[cfg(test)]
+    pub(crate) fn program_for_test(&self) -> &RegexType {
+        self.program()
     }
 
     /// The answer of the single-pattern seek (ADR-008) to a standard search
@@ -1581,7 +1587,7 @@ pub struct RegexBuilder {
     syntax: &'static OnigSyntaxType,
     reject_backtracking_risks: bool,
     optimize_backtracking: bool,
-    dfa: bool,
+    acceleration: AccelerationMode,
 }
 
 impl RegexBuilder {
@@ -1610,7 +1616,7 @@ impl RegexBuilder {
             syntax: &OnigSyntaxOniguruma,
             reject_backtracking_risks: false,
             optimize_backtracking: false,
-            dfa: DFA_DEFAULT,
+            acceleration: AccelerationMode::Auto,
         }
     }
 
@@ -1793,10 +1799,10 @@ impl RegexBuilder {
     ///
     /// The default is on when the `dfa-prefilter` feature is enabled, which
     /// it is by default, and off otherwise. With `true`, [`RegexBuilder::build`]
-    /// derives the seek from the compiled tree and builds its lazy DFA in the
-    /// same compilation, so the cost is paid once, and the clones and searches
-    /// of the returned [`Regex`] share the automaton. A standard `is_match`
-    /// asks the automaton first. The automaton answers "no match" whenever
+    /// derives the seek from the compiled tree. Its automaton is built on the
+    /// first search that consults it, once for all clones of the returned
+    /// [`Regex`]. A standard `is_match` asks the automaton first. The automaton
+    /// answers "no match" whenever
     /// it can, and answers "match" for an exact seek's match, which is the
     /// matcher's match with no limit. A pattern whose classes have
     /// multi-character case folds (`(?i)[a-zß]`) and whose seek is not exact
@@ -1812,10 +1818,9 @@ impl RegexBuilder {
     ///
     /// The cost is compile time and memory. The seek is derived in the same
     /// compilation as the program, so `build` does not compile the pattern
-    /// twice, but it does build the automaton: the compile time of a pattern
-    /// with the option on is higher than with it off by the time of that
-    /// build. The automaton's NFA is at most 16 MiB, and the seek is absent
-    /// for a pattern too large for it. Each thread that searches with the
+    /// twice. The automaton's deferred build adds to first-use time. Its NFA
+    /// is at most 16 MiB, and the seek is absent for a pattern too large for it.
+    /// Each thread that searches with the
     /// regex keeps a lazy DFA cache of at most 1 MiB for the seek, and one
     /// more for an accept seek.
     ///
@@ -1826,7 +1831,7 @@ impl RegexBuilder {
     /// ```
     /// use ferroni::api::Regex;
     ///
-    /// // The automaton is built with the regex (the default with the feature).
+    /// // The automaton is prepared on demand (the default with the feature).
     /// let with = Regex::builder(r"\d{4}-\d{2}").dfa(true).build().unwrap();
     /// // Without it, the matcher answers every search.
     /// let without = Regex::builder(r"\d{4}-\d{2}").dfa(false).build().unwrap();
@@ -1836,8 +1841,42 @@ impl RegexBuilder {
     ///     without.find("on 2026-10").map(|m| m.range()),
     /// );
     /// ```
-    pub fn dfa(mut self, yes: bool) -> Self {
-        self.dfa = yes;
+    ///
+    /// This selects [`AccelerationMode::Auto`] for `true` and
+    /// [`AccelerationMode::Off`] for `false`. The last call to this method or
+    /// [`acceleration`](Self::acceleration) determines the mode.
+    pub fn dfa(self, yes: bool) -> Self {
+        self.acceleration(if yes {
+            AccelerationMode::Auto
+        } else {
+            AccelerationMode::Off
+        })
+    }
+
+    /// Choose when optional search accelerators are prepared.
+    ///
+    /// [`AccelerationMode::Auto`] is the default. [`AccelerationMode::Eager`]
+    /// builds the seek and eligible dense boolean tables, and prepares deferred
+    /// literal searchers before [`build`](Self::build) returns. Pattern and
+    /// size guards still apply; fallback hybrid transitions and search scratch
+    /// space can still be created during searches. No searches are simulated.
+    ///
+    /// This does not enable backtracking rewrites or change the existing
+    /// behavior of caller-supplied search limits. Without `dfa-prefilter`,
+    /// `Eager` prepares literal searchers but does not add DFA acceleration.
+    /// The last call to this method or [`dfa`](Self::dfa) wins.
+    ///
+    /// ```
+    /// use ferroni::{AccelerationMode, Regex};
+    ///
+    /// let re = Regex::builder(r"\A[0-9a-f]{8}\z")
+    ///     .acceleration(AccelerationMode::Eager)
+    ///     .build()?;
+    /// assert!(re.is_match("deadbeef"));
+    /// # Ok::<(), ferroni::RegexError>(())
+    /// ```
+    pub fn acceleration(mut self, mode: AccelerationMode) -> Self {
+        self.acceleration = mode;
         self
     }
 
@@ -1849,17 +1888,20 @@ impl RegexBuilder {
             &ONIG_ENCODING_UTF8,
             self.syntax,
             self.optimize_backtracking,
-            self.dfa,
+            DFA_DEFAULT && self.acceleration != AccelerationMode::Off,
         )?;
         if self.reject_backtracking_risks && !inner.backtrack_warnings.is_empty() {
             return Err(ONIGERR_VERY_INEFFICIENT_PATTERN.into());
         }
-        Ok(Regex::from_parts(
-            inner,
-            self.pattern.into_boxed_slice(),
-            seek,
-            accept,
-        ))
+        let regex = Regex::from_parts(inner, self.pattern.into_boxed_slice(), seek, accept);
+        if self.acceleration == AccelerationMode::Eager {
+            crate::acceleration::prepare_program(regex.program());
+            #[cfg(feature = "dfa-prefilter")]
+            if let Some(seek) = regex.inner.seek.get() {
+                seek.prepare();
+            }
+        }
+        Ok(regex)
     }
 }
 
@@ -1891,7 +1933,7 @@ impl fmt::Debug for RegexBuilder {
             .field("syntax", &syntax)
             .field("reject_backtracking_risks", &self.reject_backtracking_risks)
             .field("optimize_backtracking", &self.optimize_backtracking)
-            .field("dfa", &self.dfa)
+            .field("acceleration", &self.acceleration)
             .finish()
     }
 }
@@ -2745,6 +2787,80 @@ impl fmt::Debug for TryCaptureMatches<'_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn acceleration_modes_prepare_before_search_and_preserve_results() {
+        let _limits = crate::regexec::shared_limits();
+        let pattern = r"\A[0-9A-F]{8}\z";
+        let eager = Regex::builder(pattern)
+            .dfa(false)
+            .acceleration(AccelerationMode::Eager)
+            .build()
+            .unwrap();
+        let auto = Regex::builder(pattern)
+            .acceleration(AccelerationMode::Eager)
+            .dfa(true)
+            .build()
+            .unwrap();
+        let off = Regex::builder(pattern)
+            .acceleration(AccelerationMode::Eager)
+            .dfa(false)
+            .build()
+            .unwrap();
+        #[cfg(feature = "dfa-prefilter")]
+        {
+            assert!(eager.seek_built());
+            assert!(!auto.seek_built());
+            assert!(!off.seek_present());
+            let seek = eager.inner.seek.get().unwrap();
+            assert_eq!(seek.backend_names(), ("dense", None));
+            let clone = eager.clone();
+            assert!(std::ptr::eq(seek, clone.inner.seek.get().unwrap()));
+            // Larger and unsupported assertion NFAs retain the hybrid path.
+            for pattern in [r"\A[0-9A-F]{100}\z", r"\bword\b"] {
+                let regex = Regex::builder(pattern)
+                    .acceleration(AccelerationMode::Eager)
+                    .build()
+                    .unwrap();
+                assert!(regex.seek_built(), "{pattern}");
+                assert_eq!(regex.inner.seek.get().unwrap().backend_names().0, "hybrid");
+            }
+            let accepted = Regex::builder(r"[é-ü]+x(?i:[ß])?")
+                .acceleration(AccelerationMode::Eager)
+                .build()
+                .unwrap();
+            assert_eq!(
+                accepted.inner.seek.get().unwrap().backend_names(),
+                ("hybrid", Some("dense"))
+            );
+            assert!(accepted.is_match("éxSS"));
+            assert!(!accepted.is_match("none"));
+        }
+        for text in ["0123ABCD", "0123ABCD\n", "zzzz", "", "é0123ABCD"] {
+            assert_eq!(eager.is_match(text), off.is_match(text), "{text:?}");
+            assert_eq!(auto.is_match(text), off.is_match(text), "{text:?}");
+            assert_eq!(
+                eager.find(text).map(|m| m.range()),
+                off.find(text).map(|m| m.range()),
+                "{text:?}"
+            );
+            let captures = |regex: &Regex| regex.captures(text).map(|c| c.get(0).unwrap().range());
+            assert_eq!(captures(&eager), captures(&off), "{text:?}");
+            let options = SearchOptions::new().retry_limit_in_match(100);
+            assert_eq!(
+                eager.is_match_with(text, options),
+                off.is_match_with(text, options)
+            );
+        }
+        #[cfg(feature = "dfa-prefilter")]
+        {
+            assert_eq!(auto.inner.seek.get().unwrap().backend_names().0, "hybrid");
+            for _ in 0..64 {
+                assert!(auto.is_match("0123ABCD"));
+            }
+            assert_eq!(auto.inner.seek.get().unwrap().backend_names().0, "dense");
+        }
+    }
 
     fn assert_send_sync<T: Send + Sync>() {}
 
