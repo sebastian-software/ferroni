@@ -1,5 +1,7 @@
-#![cfg(feature = "scanner-group-nfa-prototype")]
 //! Ordered scanner-group archive round trips and bounded decoder failures.
+
+#![cfg(feature = "scanner-group-nfa-prototype")]
+
 use ferroni::scanner::group_prototype::GroupKind;
 use ferroni::{AccelerationMode, Scanner, ScannerConfig, ScannerFindOptions, ScannerPatternCache};
 
