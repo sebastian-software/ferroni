@@ -69,6 +69,11 @@ use regex_syntax::utf8::Utf8Sequences;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
+#[cfg(feature = "scanner-group-nfa-prototype")]
+pub(crate) mod group_archive;
+#[cfg(feature = "portable-eager-prototype")]
+mod portable;
+
 const MIB: usize = 1 << 20;
 /// Lazy DFA cache of the search DFAs (fancy-regex: 64 MiB).
 const SEARCH_CACHE_CAPACITY: usize = 2 * MIB;
@@ -1502,6 +1507,10 @@ pub(crate) struct Automata {
     long: Vec<u16>,
     /// Bytes after which every other seek has settled.
     settle: usize,
+    #[cfg(feature = "scanner-group-prototype")]
+    frozen: Option<Arc<group_archive::Frozen>>,
+    #[cfg(feature = "portable-eager-prototype")]
+    portable: Option<Arc<portable::Portable>>,
 }
 
 /// A set's handle on its automata: built by the first set that searches
@@ -1576,6 +1585,10 @@ pub(crate) struct SetPrefilter {
     search_memo: Option<SearchMemo>,
     /// The walks of a subject searched again.
     candidate_memo: CandidateMemo,
+    #[cfg(feature = "scanner-group-prototype")]
+    frozen: Option<Arc<group_archive::Frozen>>,
+    #[cfg(feature = "portable-eager-prototype")]
+    portable: Option<(Arc<portable::Portable>, portable::Caches)>,
 }
 
 /// What the walks of a subject found (`candidates_at`), per position, for
@@ -1909,18 +1922,33 @@ impl Automata {
             own,
             long,
             settle,
+            #[cfg(feature = "scanner-group-prototype")]
+            frozen: None,
+            #[cfg(feature = "portable-eager-prototype")]
+            portable: None,
         })
     }
 
     /// NFA states of the overlapping DFA (the search DFAs hold about twice
     /// as many: a forward and a reverse NFA).
     pub(crate) fn nfa_states(&self) -> usize {
+        #[cfg(feature = "scanner-group-prototype")]
+        if let Some(frozen) = &self.frozen {
+            return frozen.nfa_states;
+        }
+        #[cfg(feature = "portable-eager-prototype")]
+        if let Some(portable) = &self.portable {
+            return portable.nfa_states();
+        }
         self.dfa.get_nfa().states().len()
     }
 
     /// Heap memory of the automata, in bytes, without any cache.
     pub(crate) fn memory_usage(&self) -> usize {
-        automata_memory_usage(&self.dfa, &self.search)
+        let bytes = automata_memory_usage(&self.dfa, &self.search);
+        #[cfg(feature = "portable-eager-prototype")]
+        let bytes = bytes + self.portable.as_ref().map_or(0, |p| p.memory_usage());
+        bytes
     }
 }
 
@@ -1979,6 +2007,10 @@ impl SetPrefilter {
             walked_at: None,
             search_memo: None,
             candidate_memo: CandidateMemo::default(),
+            #[cfg(feature = "scanner-group-prototype")]
+            frozen: automata.frozen.clone(),
+            #[cfg(feature = "portable-eager-prototype")]
+            portable: automata.portable.as_ref().map(|p| (p.clone(), p.caches())),
         }
     }
 
@@ -2129,8 +2161,23 @@ impl SetPrefilter {
         let found = if next <= span_end {
             #[cfg(test)]
             EARLIEST_CALLS.with(|calls| calls.set(calls.get() + 1));
-            let input = Input::new(haystack).span(next..span_end);
-            let Ok(found) = self.search.try_search(&mut self.search_cache, &input) else {
+            let mut ordinary = || {
+                let input = Input::new(haystack).span(next..span_end);
+                #[cfg(feature = "scanner-group-prototype")]
+                if let Some(frozen) = &self.frozen {
+                    return frozen.search.try_search(&input);
+                }
+                self.search.try_search(&mut self.search_cache, &input)
+            };
+            #[cfg(feature = "portable-eager-prototype")]
+            let result = if let Some((p, c)) = &mut self.portable {
+                Ok(p.search(c, haystack, next, span_end))
+            } else {
+                ordinary()
+            };
+            #[cfg(not(feature = "portable-eager-prototype"))]
+            let result = ordinary();
+            let Ok(found) = result else {
                 // The lazy DFAs give up only on their cache's efficiency
                 // (`MIN_CACHE_CLEARS`) and quit only on non-ASCII look-arounds,
                 // which the seeks do not have: `from` is the earliest
@@ -2278,6 +2325,40 @@ impl SetPrefilter {
         at: usize,
         admits: &mut dyn FnMut(u16, usize) -> bool,
     ) -> (ScanEnd, bool) {
+        #[cfg(feature = "portable-eager-prototype")]
+        if let Some((p, c)) = &mut self.portable {
+            return p.scan(
+                c,
+                &mut self.patset,
+                &self.entries,
+                &self.long,
+                self.settle,
+                self.ask_early,
+                &self.dispatch,
+                &mut self.admissible,
+                &mut self.stamp,
+                haystack,
+                at,
+                admits,
+            );
+        }
+
+        #[cfg(feature = "scanner-group-prototype")]
+        if let Some(frozen) = &self.frozen {
+            return frozen.scan(
+                &mut self.patset,
+                &self.entries,
+                &self.long,
+                self.settle,
+                self.ask_early,
+                &self.dispatch,
+                &mut self.admissible,
+                &mut self.stamp,
+                haystack,
+                at,
+                admits,
+            );
+        }
         let Self {
             dfa,
             dfa_cache: cache,
@@ -2457,22 +2538,42 @@ impl SetPrefilter {
     /// NFA states of the overlapping DFA (the search DFAs hold about twice
     /// as many: a forward and a reverse NFA).
     pub(crate) fn nfa_states(&self) -> usize {
+        #[cfg(feature = "scanner-group-prototype")]
+        if let Some(frozen) = &self.frozen {
+            return frozen.nfa_states;
+        }
+        #[cfg(feature = "portable-eager-prototype")]
+        if let Some((portable, _)) = &self.portable {
+            return portable.nfa_states();
+        }
         self.dfa.get_nfa().states().len()
     }
 
     /// Heap memory of the automata (shared with every set over the same
     /// pattern list) and of this set's caches, in bytes.
     pub(crate) fn memory_usage(&self) -> usize {
-        automata_memory_usage(&self.dfa, &self.search) + self.cache_memory_usage()
+        let bytes = automata_memory_usage(&self.dfa, &self.search) + self.cache_memory_usage();
+        #[cfg(feature = "scanner-group-prototype")]
+        let bytes = bytes + self.frozen.as_ref().map_or(0, |f| f.memory_usage());
+        #[cfg(feature = "portable-eager-prototype")]
+        let bytes = bytes + self.portable.as_ref().map_or(0, |(p, _)| p.memory_usage());
+        bytes
     }
 
     /// Heap memory of this set's lazy DFA caches, in bytes.
     pub(crate) fn cache_memory_usage(&self) -> usize {
-        self.search_cache.memory_usage() + self.dfa_cache.memory_usage()
+        let bytes = self.search_cache.memory_usage() + self.dfa_cache.memory_usage();
+        #[cfg(feature = "portable-eager-prototype")]
+        let bytes = bytes + self.portable.as_ref().map_or(0, |(_, c)| c.memory_usage());
+        bytes
     }
 
     /// Times the overlapping DFA's cache was cleared because it filled up.
     pub(crate) fn cache_clears(&self) -> usize {
+        #[cfg(feature = "portable-eager-prototype")]
+        if let Some((_, c)) = &self.portable {
+            return c.clears();
+        }
         self.dfa_cache.clear_count()
     }
 }

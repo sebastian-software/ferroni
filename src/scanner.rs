@@ -13,6 +13,9 @@ use smallvec::SmallVec;
 mod precompiled;
 #[cfg(feature = "precompiled")]
 pub use precompiled::{PRECOMPILED_FORMAT_VERSION, PrecompiledError, PrecompiledPatterns};
+#[cfg(feature = "scanner-group-nfa-prototype")]
+#[doc(hidden)]
+pub mod group_prototype;
 
 use crate::AccelerationMode;
 use crate::api::Syntax;
@@ -454,6 +457,8 @@ pub struct ScannerPatternCache {
     /// Indexed archives, consulted in insertion order on a cache miss.
     #[cfg(feature = "precompiled")]
     precompiled: Vec<PrecompiledPatterns>,
+    #[cfg(feature = "scanner-group-nfa-prototype")]
+    group_source: Option<group_prototype::GroupSource>,
 }
 
 /// Compiled programs by pattern text, for one `PatternSettings`.
@@ -573,6 +578,16 @@ impl ScannerPatternCache {
                     .automata
                     .get(ids.as_slice())
                     .cloned()
+                    .or_else(|| {
+                        #[cfg(feature = "scanner-group-nfa-prototype")]
+                        if eager {
+                            return self
+                                .group_source
+                                .as_ref()
+                                .and_then(|source| source.load(patterns, settings));
+                        }
+                        None
+                    })
                     .unwrap_or_default();
                 #[cfg(feature = "dfa-prefilter")]
                 let scanner = Scanner::assemble(patterns, settings, parts, automata.clone(), eager);

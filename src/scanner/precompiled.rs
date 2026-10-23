@@ -112,7 +112,7 @@ impl Environment {
         })
     }
 }
-fn key(pattern: &str, settings: PatternSettings, env: &Environment) -> Result<Vec<u8>> {
+pub(super) fn key(pattern: &str, settings: PatternSettings, env: &Environment) -> Result<Vec<u8>> {
     let mut key = Vec::new();
     settings.options.bits().write(&mut key)?;
     syntax_tag(settings.syntax).write(&mut key)?;
@@ -155,7 +155,7 @@ fn check_key(bytes: &[u8]) -> Result<()> {
 // little-endian 64-bit words with an extra shift per word, then the tail bytes,
 // folded to 32 bits: every load checks its program, and a byte-wise hash made
 // that a third of the load time (format version 1).
-fn checksum(bytes: &[u8]) -> u32 {
+pub(super) fn checksum(bytes: &[u8]) -> u32 {
     const PRIME: u64 = 0x0000_0100_0000_01b3;
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     let (words, tail) = bytes.as_chunks::<8>();
@@ -169,6 +169,16 @@ fn checksum(bytes: &[u8]) -> u32 {
     (hash ^ (hash >> 32)) as u32
 }
 impl PrecompiledPatterns {
+    #[cfg(feature = "scanner-group-nfa-prototype")]
+    pub(super) fn prototype_checksum(&self) -> u32 {
+        checksum(&self.bytes)
+    }
+    #[cfg(feature = "scanner-group-nfa-prototype")]
+    pub(super) fn prototype_keys(&self) -> Vec<Vec<u8>> {
+        let mut keys: Vec<_> = self.index.keys().cloned().collect();
+        keys.sort();
+        keys
+    }
     /// Open an archive, retaining its bytes and indexing its entries. No regex
     /// or pre-filter seek is decoded here. Unsupported versions and malformed
     /// indexes return an error; a bad individual program is reported by
@@ -310,6 +320,10 @@ impl ScannerPatternCache {
     /// these sources, so subsequent misses can load them again.
     pub fn clear_precompiled(&mut self) {
         self.precompiled.clear();
+        #[cfg(feature = "scanner-group-nfa-prototype")]
+        {
+            self.group_source = None;
+        }
     }
     /// Export the cache's decoded programs in deterministic pattern/settings
     /// order. Callout programs are omitted: their callbacks belong to the
