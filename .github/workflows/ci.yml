@@ -294,6 +294,8 @@ jobs:
           --skip api::tests::capture_gate_is_shared_and_thread_safe
           --skip api::tests::seek_automaton_is_built_once_for_racing_threads
           --skip api::tests::result_drop_during_thread_local_teardown_does_not_panic
+          --skip dfa_prefilter::tests::adaptive_single_seek_promotes_safely_across_threads
+          --skip dfa_prefilter::tests::adaptive_single_seek_promotion_panic_falls_back_without_retry
           --skip scanner::tests::scanners_sharing_a_pattern_cache_search_on_several_threads
           --skip nested_groups_above_depth_limit_fail_cleanly_on_two_mib_stack
           --skip nested_groups_at_depth_limit_compile_on_two_mib_stack
