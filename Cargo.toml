@@ -12,7 +12,7 @@ keywords = ["regex", "oniguruma", "textmate", "syntax-highlighting", "ferramenta
 categories = ["text-processing", "parsing", "text-editors"]
 rust-version = "1.94"
 autobenches = false
-exclude = [".cache/", ".cargo/", "benches/", "docs/", "fuzz/", "scripts/", "examples/backtrack_rewrite_census.rs", "examples/prefilter_census.rs", "examples/profile_cpp_scanner.rs", "examples/profile_scanner_patterns.rs"]
+exclude = [".cache/", ".cargo/", "benches/", "docs/", "fuzz/", "scripts/", "examples/backtrack_rewrite_census.rs", "examples/prefilter_census.rs", "examples/scanner_group_archive.rs", "examples/profile_cpp_scanner.rs", "examples/profile_scanner_patterns.rs"]
 
 [package.metadata.docs.rs]
 # The `ffi` feature links a local Oniguruma C checkout that docs.rs cannot
@@ -54,6 +54,12 @@ prefilter-self-check = ["dfa-prefilter"]
 # Versioned, lazily decoded scanner pattern archives (ADR-018).
 # The explicit wire codec adds no dependencies.
 precompiled = []
+# Local scanner-group archive experiment; no stable wire/API contract.
+scanner-group-nfa-prototype = ["precompiled", "dfa-prefilter"]
+# Own portable scanner bytecode; no dependency snapshot API.
+portable-eager-prototype = ["scanner-group-nfa-prototype"]
+scanner-group-prototype = ["scanner-group-nfa-prototype", "regex-automata/dfa-build"]
+scanner-group-dense-prototype = ["scanner-group-prototype"]
 # Benchmark-comparison harness: links a local upstream Oniguruma checkout
 # (scripts/prepare-oniguruma-sources.sh or FERRONI_ONIGURUMA_DIR) for the
 # in-repo C-vs-Rust benches. Not needed to use the library.
@@ -95,6 +101,15 @@ lto = "thin"
 
 [profile.bench]
 lto = "thin"
+
+[[example]]
+name = "scanner_group_archive"
+required-features = ["precompiled"]
+
+[[bench]]
+name = "scanner_group_archive_bench"
+harness = false
+required-features = ["precompiled"]
 
 [[test]]
 name = "precompiled_scanner"

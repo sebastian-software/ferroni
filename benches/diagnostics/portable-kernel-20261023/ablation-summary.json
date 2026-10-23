@@ -1,0 +1,142 @@
+[
+  {
+    "corpus": "cpp",
+    "median_process_mean_ns": {
+      "base": 3587289.55,
+      "starts": 3080999.075,
+      "flat": 3001017.725,
+      "walk": 2913426.1
+    },
+    "sequential_change_percent": {
+      "starts": -14.113454404593561,
+      "flat": -2.595955015014084,
+      "walk": -2.9187306782734845
+    }
+  },
+  {
+    "corpus": "scss",
+    "median_process_mean_ns": {
+      "base": 1795536.35,
+      "starts": 1357843.825,
+      "flat": 1205795.875,
+      "walk": 1151193.675
+    },
+    "sequential_change_percent": {
+      "starts": -24.37670086712531,
+      "flat": -11.197749490814967,
+      "walk": -4.52831205779336
+    }
+  },
+  {
+    "corpus": "java",
+    "median_process_mean_ns": {
+      "base": 2124283.275,
+      "starts": 1379888.6,
+      "flat": 1197248.925,
+      "walk": 1072088.6
+    },
+    "sequential_change_percent": {
+      "starts": -35.042156748138964,
+      "flat": -13.235827515351605,
+      "walk": -10.453993516845294
+    }
+  },
+  {
+    "corpus": "json",
+    "median_process_mean_ns": {
+      "base": 1071558.325,
+      "starts": 562563.525,
+      "flat": 510998.975,
+      "walk": 498606.275
+    },
+    "sequential_change_percent": {
+      "starts": -47.50042887306204,
+      "flat": -9.165995964633511,
+      "walk": -2.4251907745998835
+    }
+  },
+  {
+    "corpus": "rust",
+    "median_process_mean_ns": {
+      "base": 1334262.4,
+      "starts": 832472.925,
+      "flat": 745000.975,
+      "walk": 714462.4
+    },
+    "sequential_change_percent": {
+      "starts": -37.60800536686036,
+      "flat": -10.50748287098947,
+      "walk": -4.099132219256485
+    }
+  },
+  {
+    "corpus": "html",
+    "median_process_mean_ns": {
+      "base": 8494632.3,
+      "starts": 5882475,
+      "flat": 4880945.825,
+      "walk": 4187828.075
+    },
+    "sequential_change_percent": {
+      "starts": -30.75068122724983,
+      "flat": -17.025642692914122,
+      "walk": -14.200480293181705
+    }
+  },
+  {
+    "corpus": "astro",
+    "median_process_mean_ns": {
+      "base": 2620806.15,
+      "starts": 1948815.7,
+      "flat": 1852521.85,
+      "walk": 1803981.275
+    },
+    "sequential_change_percent": {
+      "starts": -25.64060107993871,
+      "flat": -4.941147077171015,
+      "walk": -2.6202430486852335
+    }
+  },
+  {
+    "corpus": "tsx",
+    "median_process_mean_ns": {
+      "base": 17881493.725,
+      "starts": 12661861.55,
+      "flat": 9833800.975,
+      "walk": 7884596.875
+    },
+    "sequential_change_percent": {
+      "starts": -29.19013509314642,
+      "flat": -22.335266926054807,
+      "walk": -19.821471930898007
+    }
+  },
+  {
+    "corpus": "c",
+    "median_process_mean_ns": {
+      "base": 2075212.525,
+      "starts": 1221060.4,
+      "flat": 1105146.9,
+      "walk": 1047207.3
+    },
+    "sequential_change_percent": {
+      "starts": -41.15974218110504,
+      "flat": -9.492855554074154,
+      "walk": -5.242705743462695
+    }
+  },
+  {
+    "corpus": "php",
+    "median_process_mean_ns": {
+      "base": 1415339.575,
+      "starts": 943502.125,
+      "flat": 852632.4,
+      "walk": 818566.625
+    },
+    "sequential_change_percent": {
+      "starts": -33.33740243926974,
+      "flat": -9.631109733854593,
+      "walk": -3.995364825451153
+    }
+  }
+]
