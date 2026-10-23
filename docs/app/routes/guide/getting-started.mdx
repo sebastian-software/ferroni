@@ -232,24 +232,35 @@ assert!(re.is_match("Hello World"));
 
 ### Compile once, search many times
 
-Ferroni prepares a DFA search accelerator by default. That adds compilation
-work in exchange for faster repeated searches, and each searching thread
-keeps a cache of at most 1 MiB per DFA. For a pattern you rarely reuse, or
-when memory is tight, use `dfa(false)`:
+Choose when Ferroni prepares optional search accelerators:
+
+| Mode                      | Preparation                                                                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AccelerationMode::Auto`  | The default: prepare helpers on demand and promote eligible small DFAs after repeated use.                                                                                |
+| `AccelerationMode::Eager` | Prepare suitable DFA and literal search accelerators before `build` returns. Use this for long-lived expressions when construction time matters less than search latency. |
+| `AccelerationMode::Off`   | Disable the additional DFA prefilter. Ordinary compiler optimizations remain enabled. Use this for expressions searched only a few times.                                 |
 
 ```rust
 use ferroni::prelude::*;
 
 let re = Regex::builder(r"[0-9a-f]{8}-[0-9a-f]{4}")
-    .dfa(false)
+    .acceleration(AccelerationMode::Eager)
     .build()
     .unwrap();
 
 assert!(re.is_match("id 0123abcd-0042"));
 ```
 
-The accelerator requires the default `dfa-prefilter` Cargo feature. Without
-it, `dfa` has no effect. The [optimization details](/adr/008-rust-only-optimizations)
+Clones share the prepared data. `dfa(true)` selects `Auto`, and `dfa(false)`
+selects `Off`; the last `dfa` or `acceleration` call wins. Eager preparation
+retains pattern and memory limits and falls back when a DFA is unsuitable.
+Hybrid fallback DFAs still compute transitions during searches, and threads
+may still allocate search scratch space. Eager preparation is not a guarantee
+of allocation-free searches or a fully precomputed DFA for every pattern.
+
+DFA acceleration requires the default `dfa-prefilter` Cargo feature. Without
+it, `Eager` still prepares deferred literal searchers. The
+[optimization details](/adr/008-rust-only-optimizations)
 explain when the accelerator can answer a search directly; the
 [limit contract](/adr/017-limit-outcomes-relative-to-c) explains how that
 interacts with process-wide limits. The fallible `*_with` searches always run

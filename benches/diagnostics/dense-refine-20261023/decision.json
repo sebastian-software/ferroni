@@ -1,0 +1,253 @@
+{
+  "runtime_commit": "c5fa681dfb649d81bfe3e4070673bc9b15b26887",
+  "candidate": "bits0006",
+  "metric": "Paired change of process mean elapsed time; negative is faster. No controls subtracted, no phases pooled, no pair/sample removed.",
+  "strict_rule": "Median and both cycle medians exceed 3% in the same direction; descriptive interval excludes zero. This is a local descriptive rule, not a multiplicity-adjusted test.",
+  "broad_target_gains": [
+    "django_email_local_part",
+    "ipv4_validation",
+    "uuid_shape",
+    "uuid_v4"
+  ],
+  "broad_target_costs": [],
+  "broad_positive_medians": [
+    {
+      "case": "django_email_domain",
+      "median": 1.4102638292981085,
+      "interval": [
+        0.8414519643157536,
+        2.272618687884209
+      ],
+      "cycles": [
+        1.3831316088733447,
+        2.24148287957906
+      ]
+    },
+    {
+      "case": "django_url_regex",
+      "median": 0.7252705762824108,
+      "interval": [
+        -0.03864117107069687,
+        1.4682493651654194
+      ],
+      "cycles": [
+        1.064747774726793,
+        -0.11805420398894872
+      ]
+    },
+    {
+      "case": "ipv6_validation",
+      "median": 2.3467592910318635,
+      "interval": [
+        2.1224366370371617,
+        2.8151128801601533
+      ],
+      "cycles": [
+        2.5907902261654514,
+        2.3467592910318635
+      ]
+    },
+    {
+      "case": "jinja_string_token",
+      "median": 0.7359877264482839,
+      "interval": [
+        -0.2371593430063268,
+        3.3207353086377234
+      ],
+      "cycles": [
+        2.535145827003449,
+        0.7359877264482839
+      ]
+    },
+    {
+      "case": "literal_end",
+      "median": 0.34634523638366055,
+      "interval": [
+        -0.047759728982715854,
+        0.6963974304258991
+      ],
+      "cycles": [
+        -0.22574417993839746,
+        0.5659742104853982
+      ]
+    },
+    {
+      "case": "literal_middle",
+      "median": 0.3710854854847234,
+      "interval": [
+        -0.07403358963228857,
+        0.8942732409947807
+      ],
+      "cycles": [
+        0.46778699859441053,
+        -0.17096371399556998
+      ]
+    },
+    {
+      "case": "mastodon_hashtag_regex_step",
+      "median": 1.9294661025979987,
+      "interval": [
+        0.5853006887494128,
+        2.5457426428320606
+      ],
+      "cycles": [
+        1.2685285514702493,
+        1.9294661025979987
+      ]
+    },
+    {
+      "case": "python_markdown_smart_emphasis_re",
+      "median": 0.23078492118648875,
+      "interval": [
+        -1.1631972184666384,
+        0.6045267353785411
+      ],
+      "cycles": [
+        0.04220429157832384,
+        0.5666655346468263
+      ]
+    },
+    {
+      "case": "python_markdown_smart_strong_em_re",
+      "median": 0.04527786411512302,
+      "interval": [
+        -0.3719832900308473,
+        2.281331289024102
+      ],
+      "cycles": [
+        -0.08158398938621358,
+        0.14527291346265736
+      ]
+    },
+    {
+      "case": "rails_underscore_regex_step",
+      "median": 1.333002101537617,
+      "interval": [
+        0.4210939736665087,
+        1.5894260261324233
+      ],
+      "cycles": [
+        1.333002101537617,
+        1.1710975839916427
+      ]
+    },
+    {
+      "case": "semver_hyphen_range_captures",
+      "median": 0.538146172671855,
+      "interval": [
+        -2.491594421598453,
+        2.102527604626103
+      ],
+      "cycles": [
+        0.05815710172919486,
+        0.538146172671855
+      ]
+    },
+    {
+      "case": "symfony_grapheme_chunks_2",
+      "median": 2.5702328467517632,
+      "interval": [
+        0.1360170620081369,
+        2.5702328467517632
+      ],
+      "cycles": [
+        -2.3547174713575645,
+        3.1979958785200657
+      ]
+    }
+  ],
+  "source_scope": "Frozen 9b85954 baseline and 37d406c previous adaptive prototype; not exact current main.",
+  "target_confirmation": {
+    "django_email_local_part": {
+      "phase": "final6-focus-confirm",
+      "median": -40.99860391342648,
+      "interval": [
+        -41.10609057923376,
+        -40.87806185160471
+      ],
+      "cycles": [
+        -41.22885447656169,
+        -40.97803894892043
+      ],
+      "range": [
+        -49.75260240053942,
+        -39.997116764437045
+      ],
+      "pairs_at_least_3_percent_slower": 0
+    },
+    "uuid_v4": {
+      "phase": "final6-focus-confirm",
+      "median": -14.101011728459333,
+      "interval": [
+        -14.240582883887935,
+        -13.952761849478424
+      ],
+      "cycles": [
+        -14.126081813789398,
+        -14.056293713259121
+      ],
+      "range": [
+        -16.7011732212745,
+        -12.867310166713708
+      ],
+      "pairs_at_least_3_percent_slower": 0
+    },
+    "jinja_integer_token": {
+      "phase": "final6-focus-confirm",
+      "median": -0.19458843298628126,
+      "interval": [
+        -0.6554380927107695,
+        -0.043733892133024366
+      ],
+      "cycles": [
+        -0.4332252277897797,
+        -0.14039883991403546
+      ],
+      "range": [
+        -3.8451482211733,
+        0.5119626478508721
+      ],
+      "pairs_at_least_3_percent_slower": 0
+    },
+    "semver_version_parse": {
+      "phase": "final6-capture-long",
+      "median": -0.044086954226052466,
+      "interval": [
+        -0.13389462727473878,
+        0.051338803485834195
+      ],
+      "cycles": [
+        -0.027490592903312017,
+        -0.04488843920271157
+      ],
+      "range": [
+        -0.6552971450243583,
+        5.298813084810106
+      ],
+      "pairs_at_least_3_percent_slower": 2
+    },
+    "jinja_string_token": {
+      "phase": "final6-capture-long",
+      "median": 0.05560638953412411,
+      "interval": [
+        -0.3596412741200816,
+        1.1936808780800723
+      ],
+      "cycles": [
+        -0.14012798582057617,
+        0.34870871554668614
+      ],
+      "range": [
+        -2.193918799546224,
+        6.029932039123587
+      ],
+      "pairs_at_least_3_percent_slower": 3
+    }
+  },
+  "warm_local_uuid_gains_preserved": true,
+  "target_capture_intervals_below_3_percent": true,
+  "fresh_16_batch_cost_lower_than_previous": {
+    "django_email_local_part": true,
+    "uuid_v4": true
+  }
+}

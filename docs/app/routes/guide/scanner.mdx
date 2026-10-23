@@ -196,6 +196,35 @@ affect RSS.
 
 </details>
 
+## Prepare accelerators before searching
+
+For a long-lived scanner, select `Eager` to build its suitable DFA prefilter
+and deferred literal searchers before the constructor returns:
+
+```rust
+use ferroni::{AccelerationMode, Scanner, ScannerConfig};
+
+let config = ScannerConfig::default().acceleration(AccelerationMode::Eager);
+let scanner = Scanner::with_config(&[r"\d+", r"[a-z]+"], &config).unwrap();
+assert_eq!(scanner.prefilter_stats().built, cfg!(feature = "dfa-prefilter"));
+```
+
+`Auto` remains the default and observes `prefilter_warmup` (32 by default).
+`Eager` ignores warmup; `prefilter_warmup(0)` in `Auto` still defers the build
+until the first eligible search. Both include tiny pattern sets that the default
+`Auto` policy skips. `Off` disables the additional DFA prefilter.
+The last `acceleration` or `prefilter` setter wins: `prefilter(true)` selects
+`Auto`, and `prefilter(false)` selects `Off`. Changing warmup does not change
+the mode. Direct writes to the public fields disable the DFA when either
+`prefilter` is false or `acceleration` is `Off`.
+
+Pattern caches still share automata for the same pattern list and effective
+build settings. Eager preparation also applies to programs loaded from an
+archive, but the archive does not store the resulting DFA tables. Pattern and
+size limits remain enforced. Hybrid transitions, search scratch space, and
+input-dependent decisions can still be computed during searching; eager
+preparation does not guarantee allocation-free execution.
+
 ## Reuse compilation across starts
 
 Enable the optional `precompiled` feature to ship compiled patterns alongside

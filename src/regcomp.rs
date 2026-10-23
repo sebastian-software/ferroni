@@ -12481,6 +12481,7 @@ mod tests {
     /// expansion. Past the limit REPEAT matches the same strings.
     #[test]
     fn nested_counted_loops_compile_to_bounded_bytecode() {
+        let _limits = crate::regexec::shared_limits();
         use crate::encodings::utf8::ONIG_ENCODING_UTF8;
         use crate::oniguruma::{ONIG_OPTION_EXTEND, ONIG_OPTION_NONE};
         use crate::regexec::onig_search;

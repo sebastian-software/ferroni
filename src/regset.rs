@@ -722,6 +722,13 @@ fn build_prefilter(set: &mut OnigRegSet) -> bool {
     true
 }
 
+/// Prepare the pending prefilter during eager scanner construction without
+/// simulating searches or changing search limits and counters.
+#[cfg(feature = "dfa-prefilter")]
+pub(crate) fn onig_regset_prepare_prefilter(set: &mut OnigRegSet) {
+    build_prefilter(set);
+}
+
 /// Rust-only (ADR-008): drops the set's DFA pre-filter for good, once its
 /// overlapping DFA gave up on its cache (`dfa_prefilter::MIN_CACHE_CLEARS`):
 /// the set searches as the position-lead search searches it from then on,

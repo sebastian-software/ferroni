@@ -492,6 +492,34 @@ mod tests {
                 .is_none()
         );
     }
+
+    #[test]
+    fn eager_acceleration_uses_existing_archives_without_compiling() {
+        let _limits = crate::regexec::shared_limits();
+        let config = ScannerConfig::default();
+        let patterns = &[r"\d+", r"[a-z]+"];
+        let bytes = archive(patterns, &config);
+        let source = PrecompiledPatterns::from_bytes(bytes.clone()).unwrap();
+        let eager = config.acceleration(crate::AccelerationMode::Eager);
+        let mut cache = ScannerPatternCache::new();
+        cache.add_precompiled(source);
+        COMPILES.with(|n| n.set(0));
+        let mut scanner = Scanner::with_pattern_cache(patterns, &eager, &mut cache).unwrap();
+        assert_eq!(COMPILES.with(|n| n.get()), 0);
+        assert_eq!(
+            scanner.prefilter_stats().built,
+            cfg!(feature = "dfa-prefilter")
+        );
+        // Eager changes runtime preparation, not the archive schema or bytes.
+        assert_eq!(cache.export_precompiled().unwrap(), bytes);
+        assert_eq!(
+            scanner
+                .find_next_match("abc 42", 0, ScannerFindOptions::NONE)
+                .unwrap()
+                .index,
+            1
+        );
+    }
     #[test]
     fn deterministic_export_and_rewrite_reports() {
         let config = ScannerConfig::default();
