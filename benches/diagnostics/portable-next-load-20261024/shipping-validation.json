@@ -1,0 +1,184 @@
+{
+  "nativeBinarySha256": "25b0fe2812dddce9066e35c50ae3dd366fb808a58305f17ea698ec45425b5146",
+  "rows": [
+    {
+      "corpus": "cpp",
+      "nativeValidation": {
+        "corpus": "cpp",
+        "validated_calls": 4862,
+        "variant": "portable"
+      },
+      "programSha256": "69ad76afa3d75632b6cf6690800c59ebab06b4a54b6f40010d6036406f3a987f",
+      "groupSha256": "c2914b7ef3ae01f3a3d8ac956f7625363a52b868cd6ab3c29bb3b679b1fb2f03"
+    },
+    {
+      "corpus": "scss",
+      "nativeValidation": {
+        "corpus": "scss",
+        "validated_calls": 3744,
+        "variant": "portable"
+      },
+      "programSha256": "0ec5228621c9d0275e93b9e44e989eb9b77c8b6608685d00250a2bed6d9776b3",
+      "groupSha256": "a5340c3a111db58ced998d1617bc1e58481d9e3b1fcd44bf5ef3206dd78a550a"
+    },
+    {
+      "corpus": "java",
+      "nativeValidation": {
+        "corpus": "java",
+        "validated_calls": 3920,
+        "variant": "portable"
+      },
+      "programSha256": "a28ca806d5c0a7eae76b97fe5ef50e7cc2b5babfa6b8a67e7084a4022aad53ae",
+      "groupSha256": "435d4d9de15d6d0da1cf588bf0042968cefe78822f700168ba3722cc7d93e26b"
+    },
+    {
+      "corpus": "json",
+      "nativeValidation": {
+        "corpus": "json",
+        "validated_calls": 3840,
+        "variant": "portable"
+      },
+      "programSha256": "b8fa822f46d8a28f3cb825ea9260f4e28e26a7132d46aea5027046407155562a",
+      "groupSha256": "68a4f43b2c57697010af4707b6dae306dc876e175f88443fec91cf0a93f79df3"
+    },
+    {
+      "corpus": "rust",
+      "nativeValidation": {
+        "corpus": "rust",
+        "validated_calls": 3936,
+        "variant": "portable"
+      },
+      "programSha256": "22e7805f6fe2668926d4862d0fc28746ffd25f816b3b31301458901dee608f05",
+      "groupSha256": "f023b602b36df93828d59e25615c1dbf8c3f9b0eadd52e95e65185d878cc6fba"
+    },
+    {
+      "corpus": "html",
+      "nativeValidation": {
+        "corpus": "html",
+        "validated_calls": 16176,
+        "variant": "portable"
+      },
+      "programSha256": "f3143655bc2a72481dcfef96373acc1b8020ad7709d951470e02e5d732087e73",
+      "groupSha256": "14f88d19bb001383e5eff88ca6e930fd63123516b33e80a6b20157c482b1f7b0"
+    },
+    {
+      "corpus": "astro",
+      "nativeValidation": {
+        "corpus": "astro",
+        "validated_calls": 7151,
+        "variant": "portable"
+      },
+      "programSha256": "25f749b5ec98dceef451a51ec42b1c52764dc8b94ea97f83a10ed4295238e388",
+      "groupSha256": "28fef8ca2502d178dbaaef24485f66cc1a3abb2576797040c30e18f12a8b8c05"
+    },
+    {
+      "corpus": "tsx",
+      "nativeValidation": {
+        "corpus": "tsx",
+        "validated_calls": 23088,
+        "variant": "portable"
+      },
+      "programSha256": "a2e384e7c17ce30de0139a29e7d0516200005001c33adb50248e463a7720663a",
+      "groupSha256": "ac3a52fa0c959f824bdafcb55124aed5a2fcb0a4aaad676068b32a4111e6a4b4"
+    },
+    {
+      "corpus": "c",
+      "nativeValidation": {
+        "corpus": "c",
+        "validated_calls": 4832,
+        "variant": "portable"
+      },
+      "programSha256": "ec3e89e5267d382a0132ba14bbf00feba1486b80cca6cd0c3db706b7f7194b0d",
+      "groupSha256": "fd24979a9c792f7baa4b0c796c6db1f8945bc085e16344afc93bf59c8c84baa1"
+    },
+    {
+      "corpus": "php",
+      "nativeValidation": {
+        "corpus": "php",
+        "validated_calls": 3952,
+        "variant": "portable"
+      },
+      "programSha256": "fd6118074f8f418435530d32ed53b0b3fc38658fd9ad7de6cb15ea667ca1464d",
+      "groupSha256": "3d92effc114159a2ec61cd1dbf2feea407fdf95e168a0c6d0d96b81c1ac11ba5"
+    }
+  ],
+  "totalCalls": 75501,
+  "replaySourceSha256": {
+    "scripts/portable-eager-package.mjs": "773611fae0cbfcd2d8d8f9dc15148d2dafbf432cb358bca02cc52a30c49bfc6f",
+    "scripts/portable-eager-zstd-frame.mjs": "79070f1e8197671e8e9e4b1f170f18838d2ddfee2f2158e4393fdf735f0fc56a",
+    "scripts/portable-eager-package.test.mjs": "49389240a4c5f79ffbffd90070acbb69a814511205f67d868626cf8d66edf332",
+    "src/scanner/precompiled/wire.rs": "7f7e350384cb5394ea470552d1b77a578e558df62382fcf8bb8bb15ae6f83de3"
+  },
+  "finalSourceSha256": {
+    "scripts/portable-eager-package.mjs": "773611fae0cbfcd2d8d8f9dc15148d2dafbf432cb358bca02cc52a30c49bfc6f",
+    "scripts/portable-eager-zstd-frame.mjs": "79070f1e8197671e8e9e4b1f170f18838d2ddfee2f2158e4393fdf735f0fc56a",
+    "scripts/portable-eager-package.test.mjs": "8d5ab4badc7b0bd964102dd2b752a4f2568853e468519ef54386b6d7898e67f6",
+    "src/scanner/precompiled/wire.rs": "7f7e350384cb5394ea470552d1b77a578e558df62382fcf8bb8bb15ae6f83de3"
+  },
+  "testNotes": "Regression suite expanded to 10 tests after replay; production sources are unchanged.",
+  "checks": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "exitCode": 0
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exitCode": 0
+    },
+    {
+      "name": "rustdoc",
+      "command": [
+        "cargo",
+        "doc",
+        "--no-deps",
+        "--locked"
+      ],
+      "exitCode": 0
+    },
+    {
+      "name": "workflow-pins",
+      "command": [
+        "./scripts/check-workflow-pins.sh"
+      ],
+      "exitCode": 0
+    },
+    {
+      "name": "readme-figures",
+      "command": [
+        "./scripts/check-readme-figures.sh"
+      ],
+      "exitCode": 0
+    },
+    {
+      "name": "package-tests",
+      "command": [
+        "node",
+        "--test",
+        "scripts/portable-eager-package.test.mjs"
+      ],
+      "exitCode": 0
+    }
+  ],
+  "additionalChecks": {
+    "cargo-deny": "passed",
+    "readme-family": "passed",
+    "focusedRustIntegrationTests": "5 passed (retained source-identical validation)"
+  }
+}

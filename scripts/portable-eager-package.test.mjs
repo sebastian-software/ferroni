@@ -54,12 +54,12 @@ test("unsupported manifests and caller size limits fail before decoding", () => 
     maxPayloadBytes: fixture.manifest.payloadBytes - 1,
   }), /oversized/);
   assert.throws(() => createPackage(programs, groups, { maxPayloadBytes: 6 }), /oversized/);
-  // A lying output length is also enforced by the real decompressor.
+  // The frame's declared output length must agree with the manifest too.
   assert.throws(() => decodePackage(fixture.encoded, {
     ...fixture.manifest,
     groupBytes: fixture.manifest.groupBytes - 1,
     payloadBytes: fixture.manifest.payloadBytes - 1,
-  }), { code: "ERR_BUFFER_TOO_LARGE" });
+  }), /content size differs from manifest/);
 });
 
 test("frames with a window above the HTTP limit are rejected", () => {
@@ -74,8 +74,89 @@ test("frames with a window above the HTTP limit are rejected", () => {
   });
   assert.throws(() => decodePackage(oversizedFrame, {
     ...manifest, compressedBytes: oversizedFrame.length, compressedSha256: sha256(oversizedFrame),
-  }), { code: "ZSTD_error_frameParameter_windowTooLarge" });
+  }), { name: "RangeError", message: "Zstd frame window exceeds 8 MiB" });
   assert.deepEqual(decodePackage(encoded, manifest), { programs: largePrograms, groups });
+});
+
+// A raw block gives these frame-header tests stable bytes independently of
+// the compressor's choice of header fields. libzstd checks the valid fixtures.
+function rawFrame(payload, sizeBytes, windowDescriptor) {
+  const separateWindow = windowDescriptor !== undefined;
+  const frame = Buffer.alloc(5 + Number(separateWindow) + sizeBytes + 3 + payload.length);
+  frame.writeUInt32LE(0xfd2fb528);
+  frame[4] = ([1, 2, 4, 8].indexOf(sizeBytes) << 6) | (separateWindow ? 0 : 0x20);
+  let position = 5;
+  if (separateWindow) frame[position++] = windowDescriptor;
+  if (sizeBytes === 8) frame.writeBigUInt64LE(BigInt(payload.length), position);
+  else frame.writeUIntLE(payload.length - (sizeBytes === 2 ? 256 : 0), position, sizeBytes);
+  position += sizeBytes;
+  frame.writeUIntLE((payload.length << 3) | 1, position, 3);
+  payload.copy(frame, position + 3);
+  return frame;
+}
+
+function withFrame(manifest, encoded) {
+  return { ...manifest, compressedBytes: encoded.length, compressedSha256: sha256(encoded) };
+}
+
+test("all four frame content-size widths preserve both archives", () => {
+  for (const width of [1, 2, 4, 8]) {
+    const input = width === 2 ? Buffer.alloc(260, 65) : programs;
+    const { encoded, manifest } = createPackage(input, groups);
+    const payload = zstdDecompressSync(encoded);
+    const frame = rawFrame(payload, width);
+    assert.deepEqual(zstdDecompressSync(frame), payload);
+    assert.deepEqual(decodePackage(frame, withFrame(manifest, frame)), { programs: input, groups });
+  }
+});
+
+test("a tiny payload cannot hide a frame window above the limit", () => {
+  const payload = zstdDecompressSync(fixture.encoded);
+  const frame = rawFrame(payload, 4, 14 << 3); // A 16 MiB window.
+  assert.deepEqual(zstdDecompressSync(frame), payload);
+  // Some native one-shot paths skip the configured window limit when output fits.
+  assert.throws(() => decodePackage(frame, withFrame(fixture.manifest, frame)), /window exceeds/);
+});
+
+test("malformed blocks and frames without a content size fail preflight", () => {
+  const payload = zstdDecompressSync(fixture.encoded);
+  const raw = rawFrame(payload, 1);
+  // This fixture has four magic bytes, one descriptor and one size byte.
+  const blockStart = 6;
+  const reserved = Buffer.from(raw);
+  reserved.writeUIntLE(1 | (3 << 1), blockStart, 3);
+  assert.throws(() => decodePackage(reserved, withFrame(fixture.manifest, reserved)), /Invalid Zstd package block/);
+  const oversized = Buffer.from(raw);
+  oversized.writeUIntLE(((payload.length + 1) << 3) | 1, blockStart, 3);
+  assert.throws(() => decodePackage(oversized, withFrame(fixture.manifest, oversized)), /Invalid Zstd package block/);
+  const unfinished = Buffer.from(raw);
+  unfinished[blockStart] &= ~1;
+  assert.throws(() => decodePackage(unfinished, withFrame(fixture.manifest, unfinished)), /Truncated/);
+  const truncated = raw.subarray(0, raw.length - 1);
+  assert.throws(() => decodePackage(truncated, withFrame(fixture.manifest, truncated)), /Truncated/);
+  const unknownSize = Buffer.from(raw);
+  unknownSize[4] = 0; // The old size byte now serves as the window descriptor.
+  assert.deepEqual(zstdDecompressSync(unknownSize), payload);
+  assert.throws(() => decodePackage(unknownSize, withFrame(fixture.manifest, unknownSize)), /must declare its content size/);
+});
+
+test("frame truncation, trailing data, concatenation and unsupported headers are rejected", () => {
+  const encoded = fixture.encoded;
+  for (const frame of [encoded.subarray(0, 4), encoded.subarray(0, encoded.length - 1)]) {
+    assert.throws(() => decodePackage(frame, withFrame(fixture.manifest, frame)), /Truncated/);
+  }
+  for (const tail of [Buffer.from([0]), zstdCompressSync(Buffer.alloc(0))]) {
+    const frame = Buffer.concat([encoded, tail]);
+    assert.throws(() => decodePackage(frame, withFrame(fixture.manifest, frame)), /exactly one frame/);
+  }
+  const skippable = Buffer.alloc(8);
+  skippable.writeUInt32LE(0x184d2a50);
+  assert.throws(() => decodePackage(skippable, withFrame(fixture.manifest, skippable)), /frame magic/);
+  for (const flag of [1, 8, 16]) {
+    const frame = Buffer.from(encoded);
+    frame[4] |= flag;
+    assert.throws(() => decodePackage(frame, withFrame(fixture.manifest, frame)), /frame flags/);
+  }
 });
 
 test("CLI round trip and failed verification have observable filesystem behavior", (t) => {

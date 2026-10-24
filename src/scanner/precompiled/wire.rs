@@ -173,7 +173,9 @@ impl<A: Wire, B: Wire, C: Wire> Wire for (A, B, C) {
 }
 impl Wire for String {
     fn write(&self, out: &mut Vec<u8>) -> Result<()> {
-        self.as_bytes().to_vec().write(out)
+        self.len().write(out)?;
+        out.extend_from_slice(self.as_bytes());
+        Ok(())
     }
     fn read(input: &mut Reader<'_>) -> Result<Self> {
         String::from_utf8(Vec::<u8>::read(input)?).map_err(|_| PrecompiledError::InvalidData)
