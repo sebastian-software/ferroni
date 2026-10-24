@@ -1,0 +1,422 @@
+{
+  "context": {
+    "base": "a00cf155eff90547617a477c59e5a9e7baaac0c7",
+    "kind": "final source verification of verified portable package decode",
+    "boundary": "decodePackage: manifest checks, compressed SHA-256, candidate frame preflight, bounded Zstd decode, payload SHA-256 and prefix checks, zero-copy views; excludes input I/O and full byte comparisons",
+    "processRepetitions": 3,
+    "warmups": 3,
+    "samplesPerProcess": 15,
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "backupStatus": "Backup session status:\n{\n    ClientID = \"com.apple.backupd\";\n    Running = 0;\n}\n",
+    "sourceSha256": {
+      "measure.mjs": "e489a533e34bce0b9cf8efa232bb8ead71b14c77c928aac4650f1716652b06dc",
+      "before/portable-eager-package.mjs": "c0e893116cd9b96c6e25d8c47597b7d6afee8c89ea36a7efc759e7d6edc0f882",
+      "after/portable-eager-package.mjs": "773611fae0cbfcd2d8d8f9dc15148d2dafbf432cb358bca02cc52a30c49bfc6f",
+      "after/portable-eager-zstd-frame.mjs": "79070f1e8197671e8e9e4b1f170f18838d2ddfee2f2158e4393fdf735f0fc56a"
+    }
+  },
+  "rows": [
+    {
+      "corpus": "cpp",
+      "beforeMeanMsPerProcess": [
+        39.71053613333333,
+        39.27722786666667,
+        38.65403319999999
+      ],
+      "afterMeanMsPerProcess": [
+        35.91077486666667,
+        35.88613600000001,
+        35.28802493333333
+      ],
+      "beforeMedianMs": 39.27722786666667,
+      "afterMedianMs": 35.88613600000001,
+      "pairedChangesPercent": [
+        -9.568647610066161,
+        -8.63373524775809,
+        -8.708038949650055
+      ],
+      "medianChangePercent": -8.708038949650055,
+      "changeRangePercent": [
+        -9.568647610066161,
+        -8.63373524775809
+      ],
+      "allRunsGain3Percent": true,
+      "beforePeakRssMiB": [
+        283.21875,
+        235.6875,
+        235.546875
+      ],
+      "afterPeakRssMiB": [
+        222.078125,
+        221.25,
+        221.328125
+      ],
+      "payloadSha256": "fb6d9f7f0c134f13289c2d058b807b2ee105a8b143dafa19af9b5df3d2568f1b",
+      "compressedSha256": "811642c355db1d3124782164c14746ccca965381165dbe297e9f1776adb180e3"
+    },
+    {
+      "corpus": "scss",
+      "beforeMeanMsPerProcess": [
+        22.32465813333333,
+        22.479508466666665,
+        22.741844399999998
+      ],
+      "afterMeanMsPerProcess": [
+        21.2881472,
+        20.46628346666666,
+        21.362563933333337
+      ],
+      "beforeMedianMs": 22.479508466666665,
+      "afterMedianMs": 21.2881472,
+      "pairedChangesPercent": [
+        -4.642897226657627,
+        -8.955823046510469,
+        -6.064945491697504
+      ],
+      "medianChangePercent": -6.064945491697504,
+      "changeRangePercent": [
+        -8.955823046510469,
+        -4.642897226657627
+      ],
+      "allRunsGain3Percent": true,
+      "beforePeakRssMiB": [
+        195.578125,
+        179.53125,
+        177.125
+      ],
+      "afterPeakRssMiB": [
+        176.859375,
+        177.078125,
+        177.546875
+      ],
+      "payloadSha256": "744c4d887210fe4bd34ef0524ef8bcd820d2ed44964d31931be3998e93cb895c",
+      "compressedSha256": "3a8031317e69c35501b2b4b50b225caf7be4c9d5c2ee864983eae95cda6e7071"
+    },
+    {
+      "corpus": "java",
+      "beforeMeanMsPerProcess": [
+        1.6551361333333348,
+        1.5141417999999998,
+        1.5916474666666658
+      ],
+      "afterMeanMsPerProcess": [
+        1.4158640666666669,
+        1.4702305999999996,
+        1.422288933333333
+      ],
+      "beforeMedianMs": 1.5916474666666658,
+      "afterMedianMs": 1.422288933333333,
+      "pairedChangesPercent": [
+        -14.456337569332723,
+        -2.9000718426768324,
+        -10.640455055541576
+      ],
+      "medianChangePercent": -10.640455055541576,
+      "changeRangePercent": [
+        -14.456337569332723,
+        -2.9000718426768324
+      ],
+      "allRunsGain3Percent": false,
+      "beforePeakRssMiB": [
+        84.4375,
+        71.9375,
+        78.015625
+      ],
+      "afterPeakRssMiB": [
+        68.984375,
+        69.0625,
+        68.75
+      ],
+      "payloadSha256": "01e31bf0b31b909e7c82f821d87c21f7e42d537eda8a441f04b83a6115a7aea4",
+      "compressedSha256": "b614d589f57c8f6aed91f01b73578d65198acc0ebbc329545e62a4aa0a1f2f66"
+    },
+    {
+      "corpus": "json",
+      "beforeMeanMsPerProcess": [
+        0.07772793333333325,
+        0.08193040000000001,
+        0.09936106666666618
+      ],
+      "afterMeanMsPerProcess": [
+        0.07336666666666668,
+        0.07923606666666695,
+        0.07414720000000065
+      ],
+      "beforeMedianMs": 0.08193040000000001,
+      "afterMedianMs": 0.07414720000000065,
+      "pairedChangesPercent": [
+        -5.610938667265797,
+        -3.2885636263622064,
+        -25.376002404696727
+      ],
+      "medianChangePercent": -5.610938667265797,
+      "changeRangePercent": [
+        -25.376002404696727,
+        -3.2885636263622064
+      ],
+      "allRunsGain3Percent": true,
+      "beforePeakRssMiB": [
+        49.0,
+        48.921875,
+        49.21875
+      ],
+      "afterPeakRssMiB": [
+        48.328125,
+        48.359375,
+        48.40625
+      ],
+      "payloadSha256": "5d14c033d54a5adb11de5f6b1d651df18d629cfcbd5f1f774438de4f207adb68",
+      "compressedSha256": "6316391b66616dd744e7aaafb225581cb68095147f8dcd812ad69c16032ab35e"
+    },
+    {
+      "corpus": "rust",
+      "beforeMeanMsPerProcess": [
+        0.5233583333333333,
+        0.5052778666666666,
+        0.5314335333333337
+      ],
+      "afterMeanMsPerProcess": [
+        0.47989166666666655,
+        0.4966055333333337,
+        0.4661165333333332
+      ],
+      "beforeMedianMs": 0.5233583333333333,
+      "afterMedianMs": 0.47989166666666655,
+      "pairedChangesPercent": [
+        -8.305335732369478,
+        -1.7163493407191144,
+        -12.290718575907277
+      ],
+      "medianChangePercent": -8.305335732369478,
+      "changeRangePercent": [
+        -12.290718575907277,
+        -1.7163493407191144
+      ],
+      "allRunsGain3Percent": false,
+      "beforePeakRssMiB": [
+        60.203125,
+        60.140625,
+        60.71875
+      ],
+      "afterPeakRssMiB": [
+        53.90625,
+        54.125,
+        53.875
+      ],
+      "payloadSha256": "fb26abfeed22303766299e791c5a8dec6af78ce9aabfc25f1dc8f57e66189f09",
+      "compressedSha256": "b48b485de4fbcab898bcbe4ec0617b32701e4d65edafd10bd241941cefb721b2"
+    },
+    {
+      "corpus": "html",
+      "beforeMeanMsPerProcess": [
+        16.98595006666667,
+        16.788791666666672,
+        16.858486200000005
+      ],
+      "afterMeanMsPerProcess": [
+        15.501405533333335,
+        15.263050066666668,
+        15.668355599999996
+      ],
+      "beforeMedianMs": 16.858486200000005,
+      "afterMedianMs": 15.501405533333335,
+      "pairedChangesPercent": [
+        -8.739838086811613,
+        -9.087858318173602,
+        -7.059534206576679
+      ],
+      "medianChangePercent": -8.739838086811613,
+      "changeRangePercent": [
+        -9.087858318173602,
+        -7.059534206576679
+      ],
+      "allRunsGain3Percent": true,
+      "beforePeakRssMiB": [
+        178.296875,
+        166.390625,
+        174.375
+      ],
+      "afterPeakRssMiB": [
+        173.234375,
+        173.890625,
+        173.234375
+      ],
+      "payloadSha256": "30fb88e692f99357b995c9981fc544fcb5e35fae4590ff4636eaf3a3c0bf5768",
+      "compressedSha256": "4533db3ec90002184a05a7a9d6ce5617c6d784dda396e63ebf79b692a8c5a87b"
+    },
+    {
+      "corpus": "astro",
+      "beforeMeanMsPerProcess": [
+        26.835366733333334,
+        29.388666599999986,
+        26.934616533333337
+      ],
+      "afterMeanMsPerProcess": [
+        24.12739713333333,
+        24.991341600000002,
+        24.13484993333333
+      ],
+      "beforeMedianMs": 26.934616533333337,
+      "afterMedianMs": 24.13484993333333,
+      "pairedChangesPercent": [
+        -10.091047485616523,
+        -14.962655706196571,
+        -10.394677780302208
+      ],
+      "medianChangePercent": -10.394677780302208,
+      "changeRangePercent": [
+        -14.962655706196571,
+        -10.091047485616523
+      ],
+      "allRunsGain3Percent": true,
+      "beforePeakRssMiB": [
+        217.296875,
+        253.140625,
+        205.953125
+      ],
+      "afterPeakRssMiB": [
+        207.375,
+        207.640625,
+        207.578125
+      ],
+      "payloadSha256": "ae9ed3d2cd464888930578383256702765bd4b4bbae5242dd9870eac9d02b76d",
+      "compressedSha256": "b1130ea810b311fd7f906a5399ae8d3f9ea045270db5717d39a9e6e230bd39c6"
+    },
+    {
+      "corpus": "tsx",
+      "beforeMeanMsPerProcess": [
+        17.38001653333333,
+        18.832936133333327,
+        17.16593326666667
+      ],
+      "afterMeanMsPerProcess": [
+        15.454033400000002,
+        18.099749733333336,
+        15.987224999999997
+      ],
+      "beforeMedianMs": 17.38001653333333,
+      "afterMedianMs": 15.987224999999997,
+      "pairedChangesPercent": [
+        -11.081595518850417,
+        -3.8931072394085553,
+        -6.866555102806582
+      ],
+      "medianChangePercent": -6.866555102806582,
+      "changeRangePercent": [
+        -11.081595518850417,
+        -3.8931072394085553
+      ],
+      "allRunsGain3Percent": true,
+      "beforePeakRssMiB": [
+        186.953125,
+        211.3125,
+        179.6875
+      ],
+      "afterPeakRssMiB": [
+        168.703125,
+        169.59375,
+        168.953125
+      ],
+      "payloadSha256": "a140bd43540997749f79b134b8244f2043576fcd5ea2729f97ed1f2840a9c164",
+      "compressedSha256": "a20f61dd0e51447dccbb34b72f0a18588f826c3e05d98b81fa12718e7daafbb4"
+    },
+    {
+      "corpus": "c",
+      "beforeMeanMsPerProcess": [
+        5.415163933333334,
+        5.625769400000001,
+        5.318685933333335
+      ],
+      "afterMeanMsPerProcess": [
+        5.075761066666667,
+        5.126144533333334,
+        4.913925066666668
+      ],
+      "beforeMedianMs": 5.415163933333334,
+      "afterMedianMs": 5.075761066666667,
+      "pairedChangesPercent": [
+        -6.26763789324003,
+        -8.881005088240324,
+        -7.610166716743794
+      ],
+      "medianChangePercent": -7.610166716743794,
+      "changeRangePercent": [
+        -8.881005088240324,
+        -6.26763789324003
+      ],
+      "allRunsGain3Percent": true,
+      "beforePeakRssMiB": [
+        126.421875,
+        121.953125,
+        140.578125
+      ],
+      "afterPeakRssMiB": [
+        120.0,
+        120.3125,
+        119.78125
+      ],
+      "payloadSha256": "c007af2ef7d7300d8162906a5c42ec5441dfab6bb61da9a0f0fd0beb5ecc7c35",
+      "compressedSha256": "9b439b3ce6a120e63a277efc4a0d8c0e50307f63a4b0a09b4fcf870e79d247b3"
+    },
+    {
+      "corpus": "php",
+      "beforeMeanMsPerProcess": [
+        17.9265416,
+        18.758986066666672,
+        18.3827834
+      ],
+      "afterMeanMsPerProcess": [
+        16.368258133333335,
+        17.195619266666665,
+        16.26464453333333
+      ],
+      "beforeMedianMs": 18.3827834,
+      "afterMedianMs": 16.368258133333335,
+      "pairedChangesPercent": [
+        -8.692605084890804,
+        -8.333962157890795,
+        -11.52240561495531
+      ],
+      "medianChangePercent": -8.692605084890804,
+      "changeRangePercent": [
+        -11.52240561495531,
+        -8.333962157890795
+      ],
+      "allRunsGain3Percent": true,
+      "beforePeakRssMiB": [
+        187.1875,
+        194.796875,
+        191.609375
+      ],
+      "afterPeakRssMiB": [
+        168.421875,
+        168.671875,
+        168.6875
+      ],
+      "payloadSha256": "7eff0923854f462de8b5f65200437e874c3a9e07c7e612b5fdc337c20b0cba73",
+      "compressedSha256": "27cfd887caf640f1a44d93f0100cc100d3924d2c37f83d84631858c0637e66e8"
+    }
+  ],
+  "aggregate": {
+    "beforeSumMs": [
+      148.83445553333334,
+      153.25323626666665,
+      148.278825
+    ],
+    "afterSumMs": [
+      135.69489973333333,
+      139.07439686666666,
+      135.58214166666664
+    ],
+    "pairedChangesPercent": [
+      -8.828302393364318,
+      -9.251902110131137,
+      -8.562708352546878
+    ],
+    "medianChangePercent": -8.828302393364318,
+    "rangePercent": [
+      -9.251902110131137,
+      -8.562708352546878
+    ]
+  }
+}

@@ -1,0 +1,92 @@
+[
+  {
+    "corpus": "cpp",
+    "groupBytes": 23720362,
+    "groups": 43,
+    "portableGroups": 43,
+    "instructionBytes": 14741648,
+    "poolBytes": 8926904,
+    "reservedZeroBytes": 3685412
+  },
+  {
+    "corpus": "scss",
+    "groupBytes": 12509882,
+    "groups": 19,
+    "portableGroups": 19,
+    "instructionBytes": 6665776,
+    "poolBytes": 5827196,
+    "reservedZeroBytes": 1666444
+  },
+  {
+    "corpus": "java",
+    "groupBytes": 847450,
+    "groups": 23,
+    "portableGroups": 23,
+    "instructionBytes": 532976,
+    "poolBytes": 294784,
+    "reservedZeroBytes": 133244
+  },
+  {
+    "corpus": "json",
+    "groupBytes": 20464,
+    "groups": 5,
+    "portableGroups": 5,
+    "instructionBytes": 11504,
+    "poolBytes": 5728,
+    "reservedZeroBytes": 2876
+  },
+  {
+    "corpus": "rust",
+    "groupBytes": 265317,
+    "groups": 8,
+    "portableGroups": 8,
+    "instructionBytes": 172288,
+    "poolBytes": 84792,
+    "reservedZeroBytes": 43072
+  },
+  {
+    "corpus": "html",
+    "groupBytes": 8321877,
+    "groups": 60,
+    "portableGroups": 60,
+    "instructionBytes": 5012768,
+    "poolBytes": 3263068,
+    "reservedZeroBytes": 1253192
+  },
+  {
+    "corpus": "astro",
+    "groupBytes": 14591427,
+    "groups": 74,
+    "portableGroups": 74,
+    "instructionBytes": 9057888,
+    "poolBytes": 5468564,
+    "reservedZeroBytes": 2264472
+  },
+  {
+    "corpus": "tsx",
+    "groupBytes": 9503561,
+    "groups": 48,
+    "portableGroups": 48,
+    "instructionBytes": 5988000,
+    "poolBytes": 3470696,
+    "reservedZeroBytes": 1497000
+  },
+  {
+    "corpus": "c",
+    "groupBytes": 3929694,
+    "groups": 19,
+    "portableGroups": 19,
+    "instructionBytes": 2555056,
+    "poolBytes": 1352692,
+    "reservedZeroBytes": 638764
+  },
+  {
+    "corpus": "php",
+    "groupBytes": 9892145,
+    "groups": 32,
+    "portableGroups": 32,
+    "instructionBytes": 5968864,
+    "poolBytes": 3894304,
+    "reservedZeroBytes": 1492216
+  }
+]

@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
+import { checkFrame } from "./portable-eager-zstd-frame.mjs";
 
 const PROFILE = Object.freeze({
   format: "ferroni-portable-eager", version: 1,
@@ -89,8 +90,11 @@ export function decodePackage(encoded, manifest, { maxPayloadBytes = DEFAULT_MAX
   if (encoded.length !== manifest.compressedBytes || sha256(encoded) !== manifest.compressedSha256) {
     throw new Error("Compressed package length or SHA-256 mismatch");
   }
+  checkFrame(encoded, manifest.payloadBytes);
   const payload = zstdDecompressSync(encoded, {
     maxOutputLength: manifest.payloadBytes,
+    // One spare byte avoids Node allocating another chunk when this one fills.
+    chunkSize: Math.max(64, manifest.payloadBytes + 1),
     params: { [constants.ZSTD_d_windowLogMax]: 23 },
   });
   return splitPayload(payload, manifest, { maxPayloadBytes });

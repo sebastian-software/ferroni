@@ -1,0 +1,316 @@
+{
+  "context": {
+    "base": "a00cf155eff90547617a477c59e5a9e7baaac0c7",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+    "profile": "release ThinLTO",
+    "features": "portable-eager-prototype; no phase clocks",
+    "kind": "diagnostic load-probe screen; not final Criterion acceptance",
+    "samplesPerProcess": 40,
+    "warmup": 3,
+    "processRepetitions": 3,
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "backupStatus": "Backup session status:\n{\n    ClientID = \"com.apple.backupd\";\n    Running = 0;\n}\n",
+    "environment": {
+      "RUSTFLAGS": null,
+      "CARGO_ENCODED_RUSTFLAGS": null,
+      "CARGO_BUILD_TARGET": null,
+      "CARGO_PROFILE_RELEASE_LTO": null
+    },
+    "sources": {
+      "examples/scanner_group_archive.rs": "ec36322af87790e7d0d355d3d73b9970c5506756faa1cd167da9c49dcf08d880",
+      "benches/group_archive/mod.rs": "38be41eb0dbdac08637df64234f6b0f6deac49a69d5a80c1b805e94fa31fecea",
+      ".cache/portable-next-load-20261024/wire-before.rs": "63841206b5fa82300205cc869d931e9b3dd17cacdd66b6b42f08d2c93f7b76fd",
+      ".cache/portable-next-load-20261024/wire-after.rs": "7f7e350384cb5394ea470552d1b77a578e558df62382fcf8bb8bb15ae6f83de3"
+    },
+    "binaries": {
+      "before": "7855b5038b8bac5a669469d5361762191ee510f0f3232c5928278682c9d9c631",
+      "after": "25b0fe2812dddce9066e35c50ae3dd366fb808a58305f17ea698ec45425b5146"
+    }
+  },
+  "criterion": {
+    "samples": 40,
+    "warmupSeconds": 0.3,
+    "targetMeasurementSeconds": 1,
+    "bootstrapResamples": 10000,
+    "processRepetitions": 3,
+    "filter": "/load"
+  },
+  "binaries": {
+    "after": "c2a0112d40de7c4c50ed2f4745384e94295e4239121de25fd52b6205a6b27da6",
+    "before": "96509dae79cb938dc9ec034f6de84afda134686c93c5d9a2f0aaf77aca153bf0"
+  },
+  "rows": [
+    {
+      "corpus": "cpp",
+      "beforeMeanNsPerProcess": [
+        18470496.3625,
+        18625251.075,
+        18580557.2625
+      ],
+      "afterMeanNsPerProcess": [
+        17827320.9125,
+        17740799.9375,
+        17770659.8875
+      ],
+      "beforeMedianMs": 18.580557262499998,
+      "afterMedianMs": 17.7706598875,
+      "pairedChangesPercent": [
+        -3.4821773999848538,
+        -4.748666925017542,
+        -4.3588432981747305
+      ],
+      "medianChangePercent": -4.3588432981747305,
+      "changeRangePercent": [
+        -4.748666925017542,
+        -3.4821773999848538
+      ],
+      "allRunsGain3Percent": true
+    },
+    {
+      "corpus": "scss",
+      "beforeMeanNsPerProcess": [
+        6817469.25,
+        6800975.53125,
+        6849840.1
+      ],
+      "afterMeanNsPerProcess": [
+        6662025.8375,
+        6661433.61875,
+        6695634.34375
+      ],
+      "beforeMedianMs": 6.81746925,
+      "afterMedianMs": 6.662025837500001,
+      "pairedChangesPercent": [
+        -2.280075007305671,
+        -2.051792597382751,
+        -2.251231474001847
+      ],
+      "medianChangePercent": -2.251231474001847,
+      "changeRangePercent": [
+        -2.280075007305671,
+        -2.051792597382751
+      ],
+      "allRunsGain3Percent": false
+    },
+    {
+      "corpus": "java",
+      "beforeMeanNsPerProcess": [
+        1522526.6056980046,
+        1484516.7594889752,
+        1510384.3353999574
+      ],
+      "afterMeanNsPerProcess": [
+        1497483.7818966582,
+        1481118.3417117775,
+        1490257.8450890486
+      ],
+      "beforeMedianMs": 1.5103843353999573,
+      "afterMedianMs": 1.4902578450890487,
+      "pairedChangesPercent": [
+        -1.644820110704437,
+        -0.22892417720952185,
+        -1.3325409857073978
+      ],
+      "medianChangePercent": -1.3325409857073978,
+      "changeRangePercent": [
+        -1.644820110704437,
+        -0.22892417720952185
+      ],
+      "allRunsGain3Percent": false
+    },
+    {
+      "corpus": "json",
+      "beforeMeanNsPerProcess": [
+        115872.19032861525,
+        114399.18215838145,
+        113522.33002809256
+      ],
+      "afterMeanNsPerProcess": [
+        113247.54652545702,
+        112109.41512672938,
+        113227.14888662675
+      ],
+      "beforeMedianMs": 0.11439918215838145,
+      "afterMedianMs": 0.11322714888662674,
+      "pairedChangesPercent": [
+        -2.265119694134299,
+        -2.001558917162505,
+        -0.2600203337905116
+      ],
+      "medianChangePercent": -2.001558917162505,
+      "changeRangePercent": [
+        -2.265119694134299,
+        -0.2600203337905116
+      ],
+      "allRunsGain3Percent": false
+    },
+    {
+      "corpus": "rust",
+      "beforeMeanNsPerProcess": [
+        686246.1220693139,
+        684443.4678632708,
+        679681.5104849786
+      ],
+      "afterMeanNsPerProcess": [
+        664353.4776848801,
+        660657.0681842496,
+        666435.4383884937
+      ],
+      "beforeMedianMs": 0.6844434678632708,
+      "afterMedianMs": 0.6643534776848802,
+      "pairedChangesPercent": [
+        -3.190203001573022,
+        -3.47529062601456,
+        -1.9488645626145162
+      ],
+      "medianChangePercent": -3.190203001573022,
+      "changeRangePercent": [
+        -3.47529062601456,
+        -1.9488645626145162
+      ],
+      "allRunsGain3Percent": false
+    },
+    {
+      "corpus": "html",
+      "beforeMeanNsPerProcess": [
+        11373757.291666662,
+        11379396.841666665,
+        11646586.091666665
+      ],
+      "afterMeanNsPerProcess": [
+        11177493.441666668,
+        11156568.741666667,
+        11281731.533333335
+      ],
+      "beforeMedianMs": 11.379396841666665,
+      "afterMedianMs": 11.177493441666668,
+      "pairedChangesPercent": [
+        -1.725585002097707,
+        -1.958171448807311,
+        -3.132716793244583
+      ],
+      "medianChangePercent": -1.958171448807311,
+      "changeRangePercent": [
+        -3.132716793244583,
+        -1.725585002097707
+      ],
+      "allRunsGain3Percent": false
+    },
+    {
+      "corpus": "astro",
+      "beforeMeanNsPerProcess": [
+        15803401.5625,
+        15610087.9625,
+        16030080.225
+      ],
+      "afterMeanNsPerProcess": [
+        15354215.7125,
+        15421152.6125,
+        15538448.4625
+      ],
+      "beforeMedianMs": 15.8034015625,
+      "afterMedianMs": 15.4211526125,
+      "pairedChangesPercent": [
+        -2.842336494605535,
+        -1.2103413539621188,
+        -3.0669326391346785
+      ],
+      "medianChangePercent": -2.842336494605535,
+      "changeRangePercent": [
+        -3.0669326391346785,
+        -1.2103413539621188
+      ],
+      "allRunsGain3Percent": false
+    },
+    {
+      "corpus": "tsx",
+      "beforeMeanNsPerProcess": [
+        9424792.016666666,
+        9395701.391666668,
+        9435804.491666665
+      ],
+      "afterMeanNsPerProcess": [
+        8877571.224999998,
+        8847397.549999999,
+        9274715.283333333
+      ],
+      "beforeMedianMs": 9.424792016666666,
+      "afterMedianMs": 8.877571224999997,
+      "pairedChangesPercent": [
+        -5.8061842712175515,
+        -5.835688245190251,
+        -1.707212230558608
+      ],
+      "medianChangePercent": -5.8061842712175515,
+      "changeRangePercent": [
+        -5.835688245190251,
+        -1.707212230558608
+      ],
+      "allRunsGain3Percent": false
+    },
+    {
+      "corpus": "c",
+      "beforeMeanNsPerProcess": [
+        3571498.471428571,
+        3570829.0285714283,
+        3714741.817857141
+      ],
+      "afterMeanNsPerProcess": [
+        3458774.142857143,
+        3448158.625000001,
+        3554363.8357142857
+      ],
+      "beforeMedianMs": 3.571498471428571,
+      "afterMedianMs": 3.458774142857143,
+      "pairedChangesPercent": [
+        -3.156219426473361,
+        -3.4353479987392133,
+        -4.317338593274567
+      ],
+      "medianChangePercent": -3.4353479987392133,
+      "changeRangePercent": [
+        -4.317338593274567,
+        -3.156219426473361
+      ],
+      "allRunsGain3Percent": true
+    },
+    {
+      "corpus": "php",
+      "beforeMeanNsPerProcess": [
+        14524148.925,
+        14543403.2,
+        14811546.825
+      ],
+      "afterMeanNsPerProcess": [
+        14187381.2125,
+        14491777.575,
+        14767316.6375
+      ],
+      "beforeMedianMs": 14.543403199999998,
+      "afterMedianMs": 14.491777574999999,
+      "pairedChangesPercent": [
+        -2.3186743281069733,
+        -0.3549762341733098,
+        -0.2986196379256345
+      ],
+      "medianChangePercent": -0.3549762341733098,
+      "changeRangePercent": [
+        -2.3186743281069733,
+        -0.2986196379256345
+      ],
+      "allRunsGain3Percent": false
+    }
+  ],
+  "aggregate": {
+    "pairedChangesPercent": [
+      -3.025556056288181,
+      -2.661303308104579,
+      -2.662686197851838
+    ],
+    "medianChangePercent": -2.662686197851838,
+    "rangePercent": [
+      -3.025556056288181,
+      -2.661303308104579
+    ]
+  }
+}

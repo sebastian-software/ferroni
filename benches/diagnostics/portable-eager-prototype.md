@@ -61,8 +61,14 @@ program archive and the portable group archive. The version 1 JSON manifest
 records the transport profile, lengths, and SHA-256 digests of the compressed
 and decoded bytes. It does not change either Rust archive's version. `unpack`
 verifies both digests and the length prefix before writing the original files.
-The decoder enforces the 8 MiB window and declared output length, with a default
-256 MiB payload limit. Module callers can supply a different `maxPayloadBytes`.
+The decoder preflights a single dictionary-free frame with a known content size,
+as emitted by `pack`. It checks the 8 MiB window, frame/block boundaries, and
+manifest length before decoding. This explicit check also covers native
+one-shot paths that can bypass their configured window limit when output fits.
+The bounded decoder uses one output buffer sized from the manifest plus a spare
+byte, avoiding chunk concatenation and an extra allocation at the exact output
+boundary. The default payload limit is 256 MiB; module callers can supply a
+different `maxPayloadBytes`. Digest and Rust archive validation still run.
 
 For a separately downloaded `.zst` asset, serve `Content-Type: application/zstd`
 without `Content-Encoding`; pass the encoded `Buffer` and manifest to the

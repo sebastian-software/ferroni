@@ -1,0 +1,131 @@
+{
+  "base": "a00cf155eff90547617a477c59e5a9e7baaac0c7",
+  "nodeReferenceMatchesMergedSource": true,
+  "rustReferenceMatchesMergedSource": true,
+  "nodeTests": {
+    "passed": 9,
+    "scope": "guarded sized-buffer prototype and CLI, including oversized-window one-shot regression, size fields, truncation and single-frame checks"
+  },
+  "native": [
+    {
+      "corpus": "cpp",
+      "validation": {
+        "corpus": "cpp",
+        "validated_calls": 4862,
+        "variant": "portable"
+      },
+      "programSha256": "69ad76afa3d75632b6cf6690800c59ebab06b4a54b6f40010d6036406f3a987f",
+      "groupSha256": "c2914b7ef3ae01f3a3d8ac956f7625363a52b868cd6ab3c29bb3b679b1fb2f03"
+    },
+    {
+      "corpus": "scss",
+      "validation": {
+        "corpus": "scss",
+        "validated_calls": 3744,
+        "variant": "portable"
+      },
+      "programSha256": "0ec5228621c9d0275e93b9e44e989eb9b77c8b6608685d00250a2bed6d9776b3",
+      "groupSha256": "a5340c3a111db58ced998d1617bc1e58481d9e3b1fcd44bf5ef3206dd78a550a"
+    },
+    {
+      "corpus": "java",
+      "validation": {
+        "corpus": "java",
+        "validated_calls": 3920,
+        "variant": "portable"
+      },
+      "programSha256": "a28ca806d5c0a7eae76b97fe5ef50e7cc2b5babfa6b8a67e7084a4022aad53ae",
+      "groupSha256": "435d4d9de15d6d0da1cf588bf0042968cefe78822f700168ba3722cc7d93e26b"
+    },
+    {
+      "corpus": "json",
+      "validation": {
+        "corpus": "json",
+        "validated_calls": 3840,
+        "variant": "portable"
+      },
+      "programSha256": "b8fa822f46d8a28f3cb825ea9260f4e28e26a7132d46aea5027046407155562a",
+      "groupSha256": "68a4f43b2c57697010af4707b6dae306dc876e175f88443fec91cf0a93f79df3"
+    },
+    {
+      "corpus": "rust",
+      "validation": {
+        "corpus": "rust",
+        "validated_calls": 3936,
+        "variant": "portable"
+      },
+      "programSha256": "22e7805f6fe2668926d4862d0fc28746ffd25f816b3b31301458901dee608f05",
+      "groupSha256": "f023b602b36df93828d59e25615c1dbf8c3f9b0eadd52e95e65185d878cc6fba"
+    },
+    {
+      "corpus": "html",
+      "validation": {
+        "corpus": "html",
+        "validated_calls": 16176,
+        "variant": "portable"
+      },
+      "programSha256": "f3143655bc2a72481dcfef96373acc1b8020ad7709d951470e02e5d732087e73",
+      "groupSha256": "14f88d19bb001383e5eff88ca6e930fd63123516b33e80a6b20157c482b1f7b0"
+    },
+    {
+      "corpus": "astro",
+      "validation": {
+        "corpus": "astro",
+        "validated_calls": 7151,
+        "variant": "portable"
+      },
+      "programSha256": "25f749b5ec98dceef451a51ec42b1c52764dc8b94ea97f83a10ed4295238e388",
+      "groupSha256": "28fef8ca2502d178dbaaef24485f66cc1a3abb2576797040c30e18f12a8b8c05"
+    },
+    {
+      "corpus": "tsx",
+      "validation": {
+        "corpus": "tsx",
+        "validated_calls": 23088,
+        "variant": "portable"
+      },
+      "programSha256": "a2e384e7c17ce30de0139a29e7d0516200005001c33adb50248e463a7720663a",
+      "groupSha256": "ac3a52fa0c959f824bdafcb55124aed5a2fcb0a4aaad676068b32a4111e6a4b4"
+    },
+    {
+      "corpus": "c",
+      "validation": {
+        "corpus": "c",
+        "validated_calls": 4832,
+        "variant": "portable"
+      },
+      "programSha256": "ec3e89e5267d382a0132ba14bbf00feba1486b80cca6cd0c3db706b7f7194b0d",
+      "groupSha256": "fd24979a9c792f7baa4b0c796c6db1f8945bc085e16344afc93bf59c8c84baa1"
+    },
+    {
+      "corpus": "php",
+      "validation": {
+        "corpus": "php",
+        "validated_calls": 3952,
+        "variant": "portable"
+      },
+      "programSha256": "fd6118074f8f418435530d32ed53b0b3fc38658fd9ad7de6cb15ea667ca1464d",
+      "groupSha256": "3d92effc114159a2ec61cd1dbf2feea407fdf95e168a0c6d0d96b81c1ac11ba5"
+    }
+  ],
+  "fixtureSha256": {
+    "cpp": "44276a8387359c14676eda1a1a3f880d5810de5369c7934c0c078c1571b5d4eb",
+    "scss": "b72b52075c97aaac0f1e91df1affed15552652df44d0744169279372523f2d80",
+    "java": "c8ca55d21795fbc7dc81021b886b2807e98a8efd14e09774cb6fec151be645f5",
+    "json": "d8ce5a123a13c5adb53b6905a24ab2cbdc5b6095eea78a91b778ba27f0529ddb",
+    "rust": "5a1b15d53a9efa7be2985108f13ce6d852c0d74c99d975c2f85c402e36087e9c",
+    "html": "e6a07dd2c17c12e5e33b183c5a530e4fbc0ddac47f92bdffd2f43ffea1f8de46",
+    "astro": "1c7259d2b80bd03b1a7b6e132a304cd4edba9c699b217bccd847ea109189872c",
+    "tsx": "7a177d10b6bfb0d7b2bd06119f0e4223877a6d160c3911f0a0933073d65beb10",
+    "c": "0085561781cf2c8b3c383b681b064435f4b6c47852991957a62ed22fc794fff9",
+    "php": "53b64553a1ee7d6639a9a1d717270f410787998bb499e3fd0f2f4ea0d3a6a7b6"
+  },
+  "checks": {
+    "rustFocusedIntegrationTests": {
+      "passed": 5,
+      "command": "cargo test --locked --features portable-eager-prototype --test precompiled_scanner --test scanner_group_prototype"
+    },
+    "format": "cargo fmt --all --check: passed",
+    "clippy": "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings: passed"
+  }
+}
