@@ -92,14 +92,22 @@ def main():
         assert provenance["binaries"]["prepared-bench"] == expected["bench"]
     if args.portable_reference_cache:
         previous = args.portable_reference_cache.resolve()
-        previous_context = json.loads((previous / "run-01/context.json").read_text())
+        context_path = previous / "run-01/context.json"
+        if context_path.exists():
+            previous_context = json.loads(context_path.read_text())
+            expected = {"portable": previous_context["binaries"]["portable"]["example"],
+                        "portable-bench": previous_context["binaries"]["portable"]["bench"]}
+        else:
+            context_path = previous / "build-provenance.json"
+            expected = json.loads(context_path.read_text())["binaries"]
         for name, key in [("portable", "example"), ("portable-bench", "bench")]:
             dest = "before" + ("-bench" if key == "bench" else "")
             original = previous / "bin" / name
-            assert digest(original) == previous_context["binaries"]["portable"][key]
+            assert digest(original) == expected[name]
             shutil.copy2(original, bins / dest)
             provenance["binaries"][dest] = digest(original)
-        provenance["portable_reference_context_sha256"] = digest(previous / "run-01/context.json")
+        provenance["portable_reference_context"] = str(context_path)
+        provenance["portable_reference_context_sha256"] = digest(context_path)
     (cache / "build-provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     with tarfile.open(cache / "registry-source.tar.gz", "w:gz") as archive:
         for name in provenance["source_sha256"]:

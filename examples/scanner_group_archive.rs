@@ -43,6 +43,50 @@ fn main() {
     }
     let variant = &args[4];
     let bundle = support::Bundle::read(dir, name, variant);
+    #[cfg(feature = "scanner-load-profile")]
+    if command == "load-phases" {
+        bundle.validate(&corpus);
+        let count = args.get(5).map_or(20, |n| n.parse::<usize>().unwrap());
+        let mut rows = Vec::new();
+        for _ in 0..count {
+            let (scanners, samples) =
+                ferroni::scanner::load_profile::measure(|| bundle.scanners(&corpus));
+            rows.push(
+                samples
+                    .iter()
+                    .map(|s| {
+                        json!({"phase":s.phase,"calls":s.calls,
+                "inclusive_ns":s.inclusive_ns,"exclusive_ns":s.exclusive_ns})
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            std::hint::black_box(&scanners);
+        }
+        println!(
+            "{}",
+            json!({"corpus":name,"variant":variant,"samples":rows})
+        );
+        return;
+    }
+    if command == "load-probe" {
+        bundle.validate(&corpus);
+        for _ in 0..3 {
+            std::hint::black_box(bundle.scanners(&corpus));
+        }
+        let count = args.get(5).map_or(40, |n| n.parse::<usize>().unwrap());
+        let mut samples = Vec::with_capacity(count);
+        for _ in 0..count {
+            let started = Instant::now();
+            let scanners = bundle.scanners(&corpus);
+            samples.push(started.elapsed().as_nanos());
+            std::hint::black_box(&scanners);
+        }
+        println!(
+            "{}",
+            json!({"corpus":name,"variant":variant,"samples_ns":samples})
+        );
+        return;
+    }
     if command == "validate" {
         bundle.validate(&corpus);
         println!(

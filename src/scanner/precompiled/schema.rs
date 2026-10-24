@@ -670,6 +670,9 @@ pub(super) fn read_reg(
     input: &mut Reader<'_>,
     settings: super::PatternSettings,
 ) -> Result<RegexType> {
+    #[cfg(feature = "scanner-load-profile")]
+    let _phase =
+        crate::scanner::load_profile::scope(crate::scanner::load_profile::Phase::ProgramDecode);
     let mut reg = RegexType {
         enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
         backtrack_warnings: Wire::read(input)?,
@@ -728,8 +731,20 @@ pub(super) fn read_reg(
         search_jump: None,
         required_literals: read_required_literals(input)?,
     };
-    super::validate::program(&reg)?;
-    crate::regcomp::rebuild_precompiled_search(&mut reg);
+    {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase = crate::scanner::load_profile::scope(
+            crate::scanner::load_profile::Phase::ProgramValidate,
+        );
+        super::validate::program(&reg)?;
+    }
+    {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase = crate::scanner::load_profile::scope(
+            crate::scanner::load_profile::Phase::ProgramHelpers,
+        );
+        crate::regcomp::rebuild_precompiled_search(&mut reg);
+    }
     Ok(reg)
 }
 

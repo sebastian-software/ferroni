@@ -62,6 +62,7 @@ def main():
     parser.add_argument("--measure-only", action="store_true", help="Resume validated artifacts without rebuilding or exporting")
     parser.add_argument("--variants", nargs="+", choices=["eager", "control", "nfa", "dfa", "dense", "prepared", "portable", "before"], default=VARIANTS)
     parser.add_argument("--prepare-dense", action="store_true")
+    parser.add_argument("--before-artifacts", type=Path, help="Artifact directory understood by the frozen before binary")
     parser.add_argument("--repetitions", type=int, default=3)
     args = parser.parse_args()
     if not (args.prebuilt or args.measure_only) and any(v in args.variants for v in ["prepared", "before"]):
@@ -81,7 +82,7 @@ def main():
         context["source_sha256"]["scripts/compare-scanner-group-archives.py"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
         context["boundaries"]["memory"] = "fresh Python wrapper process using resource.getrusage(RUSAGE_CHILDREN) for one driver child; Darwin ru_maxrss bytes; fixture parsing, archive bytes/indexes, decoded programs, scanners, and four search passes"
         write(out / "context.json", context)
-        measure(out, cache, binaries, args.repetitions, context.get("variants", args.variants))
+        measure(out, cache, binaries, args.repetitions, context.get("variants", args.variants), context.get("before_artifacts"))
         return
     out.mkdir(parents=True, exist_ok=False)
     artifacts = cache / "artifacts"
@@ -117,6 +118,7 @@ def main():
                      for label, bins in binaries.items()},
         "fixture_sha256": {case: hashlib.sha256((ROOT / f"benches/{case}_scanner/trace.json").read_bytes()).hexdigest() for case in CASES},
         "repetitions": args.repetitions, "variants": args.variants,
+        "before_artifacts": str(args.before_artifacts.resolve()) if args.before_artifacts else None,
         "criterion": {"samples": 40, "warmup_seconds": 0.3, "measurement_seconds": 1, "bootstrap_resamples": 10000},
         "build_environment": {key: os.environ.get(key) for key in ["RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_TARGET", "CARGO_PROFILE_RELEASE_LTO", "CARGO_PROFILE_BENCH_LTO"]},
         "dfa_limits": {"dense_bytes_per_automaton": 16 << 20, "determinize_workspace_bytes": 64 << 20,
@@ -160,12 +162,14 @@ def main():
         programs = (artifacts / f"{case}.programs").read_bytes()
         for variant in args.variants:
             bins = binaries[{"eager":"eager", "nfa":"nfa", "dfa":"prototype", "dense":"dense", "prepared":"prepared", "portable":"portable", "before":"before", "control":"portable" if "portable" in binaries else "prepared"}[variant]]
-            validated = command([str(bins["example"]), "validate", case, str(artifacts), "portable" if variant == "before" else variant], timeout=90)
+            variant_artifacts = args.before_artifacts.resolve() if variant == "before" and args.before_artifacts else artifacts
+            assert (variant_artifacts / f"{case}.programs").read_bytes() == programs
+            validated = command([str(bins["example"]), "validate", case, str(variant_artifacts), "portable" if variant == "before" else variant], timeout=90)
             validation = json.loads(validated.stdout)
             validation["variant"] = variant
             validations.append(validation)
             write(out / "validation.json", validations)
-            groups = b"" if variant in ["eager", "control"] else (artifacts / f"{case}.{'portable' if variant == 'before' else variant}").read_bytes()
+            groups = b"" if variant in ["eager", "control"] else (variant_artifacts / f"{case}.{'portable' if variant == 'before' else variant}").read_bytes()
             payload = struct.pack("<I", len(programs)) + programs + groups
             compressed = gzip.compress(payload, compresslevel=9, mtime=0)
             assert gzip.decompress(compressed) == payload
@@ -183,13 +187,20 @@ def main():
             write(out / "sizes.json", sizes)
         print("Validated and compressed", case, flush=True)
     if not args.prepare_only:
-        measure(out, cache, binaries, args.repetitions, args.variants)
+        measure(out, cache, binaries, args.repetitions, args.variants, context["before_artifacts"])
 
 
-def measure(out, cache, binaries, repetitions, variants):
+def measure(out, cache, binaries, repetitions, variants, before_artifacts=None):
     # All lanes must reproduce every recorded capture before timing starts.
     memory = []
     artifacts = cache / "artifacts"
+    for row in json.loads((out / "sizes.json").read_text()):
+        selected = Path(before_artifacts) if row["variant"] == "before" and before_artifacts else artifacts
+        programs = (selected / f"{row['corpus']}.programs").read_bytes()
+        variant = "portable" if row["variant"] == "before" else row["variant"]
+        groups = b"" if variant in ["eager", "control"] else (selected / f"{row['corpus']}.{variant}").read_bytes()
+        payload = struct.pack("<I", len(programs)) + programs + groups
+        assert hashlib.sha256(payload).hexdigest() == row["payload_sha256"], (row["corpus"], row["variant"])
     for repetition in range(repetitions):
         order = variants[repetition % len(variants):] + variants[:repetition % len(variants)]
         cases = CASES[repetition:] + CASES[:repetition]
@@ -203,8 +214,9 @@ r=json.loads(p.stdout)
 r['max_rss_bytes']=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
 print(json.dumps(r))
 """
+                variant_artifacts = Path(before_artifacts) if variant == "before" and before_artifacts else artifacts
                 timed = command([sys.executable, "-c", helper, str(bins["example"]), "memory", case,
-                                 str(artifacts), "portable" if variant == "before" else variant], timeout=90)
+                                 str(variant_artifacts), "portable" if variant == "before" else variant], timeout=90)
                 row = json.loads(timed.stdout)
                 row["variant"] = variant
                 row["repetition"] = repetition + 1
@@ -212,7 +224,7 @@ print(json.dumps(r))
                 write(out / "memory.json", memory)
                 print("Benchmark", label, flush=True)
                 env = {**os.environ, "LC_ALL": "C", "GROUP_ARCHIVE_CORPUS": case,
-                       "GROUP_ARCHIVE_VARIANT": "portable" if variant == "before" else variant, "GROUP_ARCHIVE_DIR": str(artifacts),
+                       "GROUP_ARCHIVE_VARIANT": "portable" if variant == "before" else variant, "GROUP_ARCHIVE_DIR": str(variant_artifacts),
                        "GROUP_ARCHIVE_OUTPUT": str(out / "criterion" / label)}
                 completed = subprocess.run([str(bins["bench"]), "--bench", "--noplot"], cwd=ROOT, env=env,
                                            text=True, capture_output=True, timeout=180, check=True)

@@ -58,6 +58,8 @@ precompiled = []
 scanner-group-nfa-prototype = ["precompiled", "dfa-prefilter"]
 # Own portable scanner bytecode; no dependency snapshot API.
 portable-eager-prototype = ["scanner-group-nfa-prototype"]
+# Diagnostic phase clocks, compiled out of ordinary builds and timings.
+scanner-load-profile = ["precompiled"]
 scanner-group-prototype = ["scanner-group-nfa-prototype", "regex-automata/dfa-build"]
 scanner-group-dense-prototype = ["scanner-group-prototype"]
 # Benchmark-comparison harness: links a local upstream Oniguruma checkout

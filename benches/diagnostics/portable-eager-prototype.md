@@ -7,7 +7,11 @@ objects. Both producer and consumer use unmodified registry dependencies. The
 default features and the ordinary precompiled-pattern format are unchanged.
 
 This is an intermediate prototype. Its API is hidden from the default docs and
-its group format has no compatibility promise. Only Eager consumes the image;
+its group format has no compatibility promise. New exports use `FPRT002` with
+four-lane corruption checks for the program binding and group records; the
+consumer also accepts legacy `FPRT001` images. The ordinary program format stays
+at version 2. These checks detect corruption, not producer authenticity, and
+structural validation still runs. Only Eager consumes the image;
 Auto and Off keep their existing behavior. Per-pattern literal helpers still
 use ordinary Eager preparation, and mutable transition caches warm at runtime.
 
@@ -34,6 +38,46 @@ Change `GROUP_ARCHIVE_VARIANT` to `eager` to compare ordinary Eager using the sa
 program archive. The diagnostics runner retains raw samples, capture checks,
 compression sizes, and fresh-process memory measurements.
 
+## Package with Zstd-19
+
+The transport prototype uses Zstd level 19 with an explicit 8 MiB window and
+frame checksums. The [codec comparison](portable-codec-levels-20261024/README.md)
+explains this choice. Compression runs once on the producer; no codec dependency
+is added to the Rust engine. The Node helper requires built-in Zstd support and
+is tested with Node 24.22.0.
+
+After exporting the two archives above:
+
+```sh
+node scripts/portable-eager-package.mjs pack .cache/portable-example cpp .cache/portable-packages
+node scripts/portable-eager-package.mjs unpack .cache/portable-packages cpp .cache/portable-consumer
+cargo run --release --locked --features portable-eager-prototype --example scanner_group_archive -- validate cpp .cache/portable-consumer portable
+node --test scripts/portable-eager-package.test.mjs
+```
+
+`pack` writes `cpp.eager.zst` and `cpp.eager.json`. The decoded layout matches the
+codec benchmark: a little-endian `u32` program length, followed by the ordinary
+program archive and the portable group archive. The version 1 JSON manifest
+records the transport profile, lengths, and SHA-256 digests of the compressed
+and decoded bytes. It does not change either Rust archive's version. `unpack`
+verifies both digests and the length prefix before writing the original files.
+The decoder enforces the 8 MiB window and declared output length, with a default
+256 MiB payload limit. Module callers can supply a different `maxPayloadBytes`.
+
+For a separately downloaded `.zst` asset, serve `Content-Type: application/zstd`
+without `Content-Encoding`; pass the encoded `Buffer` and manifest to the
+exported `decodePackage()` helper. If an HTTP client has already decompressed a
+`Content-Encoding: zstd` response, pass its decoded `Buffer` to `splitPayload()`
+instead. Both return `programs` and `groups` views of the decoded buffer for the
+existing cache APIs. Do not decompress an already-decoded response a second
+time. The helper is Node tooling, not a browser SDK or a CDN deployment.
+
+Obtain the manifest through a trusted channel: the hashes detect byte changes
+relative to that manifest; they do not authenticate its publisher. Rust still
+validates the archive structures and program/group binding. The wrapper and
+manifest remain prototypes with no compatibility promise. Transport digest
+checks, network transfer, and file I/O are outside the earlier codec timings.
+
 ## Evidence and scope
 
 The [optimized-kernel comparison](portable-kernel-20261023/README.md) measures ten
@@ -57,10 +101,22 @@ RSS includes retained image bytes, decoded structures, scanners, and fixture
 parsing; there is no general memory reduction. This is local diagnostic
 evidence, not a published cross-platform speed claim.
 
-The next performance work should split loading into validation, indexing,
-decoding, literal-helper preparation, and scanner/cache construction. Prioritize
-absolute time in the large corpora: the measured C++ load falls from 91.5 to
-24.7 ms, while JSON falls from 0.173 to 0.123 ms. The smaller percentage gain in
-JSON represents about 50 microseconds, so the percentage range alone does not
-identify the best optimization target. Decompression should also be measured
-with Rust load in the eventual application path.
+## Load-phase diagnostics
+
+The optional `scanner-load-profile` feature records nested thread-local phase
+clocks for indexing, checksums, decoding, validation, helpers, and scanner/cache
+construction. It is excluded from ordinary builds and final Criterion timings.
+For example:
+
+```sh
+cargo run --release --locked --features portable-eager-prototype,scanner-load-profile --example scanner_group_archive -- load-phases cpp .cache/portable-example portable 20
+```
+
+`load-probe` is a short diagnostic screen with fresh scanner caches and teardown
+outside the clock. Use the Criterion matrix for final comparisons. The
+[load optimization report](portable-load-20261023/README.md) retains phase
+measurements, rejected experiments, frozen references, and the broader results.
+
+The comparison runner accepts `--before-artifacts` when a frozen executable
+needs an older group format. Program payloads must match across artifact
+directories; all combined payload hashes are checked again before timing.
