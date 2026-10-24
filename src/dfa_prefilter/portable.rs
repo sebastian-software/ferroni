@@ -16,6 +16,7 @@ fn index(sid: u32) -> usize {
     (sid & INDEX) as usize
 }
 const MAX_WORDS: usize = 8 << 20;
+const _: () = assert!(MAX_NFA_STATES <= u16::MAX as usize + 1);
 
 pub(super) struct Program {
     code: Vec<[u32; 4]>,
@@ -143,20 +144,12 @@ impl Program {
             classes[byte as usize] = *ids.entry(pair).or_insert(next);
         }
         out.extend(classes);
-        put_len(out, code.len())?;
-        for op in code {
-            for word in op {
-                put_u32(out, word);
-            }
-        }
-        put_len(out, pool.len())?;
-        for word in pool {
-            put_u32(out, word);
-        }
+        write_instructions(&code, out)?;
+        write_pool(&pool, out)?;
         Ok(())
     }
 
-    fn read(input: &mut Reader<'_>, patterns: usize) -> Result<Self> {
+    fn read(input: &mut Reader<'_>, patterns: usize, compact: bool) -> Result<Self> {
         #[cfg(feature = "scanner-load-profile")]
         let _phase = crate::scanner::load_profile::scope(
             crate::scanner::load_profile::Phase::PortableDecode,
@@ -170,26 +163,60 @@ impl Program {
         let unanchored = input.u32()?;
         let classes: [u8; 256] = input.take(256)?.try_into().unwrap();
         let count = input.count(MAX_NFA_STATES)?;
-        let bytes = input.take(
-            count
-                .checked_mul(16)
-                .ok_or(PrecompiledError::ResourceLimit)?,
-        )?;
-        let code: Vec<[u32; 4]> = bytes
-            .as_chunks::<16>()
-            .0
-            .iter()
-            .map(|op| {
-                let words = op.as_chunks::<4>().0;
-                [
-                    u32::from_le_bytes(words[0]),
-                    u32::from_le_bytes(words[1]),
-                    u32::from_le_bytes(words[2]),
-                    u32::from_le_bytes(words[3]),
-                ]
-            })
-            .collect();
-        let pool = input.u32s(MAX_WORDS)?;
+        let code: Vec<[u32; 4]> = if compact {
+            // The opcode occupies three bits of the first operand word. The
+            // byte planes group repeated high bytes for transport compression.
+            // Decode directly into the ordinary, validated runtime layout.
+            let columns = read_columns::<8>(input, count)?;
+            (0..count)
+                .map(|i| {
+                    let packed = u32::from_le_bytes([
+                        columns[0][i],
+                        columns[1][i],
+                        columns[2][i],
+                        columns[3][i],
+                    ]);
+                    let b = u32::from_le_bytes([
+                        columns[4][i],
+                        columns[5][i],
+                        columns[6][i],
+                        columns[7][i],
+                    ]);
+                    [packed & 7, packed >> 3, b, 0]
+                })
+                .collect()
+        } else {
+            let bytes = input.take(
+                count
+                    .checked_mul(16)
+                    .ok_or(PrecompiledError::ResourceLimit)?,
+            )?;
+            bytes
+                .as_chunks::<16>()
+                .0
+                .iter()
+                .map(|op| {
+                    let words = op.as_chunks::<4>().0;
+                    [
+                        u32::from_le_bytes(words[0]),
+                        u32::from_le_bytes(words[1]),
+                        u32::from_le_bytes(words[2]),
+                        u32::from_le_bytes(words[3]),
+                    ]
+                })
+                .collect()
+        };
+        let pool = if compact {
+            // Range endpoints and every state ID fit in 16 bits under the
+            // existing 65,536-state limit. Widen before the shared validator.
+            let len = input.count(MAX_WORDS)?;
+            let columns = read_columns::<2>(input, len)?;
+            (0..len)
+                .map(|i| u32::from(u16::from_le_bytes([columns[0][i], columns[1][i]])))
+                .collect()
+        } else {
+            input.u32s(MAX_WORDS)?
+        };
         #[cfg(feature = "scanner-load-profile")]
         let _phase = crate::scanner::load_profile::scope(
             crate::scanner::load_profile::Phase::PortableValidate,
@@ -284,22 +311,53 @@ impl Program {
         put_u32(out, self.anchored);
         put_u32(out, self.unanchored);
         out.extend(self.classes);
-        put_len(out, self.code.len())?;
-        for op in &self.code {
-            for &word in op {
-                put_u32(out, word);
-            }
-        }
-        put_len(out, self.pool.len())?;
-        for &word in &self.pool {
-            put_u32(out, word);
-        }
+        write_instructions(&self.code, out)?;
+        write_pool(&self.pool, out)?;
         Ok(())
     }
 
     fn memory_usage(&self) -> usize {
         self.code.capacity() * 16 + self.pool.capacity() * 4 + self.representatives.capacity()
     }
+}
+
+fn read_columns<'a, const N: usize>(input: &mut Reader<'a>, len: usize) -> Result<[&'a [u8]; N]> {
+    let bytes = input.take(len.checked_mul(N).ok_or(PrecompiledError::ResourceLimit)?)?;
+    Ok(std::array::from_fn(|i| &bytes[i * len..(i + 1) * len]))
+}
+
+// Omit the reserved runtime word, pack the opcode into the bounded first
+// operand, and group equal byte positions. This exposes repeated high bytes
+// to the outer codec while preserving branch-free fixed-width decoding.
+fn write_instructions(code: &[[u32; 4]], out: &mut Vec<u8>) -> Result<()> {
+    put_len(out, code.len())?;
+    if code
+        .iter()
+        .any(|&[op, a, _, _]| op > 4 || a > u32::MAX >> 3)
+    {
+        return Err(PrecompiledError::ResourceLimit);
+    }
+    for byte in 0..4 {
+        out.extend(
+            code.iter()
+                .map(|&[op, a, _, _]| ((a << 3 | op) >> (byte * 8)) as u8),
+        );
+    }
+    for byte in 0..4 {
+        out.extend(code.iter().map(|op| (op[2] >> (byte * 8)) as u8));
+    }
+    Ok(())
+}
+
+fn write_pool(pool: &[u32], out: &mut Vec<u8>) -> Result<()> {
+    put_len(out, pool.len())?;
+    if pool.iter().any(|&word| word > u32::from(u16::MAX)) {
+        return Err(PrecompiledError::ResourceLimit);
+    }
+    for byte in 0..2 {
+        out.extend(pool.iter().map(|word| (word >> (byte * 8)) as u8));
+    }
+    Ok(())
 }
 
 // Contexts are invariant across all bytes in a transition class.
@@ -556,9 +614,9 @@ impl Machine {
 }
 
 impl Portable {
-    pub(super) fn read(input: &mut Reader<'_>, patterns: usize) -> Result<Self> {
-        let forward = Program::read(input, patterns)?;
-        let reverse = Program::read(input, patterns)?;
+    pub(super) fn read(input: &mut Reader<'_>, patterns: usize, compact: bool) -> Result<Self> {
+        let forward = Program::read(input, patterns, compact)?;
+        let reverse = Program::read(input, patterns, compact)?;
         if forward.reverse || !reverse.reverse {
             return Err(PrecompiledError::InvalidData);
         }
@@ -755,6 +813,95 @@ impl Caches {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scanner::group_prototype::put_u32s;
+
+    fn small_program() -> Program {
+        Program {
+            code: vec![
+                [0, 0, 0, 0],
+                [1, 0, 1, 0],
+                [2, 2, 1, 0],
+                [3, 1, 4, 0],
+                [4, 0, 0, 0],
+            ],
+            pool: vec![u32::from(b'a') | u32::from(b'z') << 8, 4, 3],
+            classes: std::array::from_fn(|i| i as u8),
+            representatives: (0..=255).collect(),
+            anchored: 1,
+            unanchored: 2,
+            reverse: false,
+            looks: true,
+        }
+    }
+
+    #[test]
+    fn compact_and_legacy_instructions_decode_to_the_same_runtime_program() {
+        let program = small_program();
+        let mut compact = Vec::new();
+        program.write_loaded(&mut compact).unwrap();
+        let mut legacy = compact[..265].to_vec();
+        put_len(&mut legacy, program.code.len()).unwrap();
+        for op in &program.code {
+            for &word in op {
+                put_u32(&mut legacy, word);
+            }
+        }
+        put_u32s(&mut legacy, &program.pool).unwrap();
+        assert!(compact.len() < legacy.len());
+        for (bytes, compact) in [(&compact, true), (&legacy, false)] {
+            let mut input = Reader::new(bytes);
+            let loaded = Program::read(&mut input, 1, compact).unwrap();
+            input.done().unwrap();
+            assert_eq!(loaded.code, program.code);
+            assert_eq!(loaded.pool, program.pool);
+            assert_eq!(loaded.classes, program.classes);
+            assert_eq!(loaded.representatives, program.representatives);
+            assert_eq!(loaded.anchored, program.anchored);
+            assert_eq!(loaded.unanchored, program.unanchored);
+            assert_eq!(loaded.reverse, program.reverse);
+            assert_eq!(loaded.looks, program.looks);
+        }
+        // The reserved legacy word remains validated rather than discarded.
+        legacy[269 + 12] = 1;
+        assert!(Program::read(&mut Reader::new(&legacy), 1, false).is_err());
+    }
+
+    #[test]
+    fn compact_instructions_reject_truncation_bad_opcodes_and_invalid_operands() {
+        let mut bytes = Vec::new();
+        small_program().write_loaded(&mut bytes).unwrap();
+        for end in 0..bytes.len() {
+            assert!(Program::read(&mut Reader::new(&bytes[..end]), 1, true).is_err());
+        }
+        let mut damaged = bytes.clone();
+        damaged[269] = 5;
+        assert!(Program::read(&mut Reader::new(&damaged), 1, true).is_err());
+        let mut damaged = bytes.clone();
+        damaged[265..269].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(matches!(
+            Program::read(&mut Reader::new(&damaged), 1, true),
+            Err(PrecompiledError::ResourceLimit)
+        ));
+        let mut damaged = bytes;
+        // Low byte of the range instruction's packed first operand: the
+        // opcode remains valid, but the range extends beyond the pool.
+        damaged[270] = 3 << 3 | 1;
+        assert!(Program::read(&mut Reader::new(&damaged), 1, true).is_err());
+    }
+
+    #[test]
+    fn compact_pool_preserves_the_largest_state_id_and_checks_narrowing() {
+        let mut program = small_program();
+        program.code.resize(MAX_NFA_STATES, [0, 0, 0, 0]);
+        program.pool[1] = u32::from(u16::MAX);
+        program.pool[2] = u32::from(u16::MAX);
+        let mut bytes = Vec::new();
+        program.write_loaded(&mut bytes).unwrap();
+        let loaded = Program::read(&mut Reader::new(&bytes), 1, true).unwrap();
+        assert_eq!(loaded.pool, program.pool);
+        assert_eq!(loaded.code.len(), MAX_NFA_STATES);
+        assert!(write_pool(&[u32::from(u16::MAX) + 1], &mut Vec::new()).is_err());
+    }
 
     #[test]
     fn native_search_matches_public_hybrid_on_unseen_inputs_and_spans() {
@@ -794,7 +941,7 @@ mod tests {
             Program::write(&forward, &mut bytes).unwrap();
             Program::write(&reverse, &mut bytes).unwrap();
             let mut input = Reader::new(&bytes);
-            let portable = Portable::read(&mut input, patterns.len()).unwrap();
+            let portable = Portable::read(&mut input, patterns.len(), true).unwrap();
             input.done().unwrap();
             let mut restored = Vec::new();
             portable.write(&mut restored).unwrap();
@@ -929,7 +1076,9 @@ mod tests {
             }
             assert!(caches.walk.clears + caches.forward.clears + caches.reverse.clears > 0);
             for end in 0..bytes.len() {
-                assert!(Portable::read(&mut Reader::new(&bytes[..end]), patterns.len()).is_err());
+                assert!(
+                    Portable::read(&mut Reader::new(&bytes[..end]), patterns.len(), true).is_err()
+                );
             }
         }
     }

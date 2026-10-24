@@ -118,7 +118,7 @@ fn encode(automata: &Automata, kind: GroupKind) -> Result<Vec<u8>> {
     let portable = kind == GroupKind::Portable;
     #[cfg(not(feature = "portable-eager-prototype"))]
     let portable = false;
-    let mut out = vec![if portable { 5 } else { 1 }];
+    let mut out = vec![if portable { 6 } else { 1 }];
     #[cfg(feature = "scanner-group-prototype")]
     if full.is_some() {
         out[0] = FROZEN_TAG;
@@ -197,17 +197,18 @@ pub(crate) fn decode(bytes: &[u8], count: usize) -> Result<Option<Automata>> {
     #[cfg(feature = "portable-eager-prototype")]
     let mut portable = None;
     #[cfg(feature = "portable-eager-prototype")]
-    if tag == 5 {
+    if matches!(tag, 5 | 6) {
         portable = Some(Arc::new(portable::Portable::read(
             &mut input,
             entries.len(),
+            tag == 6,
         )?));
     }
     #[cfg(feature = "scanner-group-prototype")]
     let mut frozen = None;
     let (nfa, nfarev) = match tag {
         #[cfg(feature = "portable-eager-prototype")]
-        5 => (thompson::NFA::never_match(), thompson::NFA::never_match()),
+        5 | 6 => (thompson::NFA::never_match(), thompson::NFA::never_match()),
         1 => {
             let nfa = read_nfa(&mut input)?;
             let reverse = read_nfa(&mut input)?;

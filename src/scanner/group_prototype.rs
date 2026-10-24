@@ -8,7 +8,8 @@ use std::sync::atomic::AtomicUsize;
 pub(crate) type Result<T> = std::result::Result<T, PrecompiledError>;
 const MAGIC: &[u8; 8] = b"FGRP002\0";
 const PORTABLE_MAGIC_V1: &[u8; 8] = b"FPRT001\0";
-const PORTABLE_MAGIC: &[u8; 8] = b"FPRT002\0";
+const PORTABLE_MAGIC_V2: &[u8; 8] = b"FPRT002\0";
+const PORTABLE_MAGIC: &[u8; 8] = b"FPRT003\0";
 const MAX_ARCHIVE: usize = 512 << 20;
 
 /// Representation to prepare before exporting a scanner-group experiment.
@@ -56,8 +57,10 @@ impl GroupSource {
         }
         let mut input = Reader::new(&bytes);
         let magic = input.take(8)?;
-        let parallel_checksum = magic == PORTABLE_MAGIC;
-        if (magic != MAGIC && magic != PORTABLE_MAGIC && magic != PORTABLE_MAGIC_V1)
+        let portable =
+            magic == PORTABLE_MAGIC || magic == PORTABLE_MAGIC_V2 || magic == PORTABLE_MAGIC_V1;
+        let parallel_checksum = magic == PORTABLE_MAGIC || magic == PORTABLE_MAGIC_V2;
+        if (magic != MAGIC && !portable)
             || input.u32()? != programs.prototype_checksum(parallel_checksum)
         {
             return Err(PrecompiledError::UnsupportedFormat);
@@ -66,7 +69,7 @@ impl GroupSource {
         // prototype accepts only the producing target's endianness.
         let endian = input.byte()?;
         if endian
-            != if magic == PORTABLE_MAGIC || magic == PORTABLE_MAGIC_V1 {
+            != if portable {
                 1
             } else {
                 u8::from(cfg!(target_endian = "little"))
@@ -96,7 +99,7 @@ impl GroupSource {
                 Some(0) => stats.disabled += 1,
                 Some(1) => stats.nfa += 1,
                 #[cfg(feature = "portable-eager-prototype")]
-                Some(5) => stats.portable += 1,
+                Some(5 | 6) => stats.portable += 1,
                 Some(2 | 3) => stats.dfa += 1,
                 _ => return Err(PrecompiledError::InvalidData),
             }
@@ -393,7 +396,9 @@ mod tests {
             let checksum = precompiled::checksum(&legacy[range.clone()]);
             legacy[range.start - 8..range.start - 4].copy_from_slice(&checksum.to_le_bytes());
         }
-        for bytes in [image.clone(), legacy] {
+        let mut previous = image.clone();
+        previous[..8].copy_from_slice(PORTABLE_MAGIC_V2);
+        for bytes in [image.clone(), previous, legacy] {
             let mut consumer = ScannerPatternCache::new();
             consumer.add_precompiled(programs.clone());
             consumer.add_group_prototype(bytes).unwrap();
@@ -412,7 +417,7 @@ mod tests {
         let (range, _) = source.groups.values().next().unwrap();
         // Skip the group indices and settle limit to reach the forward program.
         let mut input = Reader::new(&damaged[range.clone()]);
-        assert_eq!(input.byte().unwrap(), 5);
+        assert_eq!(input.byte().unwrap(), 6);
         for _ in 0..3 {
             input.u32s(65_535).unwrap();
         }

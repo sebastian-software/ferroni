@@ -7,9 +7,12 @@ objects. Both producer and consumer use unmodified registry dependencies. The
 default features and the ordinary precompiled-pattern format are unchanged.
 
 This is an intermediate prototype. Its API is hidden from the default docs and
-its group format has no compatibility promise. New exports use `FPRT002` with
-four-lane corruption checks for the program binding and group records; the
-consumer also accepts legacy `FPRT001` images. The ordinary program format stays
+its group format has no compatibility promise. New exports use `FPRT003` with
+compact instructions, 16-bit branch/range words, and byte planes that expose
+repeated high bytes to transport compression. Loading widens directly into the
+existing execution layout and runs the same structural validator. The program
+binding and group records retain their four-lane corruption checks; the
+consumer also accepts legacy `FPRT001` and `FPRT002` images. The ordinary program format stays
 at version 2. These checks detect corruption, not producer authenticity, and
 structural validation still runs. Only Eager consumes the image;
 Auto and Off keep their existing behavior. Per-pattern literal helpers still
