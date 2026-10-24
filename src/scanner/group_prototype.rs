@@ -410,9 +410,18 @@ mod tests {
         }
         let mut damaged = image;
         let (range, _) = source.groups.values().next().unwrap();
-        // Tag 5 is followed by the forward program's direction and entry states.
+        // Skip the group indices and settle limit to reach the forward program.
+        let mut input = Reader::new(&damaged[range.clone()]);
+        assert_eq!(input.byte().unwrap(), 5);
+        for _ in 0..3 {
+            input.u32s(65_535).unwrap();
+        }
+        input.u32().unwrap();
+        assert_eq!(input.byte().unwrap(), 0);
+        let anchored = range.end - input.bytes.len();
         // A valid checksum must never bypass validation of those entry states.
-        damaged[range.start + 2..range.start + 6].copy_from_slice(&u32::MAX.to_le_bytes());
+        damaged[anchored..anchored + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(group_archive::decode(&damaged[range.clone()], patterns.len()).is_err());
         let checksum = record_checksum(&damaged[range.clone()], true);
         damaged[range.start - 8..range.start - 4].copy_from_slice(&checksum.to_le_bytes());
         let mut consumer = ScannerPatternCache::new();
