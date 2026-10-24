@@ -400,6 +400,10 @@ struct ScannerGuideDoctests;
 #[doc = include_str!("../docs/app/routes/guide/precompiled-patterns.mdx")]
 struct PrecompiledPatternsGuideDoctests;
 
+#[cfg(all(doctest, ferroni_guide_docs, feature = "precompiled-eager"))]
+#[doc = include_str!("../docs/app/routes/guide/precompiled-eager.mdx")]
+struct PrecompiledEagerGuideDoctests;
+
 #[cfg(all(doctest, ferroni_guide_docs))]
 #[doc = include_str!("../docs/app/routes/guide/untrusted-input.mdx")]
 struct UntrustedInputDoctests;

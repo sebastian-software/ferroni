@@ -71,7 +71,7 @@ use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "scanner-group-nfa-prototype")]
 pub(crate) mod group_archive;
-#[cfg(feature = "portable-eager-prototype")]
+#[cfg(feature = "precompiled-eager")]
 mod portable;
 
 const MIB: usize = 1 << 20;
@@ -1509,7 +1509,7 @@ pub(crate) struct Automata {
     settle: usize,
     #[cfg(feature = "scanner-group-prototype")]
     frozen: Option<Arc<group_archive::Frozen>>,
-    #[cfg(feature = "portable-eager-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     portable: Option<Arc<portable::Portable>>,
 }
 
@@ -1587,7 +1587,7 @@ pub(crate) struct SetPrefilter {
     candidate_memo: CandidateMemo,
     #[cfg(feature = "scanner-group-prototype")]
     frozen: Option<Arc<group_archive::Frozen>>,
-    #[cfg(feature = "portable-eager-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     portable: Option<(Arc<portable::Portable>, portable::Caches)>,
 }
 
@@ -1927,7 +1927,7 @@ impl Automata {
             settle,
             #[cfg(feature = "scanner-group-prototype")]
             frozen: None,
-            #[cfg(feature = "portable-eager-prototype")]
+            #[cfg(feature = "precompiled-eager")]
             portable: None,
         })
     }
@@ -1939,7 +1939,7 @@ impl Automata {
         if let Some(frozen) = &self.frozen {
             return frozen.nfa_states;
         }
-        #[cfg(feature = "portable-eager-prototype")]
+        #[cfg(feature = "precompiled-eager")]
         if let Some(portable) = &self.portable {
             return portable.nfa_states();
         }
@@ -1949,7 +1949,7 @@ impl Automata {
     /// Heap memory of the automata, in bytes, without any cache.
     pub(crate) fn memory_usage(&self) -> usize {
         let bytes = automata_memory_usage(&self.dfa, &self.search);
-        #[cfg(feature = "portable-eager-prototype")]
+        #[cfg(feature = "precompiled-eager")]
         let bytes = bytes + self.portable.as_ref().map_or(0, |p| p.memory_usage());
         bytes
     }
@@ -2016,7 +2016,7 @@ impl SetPrefilter {
             candidate_memo: CandidateMemo::default(),
             #[cfg(feature = "scanner-group-prototype")]
             frozen: automata.frozen.clone(),
-            #[cfg(feature = "portable-eager-prototype")]
+            #[cfg(feature = "precompiled-eager")]
             portable: automata.portable.as_ref().map(|p| (p.clone(), p.caches())),
         }
     }
@@ -2176,13 +2176,13 @@ impl SetPrefilter {
                 }
                 self.search.try_search(&mut self.search_cache, &input)
             };
-            #[cfg(feature = "portable-eager-prototype")]
+            #[cfg(feature = "precompiled-eager")]
             let result = if let Some((p, c)) = &mut self.portable {
                 Ok(p.search(c, haystack, next, span_end))
             } else {
                 ordinary()
             };
-            #[cfg(not(feature = "portable-eager-prototype"))]
+            #[cfg(not(feature = "precompiled-eager"))]
             let result = ordinary();
             let Ok(found) = result else {
                 // The lazy DFAs give up only on their cache's efficiency
@@ -2332,7 +2332,7 @@ impl SetPrefilter {
         at: usize,
         admits: &mut dyn FnMut(u16, usize) -> bool,
     ) -> (ScanEnd, bool) {
-        #[cfg(feature = "portable-eager-prototype")]
+        #[cfg(feature = "precompiled-eager")]
         if let Some((p, c)) = &mut self.portable {
             return p.scan(
                 c,
@@ -2549,7 +2549,7 @@ impl SetPrefilter {
         if let Some(frozen) = &self.frozen {
             return frozen.nfa_states;
         }
-        #[cfg(feature = "portable-eager-prototype")]
+        #[cfg(feature = "precompiled-eager")]
         if let Some((portable, _)) = &self.portable {
             return portable.nfa_states();
         }
@@ -2562,7 +2562,7 @@ impl SetPrefilter {
         let bytes = automata_memory_usage(&self.dfa, &self.search) + self.cache_memory_usage();
         #[cfg(feature = "scanner-group-prototype")]
         let bytes = bytes + self.frozen.as_ref().map_or(0, |f| f.memory_usage());
-        #[cfg(feature = "portable-eager-prototype")]
+        #[cfg(feature = "precompiled-eager")]
         let bytes = bytes + self.portable.as_ref().map_or(0, |(p, _)| p.memory_usage());
         bytes
     }
@@ -2570,14 +2570,14 @@ impl SetPrefilter {
     /// Heap memory of this set's lazy DFA caches, in bytes.
     pub(crate) fn cache_memory_usage(&self) -> usize {
         let bytes = self.search_cache.memory_usage() + self.dfa_cache.memory_usage();
-        #[cfg(feature = "portable-eager-prototype")]
+        #[cfg(feature = "precompiled-eager")]
         let bytes = bytes + self.portable.as_ref().map_or(0, |(_, c)| c.memory_usage());
         bytes
     }
 
     /// Times the overlapping DFA's cache was cleared because it filled up.
     pub(crate) fn cache_clears(&self) -> usize {
-        #[cfg(feature = "portable-eager-prototype")]
+        #[cfg(feature = "precompiled-eager")]
         if let Some((_, c)) = &self.portable {
             return c.clears();
         }

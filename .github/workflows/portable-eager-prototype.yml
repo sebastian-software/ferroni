@@ -1,4 +1,4 @@
-name: Portable Eager prototype
+name: Prepared Eager archives
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   portable:
-    name: Portable Eager (${{ matrix.os }}, MSRV)
+    name: Prepared Eager (${{ matrix.os }}, MSRV)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -27,4 +27,8 @@ jobs:
           toolchain: "1.94"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Check portable groups against the ordinary scanner
-        run: cargo test --locked --features portable-eager-prototype,prefilter-self-check --lib --test scanner_group_prototype --test precompiled_scanner --test compat_prefilter_differential --test scanner_prefilter_regressions
+        run: cargo test --locked --features precompiled-eager,prefilter-self-check --lib --test scanner_group_prototype --test precompiled_eager --test precompiled_scanner --test compat_prefilter_differential --test scanner_prefilter_regressions
+      - name: Public API and guide examples
+        run: cargo test --locked --features precompiled-eager --doc
+      - name: Legacy feature alias
+        run: cargo test --locked --features portable-eager-prototype --test precompiled_eager

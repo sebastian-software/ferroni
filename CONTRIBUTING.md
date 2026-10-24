@@ -122,6 +122,24 @@ migration guide, is marked `compile_fail` with the error codes it must raise
 therefore tests the README alone. A new guide page needs a hidden item in
 `src/lib.rs` behind that cfg, and the page added to the list in `build.rs`.
 
+### Prepared Eager archive portability
+
+The `precompiled-eager` feature has public-API tests, frozen native-produced
+fixtures, browser-target execution, and a dedicated loader fuzz target:
+
+```bash
+cargo test --features precompiled-eager,prefilter-self-check --test precompiled_eager
+cargo test --features precompiled-eager --doc
+cargo rustc --release --target wasm32-unknown-unknown --features precompiled-eager --example precompiled_eager_portability -- -C link-arg=--export=main
+node scripts/test-precompiled-eager-wasm.mjs target/wasm32-unknown-unknown/release/examples/precompiled_eager_portability.wasm
+```
+
+The last command executes browser-target Wasm in Node/V8. Add
+`--browser google-chrome` (or the path to another Chromium executable) to execute the same
+module in a real browser with an isolated temporary profile. CI runs Chrome
+and the public API tests under WASI. See [fuzz/README.md](fuzz/README.md) for
+`precompiled-eager-loader`, which repairs checksums before structural decoding.
+
 ## Coverage
 
 CI measures line coverage on every pull request and fails the build below a

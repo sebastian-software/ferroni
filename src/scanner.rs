@@ -13,6 +13,10 @@ use smallvec::SmallVec;
 mod precompiled;
 #[cfg(feature = "precompiled")]
 pub use precompiled::{PRECOMPILED_FORMAT_VERSION, PrecompiledError, PrecompiledPatterns};
+#[cfg(feature = "precompiled-eager")]
+mod prepared;
+#[cfg(feature = "precompiled-eager")]
+pub use prepared::{PRECOMPILED_EAGER_FORMAT_VERSION, PrecompiledEager, PrecompiledEagerStats};
 #[cfg(feature = "scanner-group-nfa-prototype")]
 #[doc(hidden)]
 pub mod group_prototype;
@@ -461,7 +465,7 @@ pub struct ScannerPatternCache {
     #[cfg(feature = "precompiled")]
     precompiled: Vec<PrecompiledPatterns>,
     #[cfg(feature = "scanner-group-nfa-prototype")]
-    group_source: Option<group_prototype::GroupSource>,
+    group_source: Option<Arc<group_prototype::GroupSource>>,
 }
 
 /// Compiled programs by pattern text, for one `PatternSettings`.

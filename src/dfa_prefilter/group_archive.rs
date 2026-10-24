@@ -85,7 +85,7 @@ fn full_dfa(nfa: &thompson::NFA, kind: MatchKind, start: StartKind) -> Option<Fu
 }
 
 fn encode(automata: &Automata, kind: GroupKind) -> Result<Vec<u8>> {
-    #[cfg(feature = "portable-eager-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     if automata.portable.is_some() && kind != GroupKind::Portable {
         return Err(PrecompiledError::NonportablePattern);
     }
@@ -114,9 +114,9 @@ fn encode(automata: &Automata, kind: GroupKind) -> Result<Vec<u8>> {
     if kind == GroupKind::Dfa {
         return Err(PrecompiledError::UnsupportedFormat);
     }
-    #[cfg(feature = "portable-eager-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     let portable = kind == GroupKind::Portable;
-    #[cfg(not(feature = "portable-eager-prototype"))]
+    #[cfg(not(feature = "precompiled-eager"))]
     let portable = false;
     let mut out = vec![if portable { 6 } else { 1 }];
     #[cfg(feature = "scanner-group-prototype")]
@@ -130,7 +130,7 @@ fn encode(automata: &Automata, kind: GroupKind) -> Result<Vec<u8>> {
         )?;
     }
     put_len(&mut out, automata.settle)?;
-    #[cfg(feature = "portable-eager-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     if portable {
         if let Some(program) = &automata.portable {
             program.write(&mut out)?;
@@ -194,9 +194,9 @@ pub(crate) fn decode(bytes: &[u8], count: usize) -> Result<Option<Automata>> {
         return Err(PrecompiledError::InvalidData);
     }
     let settle = input.count(LONG_SEEK_BYTES)?;
-    #[cfg(feature = "portable-eager-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     let mut portable = None;
-    #[cfg(feature = "portable-eager-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     if matches!(tag, 5 | 6) {
         portable = Some(Arc::new(portable::Portable::read(
             &mut input,
@@ -207,7 +207,7 @@ pub(crate) fn decode(bytes: &[u8], count: usize) -> Result<Option<Automata>> {
     #[cfg(feature = "scanner-group-prototype")]
     let mut frozen = None;
     let (nfa, nfarev) = match tag {
-        #[cfg(feature = "portable-eager-prototype")]
+        #[cfg(feature = "precompiled-eager")]
         5 | 6 => (thompson::NFA::never_match(), thompson::NFA::never_match()),
         1 => {
             let nfa = read_nfa(&mut input)?;
@@ -283,7 +283,7 @@ pub(crate) fn decode(bytes: &[u8], count: usize) -> Result<Option<Automata>> {
         settle,
         #[cfg(feature = "scanner-group-prototype")]
         frozen,
-        #[cfg(feature = "portable-eager-prototype")]
+        #[cfg(feature = "precompiled-eager")]
         portable,
     }))
 }

@@ -169,6 +169,10 @@ pub(super) fn checksum(bytes: &[u8]) -> u32 {
     (hash ^ (hash >> 32)) as u32
 }
 impl PrecompiledPatterns {
+    #[cfg(feature = "precompiled-eager")]
+    pub(super) fn archive_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
     #[cfg(feature = "scanner-group-nfa-prototype")]
     pub(super) fn prototype_checksum(&self, parallel: bool) -> u32 {
         #[cfg(feature = "scanner-load-profile")]

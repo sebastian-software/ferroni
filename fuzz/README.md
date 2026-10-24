@@ -10,6 +10,7 @@ published `ferroni` package.
 
 | Target | What it exercises |
 | --- | --- |
+| `precompiled-eager-loader` | Raw portable group archives and mutations of a valid pair with recomputed record checksums. It validates group instructions without executing mutations, then compares trusted prepared execution against normal Eager on bounded arbitrary UTF-8/UTF-16 text. |
 | `precompiled-loader` | Raw archives and mutations of valid scanner archives, with recomputed corruption checks, through index parsing and per-pattern bytecode/seek validation. It decodes programs without executing mutated instructions. |
 | `pattern-compile` | `onig_new` over arbitrary pattern bytes, with the first two bytes selecting one of six syntaxes and one of seven option sets. |
 | `pattern-match` | Compiling an arbitrary pattern and searching arbitrary bytes with `onig_search_with_param`, then checking that the reported match and every capture group stay inside the haystack. |
@@ -18,7 +19,7 @@ published `ferroni` package.
 
 The fuzz crate builds Ferroni with the `prefilter-self-check` feature: every
 scanner search the pre-filter decides also runs the position-lead search on
-the same set and panics unless both decide alike, captures included. The two
+the same set and panics unless both decide alike, captures included. The
 scanner targets therefore check the pre-filter on every search they make, not
 only where the differential target compares results.
 

@@ -94,7 +94,7 @@ jobs:
       - name: Precompiled API examples
         run: cargo test --locked --features precompiled --doc
       - name: Portable Eager archives and load-phase diagnostics
-        run: cargo test --locked --features portable-eager-prototype,scanner-load-profile --lib --test precompiled_scanner --test compat_prefilter_differential
+        run: cargo test --locked --features precompiled-eager,scanner-load-profile --lib --test precompiled_scanner --test compat_prefilter_differential
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -290,7 +290,7 @@ jobs:
       - name: Build for wasm32-unknown-unknown without the DFA pre-filter
         run: cargo build --lib --locked --target wasm32-unknown-unknown --no-default-features
       - name: Build archive loading for wasm32-unknown-unknown
-        run: cargo build --lib --locked --target wasm32-unknown-unknown --features precompiled
+        run: cargo build --lib --locked --target wasm32-unknown-unknown --features precompiled-eager
       # wasm32-wasip1 cannot spawn threads, and a panic aborts the whole test
       # binary there (libtest ignores the #[should_panic] tests by itself), so
       # the tests that start a thread or catch a panic are skipped by name.
@@ -310,6 +310,16 @@ jobs:
           --skip nested_classes_at_depth_limit_compile_on_two_mib_stack
           --skip flat_alternation_above_ast_node_limit_fails_cleanly_on_two_mib_stack
           --skip start_checks_panic_for_every_at_method
+
+      - name: Prepared Eager API on WASI
+        run: cargo test --locked --target wasm32-wasip1 --features precompiled-eager,prefilter-self-check --test precompiled_eager
+      - name: Build import-free browser conformance example
+        run: cargo rustc --locked --release --target wasm32-unknown-unknown --features precompiled-eager --example precompiled_eager_portability -- -C link-arg=--export=main
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Native archive in browser Wasm (V8 and Chrome)
+        run: node scripts/test-precompiled-eager-wasm.mjs target/wasm32-unknown-unknown/release/examples/precompiled_eager_portability.wasm --browser google-chrome
 
   docs:
     name: Rustdoc

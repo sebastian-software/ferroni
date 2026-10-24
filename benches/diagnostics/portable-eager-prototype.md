@@ -1,13 +1,18 @@
 # Portable Eager scanner groups
 
+This document records the prototype and its measurements. For the supported
+`precompiled-eager` API, compatibility rules, and producer/consumer examples,
+see the [prepared Eager guide](../../docs/app/routes/guide/precompiled-eager.mdx).
+The legacy feature name remains an alias.
+
 The opt-in `portable-eager-prototype` feature exports prepared scanner-group
 seeks into a Ferroni-owned instruction image. A consumer loads the image and
 executes it through the native kernel without reconstructing dependency-private
 objects. Both producer and consumer use unmodified registry dependencies. The
 default features and the ordinary precompiled-pattern format are unchanged.
 
-This is an intermediate prototype. Its API is hidden from the default docs and
-its group format has no compatibility promise. New exports use `FPRT003` with
+The experimental methods below remain hidden. The public paired archive API
+now defines the portable format compatibility contract. New exports use `FPRT003` with
 compact instructions, 16-bit branch/range words, and byte planes that expose
 repeated high bytes to transport compression. Loading widens directly into the
 existing execution layout and runs the same structural validator. The program

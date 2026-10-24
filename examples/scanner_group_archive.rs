@@ -10,7 +10,7 @@ fn main() {
     let name = &args[2];
     let dir = Path::new(&args[3]);
     let corpus = support::corpus(name);
-    #[cfg(feature = "portable-eager-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     if command == "prepare-portable" {
         use ferroni::scanner::group_prototype::GroupKind;
         use ferroni::{AccelerationMode, Scanner, ScannerConfig, ScannerPatternCache};
