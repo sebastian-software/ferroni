@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/sebastian-software/ferroni/compare/v2.6.0...v2.7.0) (2026-10-24)
+
+
+### Features
+
+* **scanner:** stabilize prepared Eager archives ([077eb7d](https://github.com/sebastian-software/ferroni/commit/077eb7ddb26c3efee20737f0c4ed745d6b5094b1))
+
 ## [2.6.0](https://github.com/sebastian-software/ferroni/compare/v2.5.2...v2.6.0) (2026-10-24)
 
 
