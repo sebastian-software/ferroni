@@ -289,6 +289,8 @@ Run `./scripts/prepare-onigmo-sources.sh` first, or set FERRONI_ONIGMO_DIR."
     let build = |rename: Option<&Path>| {
         let mut build = cc::Build::new();
         build
+            // Onigmo's ANYARGS callbacks need pre-C23 function declarations.
+            .std("gnu17")
             .opt_level(3)
             .warnings(false)
             .flag_if_supported("-w")
