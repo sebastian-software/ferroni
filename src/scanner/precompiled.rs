@@ -170,8 +170,12 @@ pub(super) fn checksum(bytes: &[u8]) -> u32 {
 }
 impl PrecompiledPatterns {
     #[cfg(feature = "scanner-group-nfa-prototype")]
-    pub(super) fn prototype_checksum(&self) -> u32 {
-        checksum(&self.bytes)
+    pub(super) fn prototype_checksum(&self, parallel: bool) -> u32 {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase = crate::scanner::load_profile::scope(
+            crate::scanner::load_profile::Phase::GroupBindingChecksum,
+        );
+        super::group_prototype::record_checksum(&self.bytes, parallel)
     }
     #[cfg(feature = "scanner-group-nfa-prototype")]
     pub(super) fn prototype_keys(&self) -> Vec<Vec<u8>> {
@@ -184,6 +188,9 @@ impl PrecompiledPatterns {
     /// indexes return an error; a bad individual program is reported by
     /// [`validate_pattern`](Self::validate_pattern), or ignored by the cache.
     pub fn from_bytes(bytes: impl Into<Arc<[u8]>>) -> Result<Self> {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase =
+            crate::scanner::load_profile::scope(crate::scanner::load_profile::Phase::ProgramIndex);
         let bytes = bytes.into();
         if bytes.len() > MAX_BLOB {
             return Err(PrecompiledError::ResourceLimit);
@@ -276,15 +283,27 @@ impl PrecompiledPatterns {
         settings: PatternSettings,
         env: &Environment,
     ) -> Result<Option<(Arc<RegexType>, SharedSeek)>> {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase =
+            crate::scanner::load_profile::scope(crate::scanner::load_profile::Phase::ProgramLookup);
         let Some(entry) = self.index.get(&key(pattern, settings, env)?) else {
             return Ok(None);
         };
         let bytes = &self.bytes[entry.range.clone()];
-        if checksum(bytes) != entry.checksum {
+        let intact = {
+            #[cfg(feature = "scanner-load-profile")]
+            let _phase = crate::scanner::load_profile::scope(
+                crate::scanner::load_profile::Phase::ProgramChecksum,
+            );
+            checksum(bytes) == entry.checksum
+        };
+        if !intact {
             return Err(PrecompiledError::InvalidData);
         }
         let mut input = Reader::new(bytes);
         let reg = schema::read_reg(&mut input, settings)?;
+        // Without the DFA feature, SharedSeek is the unit placeholder.
+        #[cfg_attr(not(feature = "dfa-prefilter"), allow(clippy::let_unit_value))]
         let seek = schema::read_seek(&mut input)?;
         input.done()?;
         Ok(Some((Arc::new(reg), seek)))

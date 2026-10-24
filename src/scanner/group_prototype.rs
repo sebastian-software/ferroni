@@ -7,7 +7,8 @@ use std::sync::atomic::AtomicUsize;
 
 pub(crate) type Result<T> = std::result::Result<T, PrecompiledError>;
 const MAGIC: &[u8; 8] = b"FGRP002\0";
-const PORTABLE_MAGIC: &[u8; 8] = b"FPRT001\0";
+const PORTABLE_MAGIC_V1: &[u8; 8] = b"FPRT001\0";
+const PORTABLE_MAGIC: &[u8; 8] = b"FPRT002\0";
 const MAX_ARCHIVE: usize = 512 << 20;
 
 /// Representation to prepare before exporting a scanner-group experiment.
@@ -40,19 +41,24 @@ pub(crate) struct GroupSource {
     ids: HashMap<Vec<u8>, u32>,
     groups: HashMap<Vec<u32>, (Range<usize>, u32)>,
     stats: GroupStats,
+    parallel_checksum: bool,
     loads: AtomicUsize,
     failures: AtomicUsize,
 }
 
 impl GroupSource {
     fn open(bytes: Arc<[u8]>, programs: &PrecompiledPatterns) -> Result<Self> {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase =
+            crate::scanner::load_profile::scope(crate::scanner::load_profile::Phase::GroupIndex);
         if bytes.len() > MAX_ARCHIVE {
             return Err(PrecompiledError::ResourceLimit);
         }
         let mut input = Reader::new(&bytes);
         let magic = input.take(8)?;
-        if (magic != MAGIC && magic != PORTABLE_MAGIC)
-            || input.u32()? != programs.prototype_checksum()
+        let parallel_checksum = magic == PORTABLE_MAGIC;
+        if (magic != MAGIC && magic != PORTABLE_MAGIC && magic != PORTABLE_MAGIC_V1)
+            || input.u32()? != programs.prototype_checksum(parallel_checksum)
         {
             return Err(PrecompiledError::UnsupportedFormat);
         }
@@ -60,7 +66,7 @@ impl GroupSource {
         // prototype accepts only the producing target's endianness.
         let endian = input.byte()?;
         if endian
-            != if magic == PORTABLE_MAGIC {
+            != if magic == PORTABLE_MAGIC || magic == PORTABLE_MAGIC_V1 {
                 1
             } else {
                 u8::from(cfg!(target_endian = "little"))
@@ -104,6 +110,7 @@ impl GroupSource {
             ids,
             groups,
             stats,
+            parallel_checksum,
             loads: AtomicUsize::new(0),
             failures: AtomicUsize::new(0),
         })
@@ -114,6 +121,9 @@ impl GroupSource {
         patterns: &[&str],
         settings: PatternSettings,
     ) -> Option<AutomataCell> {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase =
+            crate::scanner::load_profile::scope(crate::scanner::load_profile::Phase::GroupLookup);
         let env = precompiled::Environment::current();
         let key: Option<Vec<_>> = patterns
             .iter()
@@ -124,7 +134,14 @@ impl GroupSource {
             })
             .collect();
         let (range, checksum) = self.groups.get(&key?)?;
-        if precompiled::checksum(&self.bytes[range.clone()]) != *checksum {
+        let intact = {
+            #[cfg(feature = "scanner-load-profile")]
+            let _phase = crate::scanner::load_profile::scope(
+                crate::scanner::load_profile::Phase::GroupChecksum,
+            );
+            record_checksum(&self.bytes[range.clone()], self.parallel_checksum) == *checksum
+        };
+        if !intact {
             self.failures.fetch_add(1, Ordering::Relaxed);
             return None;
         }
@@ -139,6 +156,46 @@ impl GroupSource {
             }
         }
     }
+}
+
+// Version 2 stripes the corruption check across four independent lanes. This
+// removes the per-word dependency chain on large instruction images. It is
+// deliberately not authentication; all structural validation still runs.
+pub(super) fn record_checksum(bytes: &[u8], parallel: bool) -> u32 {
+    if !parallel {
+        return precompiled::checksum(bytes);
+    }
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut lanes = [
+        0xcbf2_9ce4_8422_2325u64,
+        0x9e37_79b1_85eb_ca87,
+        0xc2b2_ae3d_27d4_eb4f,
+        0x1656_67b1_9e37_79f9,
+    ];
+    let (blocks, tail) = bytes.as_chunks::<32>();
+    for block in blocks {
+        for (lane, word) in lanes.iter_mut().zip(block.as_chunks::<8>().0) {
+            *lane = (*lane ^ u64::from_le_bytes(*word)).wrapping_mul(PRIME);
+            *lane ^= *lane >> 29;
+        }
+    }
+    let mut hash = lanes[0]
+        ^ lanes[1].rotate_left(13)
+        ^ lanes[2].rotate_left(31)
+        ^ lanes[3].rotate_left(47)
+        ^ bytes.len() as u64;
+    let (words, tail) = tail.as_chunks::<8>();
+    for word in words {
+        hash = (hash ^ u64::from_le_bytes(*word)).wrapping_mul(PRIME);
+        hash ^= hash >> 29;
+    }
+    for &byte in tail {
+        hash = (hash ^ u64::from(byte)).wrapping_mul(PRIME);
+    }
+    hash ^= hash >> 33;
+    hash = hash.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    hash ^= hash >> 33;
+    (hash ^ (hash >> 32)) as u32
 }
 
 impl ScannerPatternCache {
@@ -177,7 +234,7 @@ impl ScannerPatternCache {
         #[cfg(not(feature = "portable-eager-prototype"))]
         let portable = false;
         let mut out = if portable { PORTABLE_MAGIC } else { MAGIC }.to_vec();
-        put_u32(&mut out, programs.prototype_checksum());
+        put_u32(&mut out, programs.prototype_checksum(portable));
         out.push(if portable {
             1
         } else {
@@ -186,7 +243,7 @@ impl ScannerPatternCache {
         put_len(&mut out, groups.len())?;
         for (key, data) in groups {
             put_u32s(&mut out, &key)?;
-            put_u32(&mut out, precompiled::checksum(&data));
+            put_u32(&mut out, record_checksum(&data, portable));
             put_bytes(&mut out, &data)?;
             if out.len() > MAX_ARCHIVE {
                 return Err(PrecompiledError::ResourceLimit);
@@ -290,5 +347,87 @@ impl<'a> Reader<'a> {
         } else {
             Err(PrecompiledError::InvalidData)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parallel_checksum_covers_lanes_tails_and_order() {
+        for len in 0..=96 {
+            let bytes: Vec<_> = (0..len).map(|i| (i * 37) as u8).collect();
+            let expected = record_checksum(&bytes, true);
+            for bit in 0..len * 8 {
+                let mut damaged = bytes.clone();
+                damaged[bit / 8] ^= 1 << (bit % 8);
+                assert_ne!(record_checksum(&damaged, true), expected, "{len} {bit}");
+            }
+            if len > 1 {
+                let mut reversed = bytes.clone();
+                reversed.reverse();
+                assert_ne!(record_checksum(&reversed, true), expected);
+            }
+        }
+    }
+
+    #[cfg(feature = "portable-eager-prototype")]
+    #[test]
+    fn legacy_portable_checksums_remain_readable_and_invalid_code_falls_back() {
+        let config = ScannerConfig::default().acceleration(AccelerationMode::Eager);
+        let patterns = ["foo", "[0-9]+"];
+        let mut producer = ScannerPatternCache::new();
+        Scanner::with_pattern_cache(&patterns, &config, &mut producer).unwrap();
+        let programs =
+            PrecompiledPatterns::from_bytes(producer.export_precompiled().unwrap()).unwrap();
+        let image = producer
+            .export_group_prototype(GroupKind::Portable)
+            .unwrap();
+        assert_eq!(&image[..8], PORTABLE_MAGIC);
+        let source = GroupSource::open(image.clone().into(), &programs).unwrap();
+        let mut legacy = image.clone();
+        legacy[..8].copy_from_slice(PORTABLE_MAGIC_V1);
+        legacy[8..12].copy_from_slice(&programs.prototype_checksum(false).to_le_bytes());
+        for (range, _) in source.groups.values() {
+            let checksum = precompiled::checksum(&legacy[range.clone()]);
+            legacy[range.start - 8..range.start - 4].copy_from_slice(&checksum.to_le_bytes());
+        }
+        for bytes in [image.clone(), legacy] {
+            let mut consumer = ScannerPatternCache::new();
+            consumer.add_precompiled(programs.clone());
+            consumer.add_group_prototype(bytes).unwrap();
+            let mut actual =
+                Scanner::with_pattern_cache(&patterns, &config, &mut consumer).unwrap();
+            let mut reference = Scanner::with_config(&patterns, &config).unwrap();
+            for text in ["foo", "123", "bar foo", ""] {
+                assert_eq!(
+                    actual.find_next_match(text, 0, ScannerFindOptions::NONE),
+                    reference.find_next_match(text, 0, ScannerFindOptions::NONE)
+                );
+            }
+            assert_eq!(consumer.group_prototype_load_stats(), (1, 0));
+        }
+        let mut damaged = image;
+        let (range, _) = source.groups.values().next().unwrap();
+        // Skip the group indices and settle limit to reach the forward program.
+        let mut input = Reader::new(&damaged[range.clone()]);
+        assert_eq!(input.byte().unwrap(), 5);
+        for _ in 0..3 {
+            input.u32s(65_535).unwrap();
+        }
+        input.u32().unwrap();
+        assert_eq!(input.byte().unwrap(), 0);
+        let anchored = range.end - input.bytes.len();
+        // A valid checksum must never bypass validation of those entry states.
+        damaged[anchored..anchored + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(group_archive::decode(&damaged[range.clone()], patterns.len()).is_err());
+        let checksum = record_checksum(&damaged[range.clone()], true);
+        damaged[range.start - 8..range.start - 4].copy_from_slice(&checksum.to_le_bytes());
+        let mut consumer = ScannerPatternCache::new();
+        consumer.add_precompiled(programs);
+        consumer.add_group_prototype(damaged).unwrap();
+        Scanner::with_pattern_cache(&patterns, &config, &mut consumer).unwrap();
+        assert_eq!(consumer.group_prototype_load_stats(), (0, 1));
     }
 }

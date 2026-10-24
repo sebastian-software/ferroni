@@ -160,6 +160,9 @@ fn encode(automata: &Automata, kind: GroupKind) -> Result<Vec<u8>> {
 }
 
 pub(crate) fn decode(bytes: &[u8], count: usize) -> Result<Option<Automata>> {
+    #[cfg(feature = "scanner-load-profile")]
+    let _phase =
+        crate::scanner::load_profile::scope(crate::scanner::load_profile::Phase::GroupDecode);
     let mut input = Reader::new(bytes);
     let tag = input.byte()?;
     if tag == 0 {
@@ -258,6 +261,10 @@ pub(crate) fn decode(bytes: &[u8], count: usize) -> Result<Option<Automata>> {
         _ => return Err(PrecompiledError::InvalidData),
     };
     input.done()?;
+    #[cfg(feature = "scanner-load-profile")]
+    let _phase = crate::scanner::load_profile::scope(
+        crate::scanner::load_profile::Phase::CompatibilityHandles,
+    );
     let forward =
         search_dfa(nfa.clone(), MatchKind::LeftmostFirst).ok_or(PrecompiledError::ResourceLimit)?;
     let reverse = search_dfa(nfarev, MatchKind::All).ok_or(PrecompiledError::ResourceLimit)?;

@@ -157,6 +157,10 @@ impl Program {
     }
 
     fn read(input: &mut Reader<'_>, patterns: usize) -> Result<Self> {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase = crate::scanner::load_profile::scope(
+            crate::scanner::load_profile::Phase::PortableDecode,
+        );
         let reverse = match input.byte()? {
             0 => false,
             1 => true,
@@ -166,11 +170,30 @@ impl Program {
         let unanchored = input.u32()?;
         let classes: [u8; 256] = input.take(256)?.try_into().unwrap();
         let count = input.count(MAX_NFA_STATES)?;
-        let mut code = Vec::with_capacity(count);
-        for _ in 0..count {
-            code.push([input.u32()?, input.u32()?, input.u32()?, input.u32()?]);
-        }
+        let bytes = input.take(
+            count
+                .checked_mul(16)
+                .ok_or(PrecompiledError::ResourceLimit)?,
+        )?;
+        let code: Vec<[u32; 4]> = bytes
+            .as_chunks::<16>()
+            .0
+            .iter()
+            .map(|op| {
+                let words = op.as_chunks::<4>().0;
+                [
+                    u32::from_le_bytes(words[0]),
+                    u32::from_le_bytes(words[1]),
+                    u32::from_le_bytes(words[2]),
+                    u32::from_le_bytes(words[3]),
+                ]
+            })
+            .collect();
         let pool = input.u32s(MAX_WORDS)?;
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase = crate::scanner::load_profile::scope(
+            crate::scanner::load_profile::Phase::PortableValidate,
+        );
         if anchored as usize >= count || unanchored as usize >= count {
             return Err(PrecompiledError::InvalidData);
         }
@@ -546,6 +569,10 @@ impl Portable {
         self.reverse.write_loaded(out)
     }
     pub(super) fn caches(&self) -> Caches {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase = crate::scanner::load_profile::scope(
+            crate::scanner::load_profile::Phase::PortableScratch,
+        );
         Caches {
             walk: Machine::new(&self.forward, false, OVERLAPPING_CACHE_CAPACITY),
             forward: Machine::new(&self.forward, true, SEARCH_CACHE_CAPACITY),

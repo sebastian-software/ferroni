@@ -1842,6 +1842,9 @@ impl Automata {
         entries: impl Iterator<Item = (Option<&'a Seek>, &'a RegexType)>,
         skip_tiny: bool,
     ) -> Option<Self> {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase =
+            crate::scanner::load_profile::scope(crate::scanner::load_profile::Phase::GroupBuild);
         let mut hirs: Vec<Hir> = Vec::new();
         let mut covered = Vec::new();
         let mut own = Vec::new();
@@ -1982,6 +1985,10 @@ fn search_dfa(nfa: thompson::NFA, match_kind: MatchKind) -> Option<hybrid::DFA> 
 impl SetPrefilter {
     /// A set's pre-filter over `automata`, with fresh caches.
     pub(crate) fn new(automata: &Automata) -> Self {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase = crate::scanner::load_profile::scope(
+            crate::scanner::load_profile::Phase::ScannerScratch,
+        );
         let search_cache = automata.search.create_cache();
         let dfa_cache = automata.dfa.create_cache();
         let covered = automata.entries.len();

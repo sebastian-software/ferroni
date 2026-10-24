@@ -1,0 +1,396 @@
+{
+  "purpose": "Zstd-19 transport round trips, raw byte identity, native scanner loading without group fallback, and complete capture replay; no new timing claim",
+  "profile": {
+    "compressionLevel": 19,
+    "windowLog": 23,
+    "frameChecksum": true
+  },
+  "versions": {
+    "node": "24.22.0",
+    "acorn": "8.18.0",
+    "ada": "4.0.0",
+    "amaro": "1.1.11",
+    "ares": "1.34.8",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.3",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "137",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.70.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "4.0.3",
+    "simdjson": "5.0.4",
+    "simdutf": "6.4.0",
+    "sqlite": "3.54.0",
+    "tz": "2026a",
+    "undici": "7.29.1",
+    "unicode": "17.0",
+    "uv": "1.53.0",
+    "uvwasi": "0.0.23",
+    "v8": "13.6.233.17-node.57",
+    "zlib": "1.2.12",
+    "zstd": "1.5.7"
+  },
+  "nativeBinary": {
+    "path": ".cache/portable-load-20261023/final/bin/portable",
+    "sha256": "7625b33e41fac5bfa678a3ba0636abaa8ff1b8f079adde354d10332434f843fb"
+  },
+  "rows": [
+    {
+      "corpus": "cpp",
+      "manifest": {
+        "name": "cpp",
+        "format": "ferroni-portable-eager",
+        "version": 1,
+        "encoding": "zstd",
+        "compressionLevel": 19,
+        "windowLog": 23,
+        "programBytes": 1678334,
+        "groupBytes": 23720362,
+        "payloadBytes": 25398700,
+        "payloadSha256": "fb6d9f7f0c134f13289c2d058b807b2ee105a8b143dafa19af9b5df3d2568f1b",
+        "compressedBytes": 2787543,
+        "compressedSha256": "811642c355db1d3124782164c14746ccca965381165dbe297e9f1776adb180e3"
+      },
+      "parts": {
+        "programs": {
+          "bytes": 1678334,
+          "sha256": "69ad76afa3d75632b6cf6690800c59ebab06b4a54b6f40010d6036406f3a987f"
+        },
+        "portable": {
+          "bytes": 23720362,
+          "sha256": "c2914b7ef3ae01f3a3d8ac956f7625363a52b868cd6ab3c29bb3b679b1fb2f03"
+        }
+      },
+      "nativeValidation": {
+        "corpus": "cpp",
+        "validated_calls": 4862,
+        "variant": "portable"
+      },
+      "nativeStderr": "",
+      "matchesMeasuredZstd19Encoding": true
+    },
+    {
+      "corpus": "scss",
+      "manifest": {
+        "name": "scss",
+        "format": "ferroni-portable-eager",
+        "version": 1,
+        "encoding": "zstd",
+        "compressionLevel": 19,
+        "windowLog": 23,
+        "programBytes": 763589,
+        "groupBytes": 12509882,
+        "payloadBytes": 13273475,
+        "payloadSha256": "744c4d887210fe4bd34ef0524ef8bcd820d2ed44964d31931be3998e93cb895c",
+        "compressedBytes": 1408947,
+        "compressedSha256": "3a8031317e69c35501b2b4b50b225caf7be4c9d5c2ee864983eae95cda6e7071"
+      },
+      "parts": {
+        "programs": {
+          "bytes": 763589,
+          "sha256": "0ec5228621c9d0275e93b9e44e989eb9b77c8b6608685d00250a2bed6d9776b3"
+        },
+        "portable": {
+          "bytes": 12509882,
+          "sha256": "a5340c3a111db58ced998d1617bc1e58481d9e3b1fcd44bf5ef3206dd78a550a"
+        }
+      },
+      "nativeValidation": {
+        "corpus": "scss",
+        "validated_calls": 3744,
+        "variant": "portable"
+      },
+      "nativeStderr": "",
+      "matchesMeasuredZstd19Encoding": true
+    },
+    {
+      "corpus": "java",
+      "manifest": {
+        "name": "java",
+        "format": "ferroni-portable-eager",
+        "version": 1,
+        "encoding": "zstd",
+        "compressionLevel": 19,
+        "windowLog": 23,
+        "programBytes": 293333,
+        "groupBytes": 847450,
+        "payloadBytes": 1140787,
+        "payloadSha256": "01e31bf0b31b909e7c82f821d87c21f7e42d537eda8a441f04b83a6115a7aea4",
+        "compressedBytes": 119360,
+        "compressedSha256": "b614d589f57c8f6aed91f01b73578d65198acc0ebbc329545e62a4aa0a1f2f66"
+      },
+      "parts": {
+        "programs": {
+          "bytes": 293333,
+          "sha256": "a28ca806d5c0a7eae76b97fe5ef50e7cc2b5babfa6b8a67e7084a4022aad53ae"
+        },
+        "portable": {
+          "bytes": 847450,
+          "sha256": "435d4d9de15d6d0da1cf588bf0042968cefe78822f700168ba3722cc7d93e26b"
+        }
+      },
+      "nativeValidation": {
+        "corpus": "java",
+        "validated_calls": 3920,
+        "variant": "portable"
+      },
+      "nativeStderr": "",
+      "matchesMeasuredZstd19Encoding": true
+    },
+    {
+      "corpus": "json",
+      "manifest": {
+        "name": "json",
+        "format": "ferroni-portable-eager",
+        "version": 1,
+        "encoding": "zstd",
+        "compressionLevel": 19,
+        "windowLog": 23,
+        "programBytes": 9802,
+        "groupBytes": 20464,
+        "payloadBytes": 30270,
+        "payloadSha256": "5d14c033d54a5adb11de5f6b1d651df18d629cfcbd5f1f774438de4f207adb68",
+        "compressedBytes": 4375,
+        "compressedSha256": "6316391b66616dd744e7aaafb225581cb68095147f8dcd812ad69c16032ab35e"
+      },
+      "parts": {
+        "programs": {
+          "bytes": 9802,
+          "sha256": "b8fa822f46d8a28f3cb825ea9260f4e28e26a7132d46aea5027046407155562a"
+        },
+        "portable": {
+          "bytes": 20464,
+          "sha256": "68a4f43b2c57697010af4707b6dae306dc876e175f88443fec91cf0a93f79df3"
+        }
+      },
+      "nativeValidation": {
+        "corpus": "json",
+        "validated_calls": 3840,
+        "variant": "portable"
+      },
+      "nativeStderr": "",
+      "matchesMeasuredZstd19Encoding": true
+    },
+    {
+      "corpus": "rust",
+      "manifest": {
+        "name": "rust",
+        "format": "ferroni-portable-eager",
+        "version": 1,
+        "encoding": "zstd",
+        "compressionLevel": 19,
+        "windowLog": 23,
+        "programBytes": 50688,
+        "groupBytes": 265317,
+        "payloadBytes": 316009,
+        "payloadSha256": "fb26abfeed22303766299e791c5a8dec6af78ce9aabfc25f1dc8f57e66189f09",
+        "compressedBytes": 43792,
+        "compressedSha256": "b48b485de4fbcab898bcbe4ec0617b32701e4d65edafd10bd241941cefb721b2"
+      },
+      "parts": {
+        "programs": {
+          "bytes": 50688,
+          "sha256": "22e7805f6fe2668926d4862d0fc28746ffd25f816b3b31301458901dee608f05"
+        },
+        "portable": {
+          "bytes": 265317,
+          "sha256": "f023b602b36df93828d59e25615c1dbf8c3f9b0eadd52e95e65185d878cc6fba"
+        }
+      },
+      "nativeValidation": {
+        "corpus": "rust",
+        "validated_calls": 3936,
+        "variant": "portable"
+      },
+      "nativeStderr": "",
+      "matchesMeasuredZstd19Encoding": true
+    },
+    {
+      "corpus": "html",
+      "manifest": {
+        "name": "html",
+        "format": "ferroni-portable-eager",
+        "version": 1,
+        "encoding": "zstd",
+        "compressionLevel": 19,
+        "windowLog": 23,
+        "programBytes": 4576320,
+        "groupBytes": 8321877,
+        "payloadBytes": 12898201,
+        "payloadSha256": "30fb88e692f99357b995c9981fc544fcb5e35fae4590ff4636eaf3a3c0bf5768",
+        "compressedBytes": 1182131,
+        "compressedSha256": "4533db3ec90002184a05a7a9d6ce5617c6d784dda396e63ebf79b692a8c5a87b"
+      },
+      "parts": {
+        "programs": {
+          "bytes": 4576320,
+          "sha256": "f3143655bc2a72481dcfef96373acc1b8020ad7709d951470e02e5d732087e73"
+        },
+        "portable": {
+          "bytes": 8321877,
+          "sha256": "14f88d19bb001383e5eff88ca6e930fd63123516b33e80a6b20157c482b1f7b0"
+        }
+      },
+      "nativeValidation": {
+        "corpus": "html",
+        "validated_calls": 16176,
+        "variant": "portable"
+      },
+      "nativeStderr": "",
+      "matchesMeasuredZstd19Encoding": true
+    },
+    {
+      "corpus": "astro",
+      "manifest": {
+        "name": "astro",
+        "format": "ferroni-portable-eager",
+        "version": 1,
+        "encoding": "zstd",
+        "compressionLevel": 19,
+        "windowLog": 23,
+        "programBytes": 5946299,
+        "groupBytes": 14591427,
+        "payloadBytes": 20537730,
+        "payloadSha256": "ae9ed3d2cd464888930578383256702765bd4b4bbae5242dd9870eac9d02b76d",
+        "compressedBytes": 1821876,
+        "compressedSha256": "b1130ea810b311fd7f906a5399ae8d3f9ea045270db5717d39a9e6e230bd39c6"
+      },
+      "parts": {
+        "programs": {
+          "bytes": 5946299,
+          "sha256": "25f749b5ec98dceef451a51ec42b1c52764dc8b94ea97f83a10ed4295238e388"
+        },
+        "portable": {
+          "bytes": 14591427,
+          "sha256": "28fef8ca2502d178dbaaef24485f66cc1a3abb2576797040c30e18f12a8b8c05"
+        }
+      },
+      "nativeValidation": {
+        "corpus": "astro",
+        "validated_calls": 7151,
+        "variant": "portable"
+      },
+      "nativeStderr": "",
+      "matchesMeasuredZstd19Encoding": true
+    },
+    {
+      "corpus": "tsx",
+      "manifest": {
+        "name": "tsx",
+        "format": "ferroni-portable-eager",
+        "version": 1,
+        "encoding": "zstd",
+        "compressionLevel": 19,
+        "windowLog": 23,
+        "programBytes": 4333529,
+        "groupBytes": 9503561,
+        "payloadBytes": 13837094,
+        "payloadSha256": "a140bd43540997749f79b134b8244f2043576fcd5ea2729f97ed1f2840a9c164",
+        "compressedBytes": 1060619,
+        "compressedSha256": "a20f61dd0e51447dccbb34b72f0a18588f826c3e05d98b81fa12718e7daafbb4"
+      },
+      "parts": {
+        "programs": {
+          "bytes": 4333529,
+          "sha256": "a2e384e7c17ce30de0139a29e7d0516200005001c33adb50248e463a7720663a"
+        },
+        "portable": {
+          "bytes": 9503561,
+          "sha256": "ac3a52fa0c959f824bdafcb55124aed5a2fcb0a4aaad676068b32a4111e6a4b4"
+        }
+      },
+      "nativeValidation": {
+        "corpus": "tsx",
+        "validated_calls": 23088,
+        "variant": "portable"
+      },
+      "nativeStderr": "",
+      "matchesMeasuredZstd19Encoding": true
+    },
+    {
+      "corpus": "c",
+      "manifest": {
+        "name": "c",
+        "format": "ferroni-portable-eager",
+        "version": 1,
+        "encoding": "zstd",
+        "compressionLevel": 19,
+        "windowLog": 23,
+        "programBytes": 142761,
+        "groupBytes": 3929694,
+        "payloadBytes": 4072459,
+        "payloadSha256": "c007af2ef7d7300d8162906a5c42ec5441dfab6bb61da9a0f0fd0beb5ecc7c35",
+        "compressedBytes": 309103,
+        "compressedSha256": "9b439b3ce6a120e63a277efc4a0d8c0e50307f63a4b0a09b4fcf870e79d247b3"
+      },
+      "parts": {
+        "programs": {
+          "bytes": 142761,
+          "sha256": "ec3e89e5267d382a0132ba14bbf00feba1486b80cca6cd0c3db706b7f7194b0d"
+        },
+        "portable": {
+          "bytes": 3929694,
+          "sha256": "fd24979a9c792f7baa4b0c796c6db1f8945bc085e16344afc93bf59c8c84baa1"
+        }
+      },
+      "nativeValidation": {
+        "corpus": "c",
+        "validated_calls": 4832,
+        "variant": "portable"
+      },
+      "nativeStderr": "",
+      "matchesMeasuredZstd19Encoding": true
+    },
+    {
+      "corpus": "php",
+      "manifest": {
+        "name": "php",
+        "format": "ferroni-portable-eager",
+        "version": 1,
+        "encoding": "zstd",
+        "compressionLevel": 19,
+        "windowLog": 23,
+        "programBytes": 3857781,
+        "groupBytes": 9892145,
+        "payloadBytes": 13749930,
+        "payloadSha256": "7eff0923854f462de8b5f65200437e874c3a9e07c7e612b5fdc337c20b0cba73",
+        "compressedBytes": 1407022,
+        "compressedSha256": "27cfd887caf640f1a44d93f0100cc100d3924d2c37f83d84631858c0637e66e8"
+      },
+      "parts": {
+        "programs": {
+          "bytes": 3857781,
+          "sha256": "fd6118074f8f418435530d32ed53b0b3fc38658fd9ad7de6cb15ea667ca1464d"
+        },
+        "portable": {
+          "bytes": 9892145,
+          "sha256": "3d92effc114159a2ec61cd1dbf2feea407fdf95e168a0c6d0d96b81c1ac11ba5"
+        }
+      },
+      "nativeValidation": {
+        "corpus": "php",
+        "validated_calls": 3952,
+        "variant": "portable"
+      },
+      "nativeStderr": "",
+      "matchesMeasuredZstd19Encoding": true
+    }
+  ],
+  "totalCalls": 75501,
+  "compressedBytes": 10144768,
+  "payloadBytes": 105254655,
+  "sources": {
+    "scripts/portable-eager-package.mjs": "c0e893116cd9b96c6e25d8c47597b7d6afee8c89ea36a7efc759e7d6edc0f882",
+    "scripts/portable-eager-package.test.mjs": "2120745a127fab7795434fb5288c5f4fd6d47cafc622931419d0e520fc1b13e2",
+    "benches/group_archive/mod.rs": "38be41eb0dbdac08637df64234f6b0f6deac49a69d5a80c1b805e94fa31fecea",
+    "examples/scanner_group_archive.rs": "ec36322af87790e7d0d355d3d73b9970c5506756faa1cd167da9c49dcf08d880"
+  },
+  "reference": "benches/diagnostics/portable-codec-levels-20261024/summary.json",
+  "allEncodingsMatchMeasuredZstd19": true
+}

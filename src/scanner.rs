@@ -16,6 +16,9 @@ pub use precompiled::{PRECOMPILED_FORMAT_VERSION, PrecompiledError, PrecompiledP
 #[cfg(feature = "scanner-group-nfa-prototype")]
 #[doc(hidden)]
 pub mod group_prototype;
+#[cfg(feature = "scanner-load-profile")]
+#[doc(hidden)]
+pub mod load_profile;
 
 use crate::AccelerationMode;
 use crate::api::Syntax;
@@ -517,6 +520,9 @@ impl ScannerPatternCache {
         settings: PatternSettings,
         eager: bool,
     ) -> Result<Scanner, RegexError> {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase =
+            crate::scanner::load_profile::scope(crate::scanner::load_profile::Phase::PatternCache);
         let at = match self.compiled.iter().position(|(s, _)| *s == settings) {
             Some(at) => at,
             None => {
@@ -1183,6 +1189,10 @@ impl Scanner {
         automata: SharedAutomata,
         eager: bool,
     ) -> Result<Scanner, RegexError> {
+        #[cfg(feature = "scanner-load-profile")]
+        let _phase = crate::scanner::load_profile::scope(
+            crate::scanner::load_profile::Phase::ScannerAssembly,
+        );
         let mut caches = Vec::with_capacity(patterns.len());
         let mut regset_regs = Vec::with_capacity(patterns.len());
         let mut seeks = Vec::with_capacity(patterns.len());
@@ -1192,6 +1202,10 @@ impl Scanner {
 
         for (pattern, (reg, seek)) in patterns.iter().zip(parts) {
             if eager {
+                #[cfg(feature = "scanner-load-profile")]
+                let _phase = crate::scanner::load_profile::scope(
+                    crate::scanner::load_profile::Phase::EagerHelpers,
+                );
                 crate::acceleration::prepare_program(&reg);
             }
             rewrites.push(reg.backtrack_rewrites.clone());
