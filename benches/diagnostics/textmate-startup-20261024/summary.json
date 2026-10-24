@@ -1,0 +1,1276 @@
+{
+  "baseline": "Merged main ae9d1c155c5f39347ae46409094f83234539a260, FPRT002 archives",
+  "candidate": "Same TextMate harness with FPRT003 compact byte-plane archives",
+  "boundary": "Verified bounded in-memory package decode, raw grammar parsing, first-use work, and complete first-document highlighting; network transfer and file I/O excluded",
+  "method": "Three rotating fresh processes per variant/corpus, 40 Criterion samples, 300 ms warmup, 1 s target, 10,000 bootstrap resamples; cells are medians of process mean estimates",
+  "correctness": {
+    "before": {
+      "cases": 10,
+      "tokens": 58103,
+      "lines": 5984,
+      "groupFallbacks": 0
+    },
+    "after": {
+      "cases": 10,
+      "tokens": 58103,
+      "lines": 5984,
+      "groupFallbacks": 0
+    },
+    "after-legacy": {
+      "cases": 10,
+      "tokens": 58103,
+      "lines": 5984,
+      "groupFallbacks": 0
+    }
+  },
+  "rows": [
+    {
+      "corpus": "cpp",
+      "label": "C++",
+      "metrics": {
+        "construct": {
+          "before": {
+            "medianProcessMeanMs": 42.308678125,
+            "processMeansMs": [
+              41.0805834,
+              42.771572924999994,
+              42.308678125
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 21.916565074999998,
+            "processMeansMs": [
+              21.577345325,
+              22.01790785,
+              21.916565074999998
+            ]
+          },
+          "pairedPercentChange": [
+            -47.47556256710804,
+            -48.522099272317085,
+            -48.19841685847991
+          ],
+          "medianPairedPercentChange": -48.19841685847991,
+          "medianTimePercentChange": -48.19841685847991,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "first_document": {
+          "before": {
+            "medianProcessMeanMs": 79.5134666,
+            "processMeansMs": [
+              77.99734690000001,
+              80.932607325,
+              79.5134666
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 61.7161718,
+            "processMeansMs": [
+              60.228440674999995,
+              62.3987137,
+              61.7161718
+            ]
+          },
+          "pairedPercentChange": [
+            -22.781423896099227,
+            -22.90040348085376,
+            -22.38274290005613
+          ],
+          "medianPairedPercentChange": -22.781423896099227,
+          "medianTimePercentChange": -22.38274290005613,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "warm_search": {
+          "before": {
+            "medianProcessMeanMs": 8.162417366666665,
+            "processMeansMs": [
+              8.1003880125,
+              8.402886416666666,
+              8.162417366666665
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 8.14912449375,
+            "processMeansMs": [
+              7.89430495,
+              8.630797541666665,
+              8.14912449375
+            ]
+          },
+          "pairedPercentChange": [
+            -2.544113469403997,
+            2.712295676732568,
+            -0.16285460935813179
+          ],
+          "medianPairedPercentChange": -0.16285460935813179,
+          "medianTimePercentChange": -0.16285460935813179,
+          "allRunsAtLeastThreePercentFaster": false
+        }
+      },
+      "packages": {
+        "before": {
+          "payloadBytes": 26457164,
+          "preparedZstdBytes": 2737661,
+          "grammarZstdBytes": 40913,
+          "totalDownloadBytes": 2778574
+        },
+        "after": {
+          "payloadBytes": 14668858,
+          "preparedZstdBytes": 979601,
+          "grammarZstdBytes": 40913,
+          "totalDownloadBytes": 1020514
+        }
+      },
+      "peakRssBytes": {
+        "before": 160989184,
+        "after": 134971392
+      }
+    },
+    {
+      "corpus": "scss",
+      "label": "SCSS",
+      "metrics": {
+        "construct": {
+          "before": {
+            "medianProcessMeanMs": 22.9926952375,
+            "processMeansMs": [
+              22.7388401375,
+              23.298650074999998,
+              22.9926952375
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 11.544166366666667,
+            "processMeansMs": [
+              11.326102025,
+              11.544166366666667,
+              11.554417383333334
+            ]
+          },
+          "pairedPercentChange": [
+            -50.19050243322904,
+            -50.45135091730559,
+            -49.74744255084709
+          ],
+          "medianPairedPercentChange": -50.19050243322904,
+          "medianTimePercentChange": -49.792026348269616,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "first_document": {
+          "before": {
+            "medianProcessMeanMs": 36.1944155,
+            "processMeansMs": [
+              35.739850950000005,
+              36.1944155,
+              36.196732299999994
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 25.260448,
+            "processMeansMs": [
+              25.18678645,
+              25.745616625,
+              25.260448
+            ]
+          },
+          "pairedPercentChange": [
+            -29.527444070104615,
+            -28.86853878051988,
+            -30.213457417535995
+          ],
+          "medianPairedPercentChange": -29.527444070104615,
+          "medianTimePercentChange": -30.208990389691472,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "warm_search": {
+          "before": {
+            "medianProcessMeanMs": 3.797044207142857,
+            "processMeansMs": [
+              3.7581019357142846,
+              3.883831242857145,
+              3.797044207142857
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 3.8247988035714293,
+            "processMeansMs": [
+              3.7473218785714275,
+              3.8259431535714277,
+              3.8247988035714293
+            ]
+          },
+          "pairedPercentChange": [
+            -0.2868484497562829,
+            -1.4904893046571166,
+            0.7309526809395894
+          ],
+          "medianPairedPercentChange": -0.2868484497562829,
+          "medianTimePercentChange": 0.7309526809395894,
+          "allRunsAtLeastThreePercentFaster": false
+        }
+      },
+      "packages": {
+        "before": {
+          "payloadBytes": 12883600,
+          "preparedZstdBytes": 1347067,
+          "grammarZstdBytes": 71278,
+          "totalDownloadBytes": 1418345
+        },
+        "after": {
+          "payloadBytes": 6819088,
+          "preparedZstdBytes": 816472,
+          "grammarZstdBytes": 71278,
+          "totalDownloadBytes": 887750
+        }
+      },
+      "peakRssBytes": {
+        "before": 70483968,
+        "after": 59015168
+      }
+    },
+    {
+      "corpus": "java",
+      "label": "Java",
+      "metrics": {
+        "construct": {
+          "before": {
+            "medianProcessMeanMs": 1.7108622202843582,
+            "processMeansMs": [
+              1.6777626506685657,
+              1.7108622202843582,
+              1.7324549763820476
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 1.117539267711112,
+            "processMeansMs": [
+              1.086849314814377,
+              1.1400548406475437,
+              1.117539267711112
+            ]
+          },
+          "pairedPercentChange": [
+            -35.220317702192126,
+            -33.36372577927064,
+            -35.49389260060817
+          ],
+          "medianPairedPercentChange": -35.220317702192126,
+          "medianTimePercentChange": -34.679762375875676,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "first_document": {
+          "before": {
+            "medianProcessMeanMs": 8.491418741666667,
+            "processMeansMs": [
+              8.378615574999998,
+              8.5204319,
+              8.491418741666667
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 7.929956908333333,
+            "processMeansMs": [
+              7.718229533333333,
+              7.929956908333333,
+              7.947946925000002
+            ]
+          },
+          "pairedPercentChange": [
+            -7.881803810609423,
+            -6.930106344335285,
+            -6.400247511053669
+          ],
+          "medianPairedPercentChange": -6.930106344335285,
+          "medianTimePercentChange": -6.612108652448024,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "warm_search": {
+          "before": {
+            "medianProcessMeanMs": 4.324407812499999,
+            "processMeansMs": [
+              4.181257133333333,
+              4.333477620833334,
+              4.324407812499999
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 4.3327147625,
+            "processMeansMs": [
+              4.241688716666666,
+              4.3327147625,
+              4.340517541666667
+            ]
+          },
+          "pairedPercentChange": [
+            1.4452969861998621,
+            -0.01760383691995493,
+            0.372530294670681
+          ],
+          "medianPairedPercentChange": 0.372530294670681,
+          "medianTimePercentChange": 0.19209451005035572,
+          "allRunsAtLeastThreePercentFaster": false
+        }
+      },
+      "packages": {
+        "before": {
+          "payloadBytes": 1133414,
+          "preparedZstdBytes": 118946,
+          "grammarZstdBytes": 5187,
+          "totalDownloadBytes": 124133
+        },
+        "after": {
+          "payloadBytes": 723966,
+          "preparedZstdBytes": 85955,
+          "grammarZstdBytes": 5187,
+          "totalDownloadBytes": 91142
+        }
+      },
+      "peakRssBytes": {
+        "before": 26591232,
+        "after": 27213824
+      }
+    },
+    {
+      "corpus": "json",
+      "label": "JSON",
+      "metrics": {
+        "construct": {
+          "before": {
+            "medianProcessMeanMs": 0.0818181624035954,
+            "processMeansMs": [
+              0.07959336452323376,
+              0.0818181624035954,
+              0.0818646917711039
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 0.07074411379033382,
+            "processMeansMs": [
+              0.06842310171480526,
+              0.07074411379033382,
+              0.07090153262264905
+            ]
+          },
+          "pairedPercentChange": [
+            -14.034163369444997,
+            -13.534951516797877,
+            -13.391804099266846
+          ],
+          "medianPairedPercentChange": -13.534951516797877,
+          "medianTimePercentChange": -13.534951516797877,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "first_document": {
+          "before": {
+            "medianProcessMeanMs": 4.302406587499999,
+            "processMeansMs": [
+              4.302406587499999,
+              4.321225195833333,
+              4.267005416666666
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 4.33872515,
+            "processMeansMs": [
+              4.1223586958333325,
+              4.3964576541666665,
+              4.33872515
+            ]
+          },
+          "pairedPercentChange": [
+            -4.184818147819158,
+            1.7409983262588469,
+            1.6807978038462679
+          ],
+          "medianPairedPercentChange": 1.6807978038462679,
+          "medianTimePercentChange": 0.844145288488507,
+          "allRunsAtLeastThreePercentFaster": false
+        },
+        "warm_search": {
+          "before": {
+            "medianProcessMeanMs": 4.459630208333334,
+            "processMeansMs": [
+              4.3593527750000005,
+              4.4642552124999995,
+              4.459630208333334
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 4.532604504166668,
+            "processMeansMs": [
+              4.405959562499999,
+              4.537434558333333,
+              4.532604504166668
+            ]
+          },
+          "pairedPercentChange": [
+            1.0691217230061945,
+            1.639228546531779,
+            1.636330646809503
+          ],
+          "medianPairedPercentChange": 1.636330646809503,
+          "medianTimePercentChange": 1.636330646809503,
+          "allRunsAtLeastThreePercentFaster": false
+        }
+      },
+      "packages": {
+        "before": {
+          "payloadBytes": 30962,
+          "preparedZstdBytes": 4643,
+          "grammarZstdBytes": 1368,
+          "totalDownloadBytes": 6011
+        },
+        "after": {
+          "payloadBytes": 22346,
+          "preparedZstdBytes": 4267,
+          "grammarZstdBytes": 1368,
+          "totalDownloadBytes": 5635
+        }
+      },
+      "peakRssBytes": {
+        "before": 25198592,
+        "after": 26165248
+      }
+    },
+    {
+      "corpus": "rust",
+      "label": "Rust",
+      "metrics": {
+        "construct": {
+          "before": {
+            "medianProcessMeanMs": 0.621168799546711,
+            "processMeansMs": [
+              0.616352288179876,
+              0.6222386383467622,
+              0.621168799546711
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 0.44772765931458447,
+            "processMeansMs": [
+              0.4321649100782446,
+              0.44772765931458447,
+              0.4484853387788961
+            ]
+          },
+          "pairedPercentChange": [
+            -29.883458151108254,
+            -28.045667414006836,
+            -27.79976407279763
+          ],
+          "medianPairedPercentChange": -28.045667414006836,
+          "medianTimePercentChange": -27.921740492872903,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "first_document": {
+          "before": {
+            "medianProcessMeanMs": 4.7672611,
+            "processMeansMs": [
+              4.636996704166666,
+              4.7672611,
+              4.805401014999999
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 4.5168553708333326,
+            "processMeansMs": [
+              4.433792891666665,
+              4.572486295833333,
+              4.5168553708333326
+            ]
+          },
+          "pairedPercentChange": [
+            -4.382228961202584,
+            -4.08567519338654,
+            -6.004611129559745
+          ],
+          "medianPairedPercentChange": -4.382228961202584,
+          "medianTimePercentChange": -5.252612011678304,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "warm_search": {
+          "before": {
+            "medianProcessMeanMs": 3.0166041694444456,
+            "processMeansMs": [
+              2.9209998916666673,
+              3.0166041694444456,
+              3.018463786111112
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 2.9599103138888885,
+            "processMeansMs": [
+              2.939317016666666,
+              2.9991279,
+              2.9599103138888885
+            ]
+          },
+          "pairedPercentChange": [
+            0.6270840698164859,
+            -0.5793358512682922,
+            -1.939843455854795
+          ],
+          "medianPairedPercentChange": -0.5793358512682922,
+          "medianTimePercentChange": -1.8793932637837019,
+          "allRunsAtLeastThreePercentFaster": false
+        }
+      },
+      "packages": {
+        "before": {
+          "payloadBytes": 314852,
+          "preparedZstdBytes": 43682,
+          "grammarZstdBytes": 3815,
+          "totalDownloadBytes": 47497
+        },
+        "after": {
+          "payloadBytes": 186424,
+          "preparedZstdBytes": 36034,
+          "grammarZstdBytes": 3815,
+          "totalDownloadBytes": 39849
+        }
+      },
+      "peakRssBytes": {
+        "before": 16416768,
+        "after": 17219584
+      }
+    },
+    {
+      "corpus": "html",
+      "label": "HTML",
+      "metrics": {
+        "construct": {
+          "before": {
+            "medianProcessMeanMs": 19.834782824999998,
+            "processMeansMs": [
+              19.4406536375,
+              20.004937037500003,
+              19.834782824999998
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 13.0602447875,
+            "processMeansMs": [
+              12.7488495125,
+              13.0602447875,
+              13.313007875
+            ]
+          },
+          "pairedPercentChange": [
+            -34.42170335307997,
+            -34.714891813865336,
+            -32.88049588211207
+          ],
+          "medianPairedPercentChange": -34.42170335307997,
+          "medianTimePercentChange": -34.154838483844095,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "first_document": {
+          "before": {
+            "medianProcessMeanMs": 46.7026793,
+            "processMeansMs": [
+              46.7026793,
+              46.776347025,
+              46.66059165
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 40.519765575,
+            "processMeansMs": [
+              39.314851024999996,
+              40.519765575,
+              40.69086255
+            ]
+          },
+          "pairedPercentChange": [
+            -15.818853191576965,
+            -13.375523844681837,
+            -12.793942144537729
+          ],
+          "medianPairedPercentChange": -13.375523844681837,
+          "medianTimePercentChange": -13.238884401649308,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "warm_search": {
+          "before": {
+            "medianProcessMeanMs": 11.915179183333338,
+            "processMeansMs": [
+              11.53956925,
+              11.978495516666664,
+              11.915179183333338
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 11.804060783333336,
+            "processMeansMs": [
+              11.728889566666668,
+              11.837862849999997,
+              11.804060783333336
+            ]
+          },
+          "pairedPercentChange": [
+            1.6406185756601577,
+            -1.1740428209118026,
+            -0.9325785058728497
+          ],
+          "medianPairedPercentChange": -0.9325785058728497,
+          "medianTimePercentChange": -0.9325785058728497,
+          "allRunsAtLeastThreePercentFaster": false
+        }
+      },
+      "packages": {
+        "before": {
+          "payloadBytes": 12898201,
+          "preparedZstdBytes": 1182131,
+          "grammarZstdBytes": 64515,
+          "totalDownloadBytes": 1246646
+        },
+        "after": {
+          "payloadBytes": 8760283,
+          "preparedZstdBytes": 715053,
+          "grammarZstdBytes": 64515,
+          "totalDownloadBytes": 779568
+        }
+      },
+      "peakRssBytes": {
+        "before": 84279296,
+        "after": 77021184
+      }
+    },
+    {
+      "corpus": "astro",
+      "label": "Astro",
+      "metrics": {
+        "construct": {
+          "before": {
+            "medianProcessMeanMs": 32.958889625,
+            "processMeansMs": [
+              32.214398949999996,
+              32.958889625,
+              32.96435105
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 20.9618505125,
+            "processMeansMs": [
+              20.4272609625,
+              20.9633879375,
+              20.9618505125
+            ]
+          },
+          "pairedPercentChange": [
+            -36.5896567115681,
+            -36.39534530435504,
+            -36.41054701575871
+          ],
+          "medianPairedPercentChange": -36.41054701575871,
+          "medianTimePercentChange": -36.400009979098314,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "first_document": {
+          "before": {
+            "medianProcessMeanMs": 77.30088225,
+            "processMeansMs": [
+              76.106417725,
+              77.30088225,
+              77.922380225
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 66.0703302,
+            "processMeansMs": [
+              64.89116455,
+              66.0703302,
+              66.190627025
+            ]
+          },
+          "pairedPercentChange": [
+            -14.736277846534263,
+            -14.52836206148216,
+            -15.05569153062919
+          ],
+          "medianPairedPercentChange": -14.736277846534263,
+          "medianTimePercentChange": -14.52836206148216,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "warm_search": {
+          "before": {
+            "medianProcessMeanMs": 23.529456775,
+            "processMeansMs": [
+              23.201030175,
+              23.64945105,
+              23.529456775
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 24.313753100000003,
+            "processMeansMs": [
+              25.045365637499998,
+              23.741854149999998,
+              24.313753100000003
+            ]
+          },
+          "pairedPercentChange": [
+            7.9493688365930515,
+            0.39071985140222143,
+            3.3332530049453357
+          ],
+          "medianPairedPercentChange": 3.3332530049453357,
+          "medianTimePercentChange": 3.3332530049453357,
+          "allRunsAtLeastThreePercentFaster": false
+        }
+      },
+      "packages": {
+        "before": {
+          "payloadBytes": 20820323,
+          "preparedZstdBytes": 1825050,
+          "grammarZstdBytes": 115598,
+          "totalDownloadBytes": 1940648
+        },
+        "after": {
+          "payloadBytes": 13527599,
+          "preparedZstdBytes": 851054,
+          "grammarZstdBytes": 115598,
+          "totalDownloadBytes": 966652
+        }
+      },
+      "peakRssBytes": {
+        "before": 118095872,
+        "after": 103170048
+      }
+    },
+    {
+      "corpus": "tsx",
+      "label": "TSX",
+      "metrics": {
+        "construct": {
+          "before": {
+            "medianProcessMeanMs": 21.8016718375,
+            "processMeansMs": [
+              21.436200625,
+              22.1658484125,
+              21.8016718375
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 13.8937708,
+            "processMeansMs": [
+              13.585764,
+              13.8937708,
+              14.035758362500001
+            ]
+          },
+          "pairedPercentChange": [
+            -36.62233229821715,
+            -37.31902094861896,
+            -35.62072456132574
+          ],
+          "medianPairedPercentChange": -36.62233229821715,
+          "medianTimePercentChange": -36.271993709665885,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "first_document": {
+          "before": {
+            "medianProcessMeanMs": 53.305099950000006,
+            "processMeansMs": [
+              52.4464229,
+              53.305099950000006,
+              53.361045825000005
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 45.9517041,
+            "processMeansMs": [
+              45.719734325000005,
+              45.95294895,
+              45.9517041
+            ]
+          },
+          "pairedPercentChange": [
+            -12.825829109119269,
+            -13.792584587396506,
+            -13.885300804072099
+          ],
+          "medianPairedPercentChange": -13.792584587396506,
+          "medianTimePercentChange": -13.794919917414028,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "warm_search": {
+          "before": {
+            "medianProcessMeanMs": 18.2427057375,
+            "processMeansMs": [
+              17.9292890875,
+              19.250011399999998,
+              18.2427057375
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 18.26362555,
+            "processMeansMs": [
+              18.038892225,
+              18.26362555,
+              18.51010675
+            ]
+          },
+          "pairedPercentChange": [
+            0.6113077711286108,
+            -5.124079303142636,
+            1.4657968853289294
+          ],
+          "medianPairedPercentChange": 0.6113077711286108,
+          "medianTimePercentChange": 0.11467494351453666,
+          "allRunsAtLeastThreePercentFaster": false
+        }
+      },
+      "packages": {
+        "before": {
+          "payloadBytes": 13837094,
+          "preparedZstdBytes": 1060619,
+          "grammarZstdBytes": 79734,
+          "totalDownloadBytes": 1140353
+        },
+        "after": {
+          "payloadBytes": 9107746,
+          "preparedZstdBytes": 414277,
+          "grammarZstdBytes": 79734,
+          "totalDownloadBytes": 494011
+        }
+      },
+      "peakRssBytes": {
+        "before": 98680832,
+        "after": 88047616
+      }
+    },
+    {
+      "corpus": "c",
+      "label": "C",
+      "metrics": {
+        "construct": {
+          "before": {
+            "medianProcessMeanMs": 4.2436929375000005,
+            "processMeansMs": [
+              4.180542879166666,
+              4.2436929375000005,
+              4.371616641666667
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 2.6323583425000003,
+            "processMeansMs": [
+              2.6041430199999995,
+              2.6431900025000004,
+              2.6323583425000003
+            ]
+          },
+          "pairedPercentChange": [
+            -37.708017947202585,
+            -37.71486199807076,
+            -39.78524289137071
+          ],
+          "medianPairedPercentChange": -37.71486199807076,
+          "medianTimePercentChange": -37.97010336825295,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "first_document": {
+          "before": {
+            "medianProcessMeanMs": 13.3183375,
+            "processMeansMs": [
+              13.0988167125,
+              13.3183375,
+              13.4151760125
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 11.978734375,
+            "processMeansMs": [
+              11.519410975,
+              11.978734375,
+              12.135301525000001
+            ]
+          },
+          "pairedPercentChange": [
+            -12.057621479601266,
+            -10.058335922182483,
+            -9.540497167591667
+          ],
+          "medianPairedPercentChange": -10.058335922182483,
+          "medianTimePercentChange": -10.058335922182483,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "warm_search": {
+          "before": {
+            "medianProcessMeanMs": 3.710899553571428,
+            "processMeansMs": [
+              3.6223395857142857,
+              3.762788835714286,
+              3.710899553571428
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 3.7225638464285717,
+            "processMeansMs": [
+              3.564553867857143,
+              3.7225638464285717,
+              3.7262303500000002
+            ]
+          },
+          "pairedPercentChange": [
+            -1.5952595412378479,
+            -1.0690206397957036,
+            0.41312884402429084
+          ],
+          "medianPairedPercentChange": -1.0690206397957036,
+          "medianTimePercentChange": 0.31432521114502787,
+          "allRunsAtLeastThreePercentFaster": false
+        }
+      },
+      "packages": {
+        "before": {
+          "payloadBytes": 3142559,
+          "preparedZstdBytes": 293474,
+          "grammarZstdBytes": 11023,
+          "totalDownloadBytes": 304497
+        },
+        "after": {
+          "payloadBytes": 1654521,
+          "preparedZstdBytes": 237066,
+          "grammarZstdBytes": 11023,
+          "totalDownloadBytes": 248089
+        }
+      },
+      "peakRssBytes": {
+        "before": 33144832,
+        "after": 29638656
+      }
+    },
+    {
+      "corpus": "php",
+      "label": "PHP",
+      "metrics": {
+        "construct": {
+          "before": {
+            "medianProcessMeanMs": 21.235859825,
+            "processMeansMs": [
+              21.235859825,
+              21.089548949999998,
+              21.4081636
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 14.750558875,
+            "processMeansMs": [
+              14.4720375625,
+              14.8023428,
+              14.750558875
+            ]
+          },
+          "pairedPercentChange": [
+            -31.85094608007001,
+            -29.811951715543916,
+            -31.09843912534376
+          ],
+          "medianPairedPercentChange": -31.09843912534376,
+          "medianTimePercentChange": -30.539384811558957,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "first_document": {
+          "before": {
+            "medianProcessMeanMs": 49.7827062,
+            "processMeansMs": [
+              49.684706225,
+              49.7827062,
+              49.9671615
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 44.44208125,
+            "processMeansMs": [
+              44.141501049999995,
+              44.44208125,
+              45.347994799999995
+            ]
+          },
+          "pairedPercentChange": [
+            -11.15676351168765,
+            -10.727871901025743,
+            -9.244404847771893
+          ],
+          "medianPairedPercentChange": -10.727871901025743,
+          "medianTimePercentChange": -10.727871901025743,
+          "allRunsAtLeastThreePercentFaster": true
+        },
+        "warm_search": {
+          "before": {
+            "medianProcessMeanMs": 3.3978566375000003,
+            "processMeansMs": [
+              3.3978566375000003,
+              3.372797275,
+              3.417946353125
+            ]
+          },
+          "after": {
+            "medianProcessMeanMs": 3.399649603125,
+            "processMeansMs": [
+              3.399649603125,
+              3.3359649874999997,
+              3.4545794343750003
+            ]
+          },
+          "pairedPercentChange": [
+            0.05276754778915649,
+            -1.0920397669023973,
+            1.071786314507439
+          ],
+          "medianPairedPercentChange": 0.05276754778915649,
+          "medianTimePercentChange": 0.05276754778915649,
+          "allRunsAtLeastThreePercentFaster": false
+        }
+      },
+      "packages": {
+        "before": {
+          "payloadBytes": 13175277,
+          "preparedZstdBytes": 1335856,
+          "grammarZstdBytes": 109485,
+          "totalDownloadBytes": 1445341
+        },
+        "after": {
+          "payloadBytes": 8516029,
+          "preparedZstdBytes": 952118,
+          "grammarZstdBytes": 109485,
+          "totalDownloadBytes": 1061603
+        }
+      },
+      "peakRssBytes": {
+        "before": 82722816,
+        "after": 73187328
+      }
+    }
+  ],
+  "astroWarmFollowup": {
+    "boundary": "Only warm_search selected, all initialization and correctness checks retained; no preceding construction/first-document benchmark",
+    "rows": [
+      {
+        "before": 23.7504004625,
+        "after": 23.57863855,
+        "repetition": 1,
+        "changePercent": -0.7231958584075104
+      },
+      {
+        "after": 24.11325785,
+        "before": 23.5233770625,
+        "repetition": 2,
+        "changePercent": 2.507636492552612
+      },
+      {
+        "before": 24.1371818,
+        "after": 23.8654708125,
+        "repetition": 3,
+        "changePercent": -1.1256947466004474
+      },
+      {
+        "after": 23.8919385,
+        "before": 23.7098141375,
+        "repetition": 4,
+        "changePercent": 0.7681391403737248
+      },
+      {
+        "before": 23.55148385,
+        "after": 23.7941198125,
+        "repetition": 5,
+        "changePercent": 1.0302364133205177
+      }
+    ],
+    "medianPairedChangePercent": 0.7681391403737248
+  },
+  "reexport": [
+    {
+      "corpus": "cpp",
+      "result": {
+        "corpus": "cpp",
+        "groupBytes": 11841304,
+        "lines": 576,
+        "programBytes": 2827550,
+        "stats": [
+          249,
+          43,
+          0
+        ]
+      },
+      "identical": {
+        "programs": true,
+        "portable": true,
+        "expected.json": true
+      }
+    },
+    {
+      "corpus": "scss",
+      "result": {
+        "corpus": "scss",
+        "groupBytes": 6081534,
+        "lines": 720,
+        "programBytes": 737550,
+        "stats": [
+          106,
+          19,
+          0
+        ]
+      },
+      "identical": {
+        "programs": true,
+        "portable": true,
+        "expected.json": true
+      }
+    },
+    {
+      "corpus": "java",
+      "result": {
+        "corpus": "java",
+        "groupBytes": 429138,
+        "lines": 528,
+        "programBytes": 294824,
+        "stats": [
+          115,
+          23,
+          0
+        ]
+      },
+      "identical": {
+        "programs": true,
+        "portable": true,
+        "expected.json": true
+      }
+    },
+    {
+      "corpus": "json",
+      "result": {
+        "corpus": "json",
+        "groupBytes": 11848,
+        "lines": 448,
+        "programBytes": 10494,
+        "stats": [
+          18,
+          5,
+          0
+        ]
+      },
+      "identical": {
+        "programs": true,
+        "portable": true,
+        "expected.json": true
+      }
+    },
+    {
+      "corpus": "rust",
+      "result": {
+        "corpus": "rust",
+        "groupBytes": 136082,
+        "lines": 496,
+        "programBytes": 50338,
+        "stats": [
+          87,
+          7,
+          0
+        ]
+      },
+      "identical": {
+        "programs": true,
+        "portable": true,
+        "expected.json": true
+      }
+    },
+    {
+      "corpus": "html",
+      "result": {
+        "corpus": "html",
+        "groupBytes": 4183959,
+        "lines": 736,
+        "programBytes": 4576320,
+        "stats": [
+          370,
+          60,
+          0
+        ]
+      },
+      "identical": {
+        "programs": true,
+        "portable": true,
+        "expected.json": true
+      }
+    },
+    {
+      "corpus": "astro",
+      "result": {
+        "corpus": "astro",
+        "groupBytes": 7354904,
+        "lines": 512,
+        "programBytes": 6172691,
+        "stats": [
+          378,
+          69,
+          0
+        ]
+      },
+      "identical": {
+        "programs": true,
+        "portable": true,
+        "expected.json": true
+      }
+    },
+    {
+      "corpus": "tsx",
+      "result": {
+        "corpus": "tsx",
+        "groupBytes": 4774213,
+        "lines": 832,
+        "programBytes": 4333529,
+        "stats": [
+          250,
+          48,
+          0
+        ]
+      },
+      "identical": {
+        "programs": true,
+        "portable": true,
+        "expected.json": true
+      }
+    },
+    {
+      "corpus": "c",
+      "result": {
+        "corpus": "c",
+        "groupBytes": 1509984,
+        "lines": 576,
+        "programBytes": 144533,
+        "stats": [
+          105,
+          19,
+          0
+        ]
+      },
+      "identical": {
+        "programs": true,
+        "portable": true,
+        "expected.json": true
+      }
+    },
+    {
+      "corpus": "php",
+      "result": {
+        "corpus": "php",
+        "groupBytes": 4687146,
+        "lines": 560,
+        "programBytes": 3828879,
+        "stats": [
+          276,
+          31,
+          0
+        ]
+      },
+      "identical": {
+        "programs": true,
+        "portable": true,
+        "expected.json": true
+      }
+    }
+  ]
+}
