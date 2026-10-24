@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.6.0](https://github.com/sebastian-software/ferroni/compare/v2.5.2...v2.6.0) (2026-10-24)
+
+
+### Features
+
+* add eager acceleration modes and bounded adaptive DFAs ([#455](https://github.com/sebastian-software/ferroni/issues/455)) ([4a6679e](https://github.com/sebastian-software/ferroni/commit/4a6679e6df2cca2ac28238f2a8335b731d8b3d32))
+* **scanner:** prototype fork-free prepared Eager groups ([2a80d97](https://github.com/sebastian-software/ferroni/commit/2a80d97d56621e5a1684926031f2e1ed342bf93d))
+
+
+### Bug Fixes
+
+* **tests:** retain crate docs without prototype features ([0953789](https://github.com/sebastian-software/ferroni/commit/0953789a0a777163c9497478d39166203e410e6e))
+
+
+### Performance Improvements
+
+* **scanner:** avoid package decode copies and temporary string buffers ([ae9d1c1](https://github.com/sebastian-software/ferroni/commit/ae9d1c155c5f39347ae46409094f83234539a260))
+* **scanner:** compact portable Eager images with byte planes ([770e313](https://github.com/sebastian-software/ferroni/commit/770e313fa63c427ae01106bb77906d3c1b0a952a))
+* **scanner:** reduce portable Eager loading and add Zstd packages ([#458](https://github.com/sebastian-software/ferroni/issues/458)) ([a00cf15](https://github.com/sebastian-software/ferroni/commit/a00cf155eff90547617a477c59e5a9e7baaac0c7))
+
 ## [2.5.2](https://github.com/sebastian-software/ferroni/compare/v2.5.1...v2.5.2) (2026-10-22)
 
 
