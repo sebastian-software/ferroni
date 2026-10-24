@@ -18,7 +18,7 @@ exclude = [".cache/", ".cargo/", "benches/", "docs/", "fuzz/", "scripts/", "exam
 # The `ffi` feature links a local Oniguruma C checkout that docs.rs cannot
 # provide, so document the pure-Rust features explicitly.
 all-features = false
-features = ["precompiled"]
+features = ["precompiled", "precompiled-eager"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 # These mirror the crate-level attributes that used to live in `src/lib.rs`, so
@@ -54,10 +54,12 @@ prefilter-self-check = ["dfa-prefilter"]
 # Versioned, lazily decoded scanner pattern archives (ADR-018).
 # The explicit wire codec adds no dependencies.
 precompiled = []
-# Local scanner-group archive experiment; no stable wire/API contract.
+# Internal group codec and legacy NFA experiment; prefer precompiled-eager.
 scanner-group-nfa-prototype = ["precompiled", "dfa-prefilter"]
-# Own portable scanner bytecode; no dependency snapshot API.
-portable-eager-prototype = ["scanner-group-nfa-prototype"]
+# Prepared Eager scanner groups with a portable, versioned wire format.
+precompiled-eager = ["scanner-group-nfa-prototype"]
+# Compatibility alias for the earlier opt-in prototype.
+portable-eager-prototype = ["precompiled-eager"]
 # Diagnostic phase clocks, compiled out of ordinary builds and timings.
 scanner-load-profile = ["precompiled"]
 scanner-group-prototype = ["scanner-group-nfa-prototype", "regex-automata/dfa-build"]
@@ -107,6 +109,14 @@ lto = "thin"
 [[example]]
 name = "scanner_group_archive"
 required-features = ["precompiled"]
+
+[[example]]
+name = "precompiled_eager"
+required-features = ["precompiled-eager"]
+
+[[example]]
+name = "precompiled_eager_portability"
+required-features = ["precompiled-eager"]
 
 [[bench]]
 name = "scanner_group_archive_bench"

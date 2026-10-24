@@ -95,7 +95,8 @@ entry. Selecting `ScannerConfig::acceleration(AccelerationMode::Eager)`
 prepares suitable runtime accelerators before each scanner constructor returns,
 including for loaded programs. DFA tables are still built in the running
 process and shared through the pattern cache; they are not stored in the
-archive. `PrecompiledPatterns::len()` counts indexed programs; cache `len()`
+ordinary archive. [Prepared Eager archives](/guide/precompiled-eager) also
+ship the scanner-group preparation. `PrecompiledPatterns::len()` counts indexed programs; cache `len()`
 counts only decoded or newly compiled patterns.
 
 For browser WebAssembly, fetch the archive through your host integration and

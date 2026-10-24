@@ -1,0 +1,172 @@
+---
+order: 2.6
+title: Prepared Eager Archives
+---
+
+# Prepared Eager Archives
+
+Use `precompiled-eager` to prepare scanner groups once, publish them with a
+grammar, and load that preparation in later native or WebAssembly processes.
+This extends [ordinary precompiled patterns](/guide/precompiled-patterns),
+which still build their DFA accelerators locally. Original pattern strings
+remain required, and missing groups use normal Eager preparation.
+
+```toml
+[dependencies]
+ferroni = { version = "2", features = ["precompiled-eager"] }
+```
+
+The feature includes `precompiled` and `dfa-prefilter`. The earlier
+`portable-eager-prototype` feature remains an alias; new integrations should
+use the public API below. Use a Ferroni release containing `precompiled-eager`;
+it is not available in 2.6.0.
+
+## Prepare and publish a matched pair
+
+The producer builds every ordered scanner pattern list it wants to ship.
+Pattern order and duplicates matter. Export the programs and groups together:
+
+```rust no_run
+use ferroni::prelude::*;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = ScannerConfig::default().acceleration(AccelerationMode::Eager);
+    let mut cache = ScannerPatternCache::new();
+    for patterns in [
+        vec![r"\bword\b", r"(\d+)"],
+        vec![r"(\d+)", r"\bword\b", r"(\d+)"],
+    ] {
+        Scanner::with_pattern_cache(&patterns, &config, &mut cache)?;
+    }
+    let prepared = cache.export_precompiled_eager()?;
+    prepared.validate_groups()?; // Optional producer-side preflight.
+    std::fs::write("patterns.programs", prepared.program_bytes())?;
+    std::fs::write("patterns.portable", prepared.group_bytes())?;
+    Ok(())
+}
+```
+
+Export includes only groups already prepared in this cache. It does not
+traverse a TextMate grammar, resolve its includes, or enumerate dynamic
+end/while backreferences. The host asset generator must discover static groups.
+Unseen or unsupported groups retain normal Eager fallback. Callout programs
+are omitted because registered callbacks belong to their process.
+
+The pair is deterministic for the same patterns, settings, and preparation.
+Publish both files atomically under a versioned asset name. Never mix the
+program file from one export with groups from another: opening verifies the
+binding to the exact program bytes.
+
+## Load and retain the pair
+
+Treat the archive as an optional asset. A missing file, unsupported version,
+or mismatched pair leaves normal Eager available:
+
+```rust no_run
+use ferroni::prelude::*;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = ScannerConfig::default().acceleration(AccelerationMode::Eager);
+    let mut cache = ScannerPatternCache::new();
+    if let (Ok(programs), Ok(groups)) = (
+        std::fs::read("patterns.programs"),
+        std::fs::read("patterns.portable"),
+    ) {
+        match PrecompiledEager::from_bytes(programs, groups) {
+            Ok(prepared) => cache.add_precompiled_eager(prepared),
+            Err(error) => eprintln!("Skipping prepared archive: {error}"),
+        }
+    }
+    let mut scanner = Scanner::with_pattern_cache(
+        &[r"\bword\b", r"(\d+)"], &config, &mut cache,
+    )?;
+    assert_eq!(scanner.find_next_match("42", 0, ScannerFindOptions::NONE).unwrap().index, 1);
+    Ok(())
+}
+```
+
+For Wasm, fetch and decompress through the host, then pass the two byte buffers
+to `PrecompiledEager::from_bytes`. Ferroni has no HTTP client or browser binding.
+You can also embed both files with `include_bytes!(...).as_slice()`.
+
+Opening checks the indexes and their binding. Individual programs and groups
+are checked and decoded only when requested. A damaged record falls back to
+runtime preparation. `validate_groups()` optionally checks every group before
+use; it does not retain decoded groups or validate ordinary programs, so avoid
+repeating it on a startup path. The [ordinary archive API](/guide/precompiled-patterns#handle-changes-and-fallback)
+provides per-program validation for diagnostics.
+
+Retain a clone of `PrecompiledEager` to inspect `stats()`. Its `loaded_groups`
+and `invalid_groups` count successful record loads and invalid-record fallbacks
+across clones; missing groups and cache hits do not increment them. Attaching
+a new pair adds its program source and replaces the previous group source.
+Already decoded cache entries remain. `cache.clear()` drops decoded entries
+but retains archive sources; `cache.clear_precompiled()` removes the sources.
+Existing scanners remain usable in either case.
+
+## What is prepared, and what stays local
+
+The group image contains Ferroni's portable instructions, byte classes,
+entry states, and group selection metadata. It contains no Rust object layout,
+process pointers, dependency-private automata, machine code, or mutable search
+caches. Loading validates and decodes those instructions directly into the
+execution layout without rebuilding the group's dependency automata.
+
+Per-pattern literal helpers still use ordinary Eager preparation. Search
+scratch space and input-dependent transition caches remain local and warm
+while searching. Prepared Eager reduces startup work; it does not promise
+zero startup cost, allocation-free searches, or a search-speed improvement.
+Only `AccelerationMode::Eager` consumes these groups. `Auto` and `Off` retain
+their existing behavior.
+
+Producer and consumer must use compatible pattern text, syntax, options,
+rewrite/prefilter settings, global compile settings, and feature capability.
+Changing these settings can make a group unavailable. Clear the pattern cache
+after changing global compile settings, as with ordinary precompiled patterns.
+
+## Format compatibility and trust
+
+`PRECOMPILED_EAGER_FORMAT_VERSION` identifies the current group writer format;
+`PRECOMPILED_FORMAT_VERSION` separately identifies ordinary programs. Wire
+versions are independent of crate versions. Readers accept the current
+`FPRT003` format and the legacy `FPRT001`/`FPRT002` portable formats. Unsupported
+formats return `PrecompiledError::UnsupportedFormat`; regenerate both assets
+and keep normal compilation as fallback. Experimental NFA and dependency DFA
+snapshots are outside this public contract.
+
+Incompatible changes to instructions, byte classes, checksums, or layout
+require a group format version bump. Program semantics, optimizer facts, and
+Unicode compatibility follow [ADR-018](/adr/018-precompiled-scanner-patterns).
+The portable schema uses explicit integer widths and little-endian encoding,
+so compatible native and Wasm consumers can share a pair. Frozen native-produced
+fixtures are tested on native, WASI, and the browser Wasm target.
+
+Use archives from a trusted producer. Checksums and structural validation
+detect corruption; they do not authenticate a publisher or prove that its
+instructions implement the claimed patterns. A SHA-256 digest is useful only
+relative to a trusted manifest or release. See
+[ADR-019](/adr/019-prepared-eager-archives) for the public contract.
+
+## Local example and transport tooling
+
+The repository includes a runnable producer/consumer example:
+
+```bash
+cargo run --release --features precompiled-eager --example precompiled_eager -- generate .cache/prepared
+cargo run --release --features precompiled-eager --example precompiled_eager -- load .cache/prepared '42'
+```
+
+Compression belongs to the host. The repository's Node transport helper packages
+the pair with Zstandard level 19 and a versioned manifest. It requires Node's
+Zstandard APIs and is repository tooling, not part of the Rust crate:
+
+```bash
+node scripts/portable-eager-package.mjs pack .cache/prepared patterns .cache/published
+node scripts/portable-eager-package.mjs unpack .cache/published patterns .cache/downloaded
+```
+
+Publish the manifest and package together from a trusted source. The helper
+checks compressed and decompressed lengths and digests, caps output, and limits
+the decoder window. Use its `decodePackage` for a raw `.zst` download or
+`splitPayload` if HTTP has already decompressed the body. Other hosts must
+provide equivalent transport bounds before handing bytes to Ferroni.

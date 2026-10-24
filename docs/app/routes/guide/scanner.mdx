@@ -220,7 +220,8 @@ the mode. Direct writes to the public fields disable the DFA when either
 
 Pattern caches still share automata for the same pattern list and effective
 build settings. Eager preparation also applies to programs loaded from an
-archive, but the archive does not store the resulting DFA tables. Pattern and
+ordinary program archive. To ship prepared group instructions too, use
+[prepared Eager archives](/guide/precompiled-eager). Pattern and
 size limits remain enforced. Hybrid transitions, search scratch space, and
 input-dependent decisions can still be computed during searching; eager
 preparation does not guarantee allocation-free execution.

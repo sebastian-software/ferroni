@@ -1,0 +1,65 @@
+---
+order: 19
+title: "Prepared Eager Archives"
+---
+
+# Prepared Eager Archives
+
+## Status
+
+Accepted. Additive scanner extension to ADR-018; ordinary program archives
+retain their existing contract.
+
+## Context
+
+Ordinary precompiled patterns reuse bytecode but rebuild Eager scanner-group
+accelerators at startup. Consumers loading the same grammar repeatedly need
+to share that preparation too. The portable-group prototype demonstrated lower
+startup cost without dependency forks. Its hidden API exposed separate files
+whose attachment order could accidentally bind groups to the wrong program
+source, and its format had no public compatibility contract.
+
+## Decision
+
+The optional `precompiled-eager` feature exposes `PrecompiledEager`, a checked
+pair of ordinary programs and Ferroni-owned portable group instructions.
+Export and attachment operate on that pair. Opening checks the indexes and
+binds groups to the exact program bytes; individual records validate lazily.
+An optional group preflight checks all group records without executing them.
+Missing or invalid records retain ordinary Eager fallback. Original pattern
+strings remain required.
+
+The group format has its own version, independent of the crate and ordinary
+program versions. Incompatible instruction meaning, byte-class encoding,
+checksums, or layout changes require a new group version. Readers reject
+unsupported versions. Fixed integer widths and explicit little-endian encoding
+allow native and Wasm consumers to share archives. Frozen native-produced
+fixtures check interoperability and wire stability.
+
+The archive stores no dependency-private object, Rust memory layout, pointer,
+machine code, or mutable cache. The execution kernel belongs to Ferroni and
+uses unmodified registry dependencies. NFA and dependency DFA snapshot
+experiments remain outside this public contract. The former
+`portable-eager-prototype` feature remains a compatibility alias.
+
+The host owns group discovery, publication, HTTP, decompression, and publisher
+trust. Checksums detect corruption; structural validation does not establish
+that a program implements its claimed pattern. No dependency forks or new
+runtime dependencies are required.
+
+## Consequences
+
+Prepared Eager reduces accelerator construction at startup. Runtime scratch
+space, input-dependent caches, and per-pattern literal helper preparation
+remain local. Only Eager consumes prepared groups; Auto and Off are unchanged.
+Export covers groups actually prepared by the producer, so dynamic or unseen
+pattern sets can still require runtime compilation.
+
+The public API is stable while the wire version can change with explicit
+rejection and regeneration. Maintaining the independent kernel and format
+requires differential tests, frozen compatibility fixtures, Wasm execution,
+and decoder fuzzing with recomputed corruption checks. Changes to instruction
+semantics or portability reopen this decision and require renewed validation.
+
+The [prepared Eager guide](/guide/precompiled-eager) owns producer/consumer
+examples, fallback handling, and transport instructions.

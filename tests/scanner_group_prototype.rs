@@ -110,12 +110,12 @@ fn kinds() -> Vec<GroupKind> {
     let mut kinds = vec![GroupKind::Nfa];
     #[cfg(feature = "scanner-group-prototype")]
     kinds.push(GroupKind::Dfa);
-    #[cfg(feature = "portable-eager-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     kinds.push(GroupKind::Portable);
     kinds
 }
 
-#[cfg(feature = "portable-eager-prototype")]
+#[cfg(feature = "precompiled-eager")]
 #[test]
 fn portable_images_can_be_shared_and_exported_again_after_execution() {
     let config = ScannerConfig::default().acceleration(AccelerationMode::Eager);

@@ -1,5 +1,6 @@
 //! Experimental scanner-group archives. This format is deliberately separate
-//! from ADR-018 and has no compatibility promise. Only Eager consumes it.
+//! from ADR-018. The stable portable subset is exposed by `PrecompiledEager`;
+//! NFA/DFA experiments have no compatibility promise. Only Eager consumes it.
 use super::*;
 use crate::dfa_prefilter::{AutomataCell, group_archive};
 use std::ops::Range;
@@ -18,7 +19,7 @@ pub enum GroupKind {
     /// Portable Thompson states; execution retains the existing hybrid DFAs.
     Nfa,
     /// Own portable instructions, interpreted natively with bounded lazy caches.
-    #[cfg(feature = "portable-eager-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     Portable,
     /// Fully built DFAs, with NFA fallback at the construction budget.
     Dfa,
@@ -48,6 +49,51 @@ pub(crate) struct GroupSource {
 }
 
 impl GroupSource {
+    #[cfg(feature = "precompiled-eager")]
+    pub(super) fn open_portable(bytes: Arc<[u8]>, programs: &PrecompiledPatterns) -> Result<Self> {
+        if ![PORTABLE_MAGIC, PORTABLE_MAGIC_V2, PORTABLE_MAGIC_V1]
+            .iter()
+            .any(|magic| bytes.starts_with(*magic))
+        {
+            return Err(PrecompiledError::UnsupportedFormat);
+        }
+        let source = Self::open(bytes, programs)?;
+        if source.stats.nfa != 0 || source.stats.dfa != 0 {
+            return Err(PrecompiledError::UnsupportedFormat);
+        }
+        Ok(source)
+    }
+
+    #[cfg(feature = "precompiled-eager")]
+    pub(super) fn archive_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    #[cfg(feature = "precompiled-eager")]
+    pub(super) fn len(&self) -> usize {
+        self.groups.len()
+    }
+
+    #[cfg(feature = "precompiled-eager")]
+    pub(super) fn load_stats(&self) -> (usize, usize) {
+        (
+            self.loads.load(Ordering::Relaxed),
+            self.failures.load(Ordering::Relaxed),
+        )
+    }
+
+    #[cfg(feature = "precompiled-eager")]
+    pub(super) fn validate_groups(&self) -> Result<()> {
+        for (key, (range, checksum)) in &self.groups {
+            let bytes = &self.bytes[range.clone()];
+            if record_checksum(bytes, self.parallel_checksum) != *checksum {
+                return Err(PrecompiledError::InvalidData);
+            }
+            group_archive::decode(bytes, key.len())?;
+        }
+        Ok(())
+    }
+
     fn open(bytes: Arc<[u8]>, programs: &PrecompiledPatterns) -> Result<Self> {
         #[cfg(feature = "scanner-load-profile")]
         let _phase =
@@ -98,7 +144,7 @@ impl GroupSource {
             match data.first() {
                 Some(0) => stats.disabled += 1,
                 Some(1) => stats.nfa += 1,
-                #[cfg(feature = "portable-eager-prototype")]
+                #[cfg(feature = "precompiled-eager")]
                 Some(5 | 6) => stats.portable += 1,
                 Some(2 | 3) => stats.dfa += 1,
                 _ => return Err(PrecompiledError::InvalidData),
@@ -232,9 +278,9 @@ impl ScannerPatternCache {
         }
         groups.sort_by(|a, b| a.0.cmp(&b.0));
         groups.dedup_by(|a, b| a.0 == b.0);
-        #[cfg(feature = "portable-eager-prototype")]
+        #[cfg(feature = "precompiled-eager")]
         let portable = kind == GroupKind::Portable;
-        #[cfg(not(feature = "portable-eager-prototype"))]
+        #[cfg(not(feature = "precompiled-eager"))]
         let portable = false;
         let mut out = if portable { PORTABLE_MAGIC } else { MAGIC }.to_vec();
         put_u32(&mut out, programs.prototype_checksum(portable));
@@ -265,7 +311,7 @@ impl ScannerPatternCache {
             .ok_or(PrecompiledError::InvalidData)?;
         let source = GroupSource::open(bytes.into(), programs)?;
         let stats = source.stats;
-        self.group_source = Some(source);
+        self.group_source = Some(Arc::new(source));
         Ok(stats)
     }
 
@@ -375,7 +421,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "portable-eager-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     #[test]
     fn legacy_portable_checksums_remain_readable_and_invalid_code_falls_back() {
         let config = ScannerConfig::default().acceleration(AccelerationMode::Eager);
