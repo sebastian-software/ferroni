@@ -46,16 +46,16 @@ export function ScannerSection() {
 
 const precompiled = [
   {
-    heading: "Generate once",
-    text: "Compile your static scanner patterns into a shared cache, then export a .ferroni archive from your build tool.",
+    heading: "Prepare at build time",
+    text: "Build your static scanner sets in Eager mode. Export the compiled programs together with their prepared group instructions.",
   },
   {
-    heading: "Commit or embed",
-    text: "Commit the archive alongside your pattern definitions, ship it as an asset, or embed it in your Rust binary with include_bytes!.",
+    heading: "Share portable assets",
+    text: "Commit, embed or serve the paired archives with your application. Compatible native and WebAssembly builds read the same files.",
   },
   {
     heading: "Load what you use",
-    text: "Attach the archive to a pattern cache. Scanners decode programs on demand; missing or incompatible entries compile normally.",
+    text: "Scanners decode requested programs and groups on demand. Missing or incompatible entries use normal preparation; search caches remain local.",
   },
 ];
 
@@ -63,19 +63,22 @@ export function PrecompiledSection() {
   return (
     <Section
       id="fr-precompiled"
-      title="Ship compiled patterns with your app"
+      title="Prepare once. Load across starts."
       intro={
         <>
-          Loading the same tokenizer or highlighter patterns on every start? With the optional{" "}
-          <code>precompiled</code> feature, keep their compiled programs in your project and reuse
-          them across process starts and browser sessions. The archive works through{" "}
-          <code>ScannerPatternCache</code>, even for a scanner with a single expression.
+          Loading the same tokenizer or highlighter patterns on every start? Move their reusable
+          Eager preparation into your build step. The optional <code>precompiled-eager</code>{" "}
+          feature packages compiled programs and prepared scanner groups for reuse across process
+          starts and browser sessions, through <code>ScannerPatternCache</code>.
         </>
       }
       note={
         <>
-          Keep the original patterns for fallback and regenerate the archive when they change.{" "}
-          <Link to="/guide/precompiled-patterns">Generate, commit and load an archive</Link>
+          Keep the original patterns for fallback. Only need compiled programs? The{" "}
+          <code>precompiled</code> feature leaves group preparation local.{" "}
+          <Link to="/guide/precompiled-eager">Prepare and load Eager archives</Link>
+          {" · "}
+          <Link to="/guide/precompiled-patterns">Program archives</Link>
         </>
       }
     >
@@ -249,7 +252,7 @@ export function StatusSection() {
       id="project-status"
       tone="dim"
       title="Feature-complete and maintained"
-      intro="Ready to build on: Oniguruma syntax for ASCII and UTF-8, plus the scanner. The feature scope is complete. Maintenance focuses on correctness, Unicode, toolchains and security; new features are not planned."
+      intro="The Oniguruma compatibility scope is complete: ASCII and UTF-8, plus the scanner. Maintenance focuses on correctness, Unicode, toolchains and security. Rust-only scanner optimizations and startup reuse extend the port within that scope."
       note={
         <>
           Issues are welcome; pull requests keep{" "}

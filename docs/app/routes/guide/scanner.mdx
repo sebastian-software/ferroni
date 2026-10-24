@@ -228,14 +228,22 @@ preparation does not guarantee allocation-free execution.
 
 ## Reuse compilation across starts
 
-Enable the optional `precompiled` feature to ship compiled patterns alongside
-an unchanged grammar and reuse compilation in later processes or browser
-sessions. Programs decode only when a scanner requests them; missing or
-incompatible entries fall back to normal compilation.
+Two optional features let later processes or browser sessions reuse work:
 
-The [precompiled patterns guide](/guide/precompiled-patterns) covers archive
-generation, startup loading, compatible compile settings, and the startup
-measurements.
+- [`precompiled`](/guide/precompiled-patterns) stores compiled programs and
+  their prefilter seek facts. Eager scanner groups are still prepared locally.
+- [`precompiled-eager`](/guide/precompiled-eager) also stores the prepared group
+  instructions. Construct the desired ordered pattern lists in Eager mode in
+  your asset generator, then export and attach the program/group pair.
+
+Both use `ScannerPatternCache` and decode requested records on demand. Keep
+original patterns for missing or incompatible entries. The host owns asset
+delivery; runtime scratch space and input-dependent caches remain local.
+
+The [prepared Eager guide](/guide/precompiled-eager) covers feature selection,
+generation, loading, compatibility, and fallback. These Cargo features do not
+add an acceleration mode: use `AccelerationMode::Eager` to consume prepared
+groups; Auto and Off retain their existing behavior.
 
 ## Bound work on untrusted input
 

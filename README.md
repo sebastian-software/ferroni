@@ -44,6 +44,7 @@ project. Compile once, then reuse the pattern across your searches.
 | --- | --- |
 | Matching, extraction or replacement | [Getting started](https://ferroni.dev/guide/getting-started) |
 | A tokenizer or TextMate highlighter | [Scanner guide](https://ferroni.dev/guide/scanner) |
+| A highlighter that loads the same patterns on every start | [Prepared Eager archives](https://ferroni.dev/guide/precompiled-eager) |
 | An application moving from `regex` or `onig` | [API mapping and default differences](https://ferroni.dev/guide/coming-from-regex) |
 
 ## Why Ferroni
@@ -71,6 +72,14 @@ integrations. It finds the next match across a set of patterns; your TextMate
 runtime handles grammar rules and scopes. [Ferriki](https://ferriki.dev)
 builds a Shiki-compatible highlighter on it.
 
+**Prepare scanner groups once. Reuse them across starts.** With the optional
+`precompiled-eager` feature, export compiled programs and prepared Eager group
+instructions as a portable pair. Ship them with your application, embed them,
+or serve them as assets for compatible native and WebAssembly builds. Requested
+records decode on demand; missing or incompatible groups use normal Eager
+preparation. See the [prepared Eager guide](https://ferroni.dev/guide/precompiled-eager)
+for generation, loading and the work that remains local.
+
 **An established engine, a Rust future.** Oniguruma's C project closed in
 April 2025. Ferroni continues it, ported function by function, and
 [passes all 2,974 upstream UTF-8 tests](https://ferroni.dev/guide/compatibility).
@@ -91,6 +100,7 @@ See [compatibility](https://ferroni.dev/guide/compatibility) and
 
 - [Getting started](https://ferroni.dev/guide/getting-started) — your first match, captures, replacement, options and errors.
 - [Scanner guide](https://ferroni.dev/guide/scanner) — tokenization loops, UTF-16 positions and shared compiled patterns.
+- [Prepared Eager archives](https://ferroni.dev/guide/precompiled-eager) — move reusable scanner preparation into your build step and share it across starts.
 - [API reference](https://docs.rs/ferroni) — every public type and function.
 - [Regex benchmarks](https://ferroni.dev/perf/regex-workloads) — the speed summary, source projects, method and feature matrix.
 - [Benchmark results](benches/production_results/README.md) — per-platform aggregates, with every case and timing in [`publication.json`](benches/production_results/publication.json) and tiktoken pre-tokenization in [`additional_results`](benches/additional_results/README.md).
@@ -98,9 +108,10 @@ See [compatibility](https://ferroni.dev/guide/compatibility) and
 
 ## Project status and contributing
 
-Ferroni is feature-complete and maintained: the engine is ready, and the upkeep
-continues. Bug fixes, Unicode updates, toolchain upkeep and security fixes are
-in scope; new features are not planned. See the
+Ferroni's Oniguruma compatibility scope is complete and maintained. Bug fixes,
+Unicode updates, toolchain upkeep and security fixes remain in scope. Rust-only
+scanner optimizations and startup reuse extend the port without expanding its
+syntax or encoding scope. See the
 [project status](https://ferroni.dev/#project-status) for the maintenance
 scope.
 

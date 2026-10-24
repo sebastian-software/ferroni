@@ -22,7 +22,7 @@ export const meta: MetaFunction = () => [
   {
     name: "description",
     content:
-      "Bring your Oniguruma patterns to Rust. Look-behind, backreferences, recursion and a TextMate scanner, with a familiar API and no C toolchain. Start with a working example.",
+      "Oniguruma regex in pure Rust. Look-behind, backreferences, recursion and portable prepared scanner archives for native and WebAssembly apps.",
   },
 ];
 
@@ -55,8 +55,9 @@ function HeroSection() {
       lede={
         <>
           Keep the look-behind, backreferences and recursion your patterns rely on. Get a familiar
-          Rust API, a scanner for syntax highlighters, and a Cargo build for Linux, macOS, Windows
-          and WebAssembly. No C compiler, no bindgen. Let&rsquo;s make a match.
+          Rust API and a scanner for syntax highlighters. Prepare scanner groups once and ship their
+          portable archives to native and WebAssembly apps. Cargo handles the build, with no C
+          compiler or bindgen.
         </>
       }
       actions={

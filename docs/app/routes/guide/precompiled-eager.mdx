@@ -11,15 +11,34 @@ This extends [ordinary precompiled patterns](/guide/precompiled-patterns),
 which still build their DFA accelerators locally. Original pattern strings
 remain required, and missing groups use normal Eager preparation.
 
+The feature includes `precompiled` and `dfa-prefilter`. Use a Ferroni release
+containing `precompiled-eager`; it is not available in 2.6.0.
+
 ```toml
 [dependencies]
 ferroni = { version = "2", features = ["precompiled-eager"] }
 ```
 
-The feature includes `precompiled` and `dfa-prefilter`. The earlier
-`portable-eager-prototype` feature remains an alias; new integrations should
-use the public API below. Use a Ferroni release containing `precompiled-eager`;
-it is not available in 2.6.0.
+The earlier `portable-eager-prototype` feature remains an alias; new
+integrations should use the public API below.
+
+## Choose how much preparation to reuse
+
+| Path                         | Reused work                                                         | Work in the consuming process                                                                              |
+| ---------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Shared `ScannerPatternCache` | Compiled programs and any prepared groups within one process        | A new process prepares them again.                                                                         |
+| `precompiled`                | Compiled programs and prefilter seek facts across starts            | Eligible Eager group accelerators are built locally.                                                       |
+| `precompiled-eager`          | Programs, seek facts, and prepared group instructions across starts | Requested records decode and validate; per-pattern helpers, scratch space, and search caches remain local. |
+
+`precompiled-eager` is a Cargo feature, not another acceleration policy. Select
+`AccelerationMode::Eager` to consume prepared groups. Auto and Off remain
+unchanged. Archives serve `Scanner::with_pattern_cache`, including scanners
+with a single expression; the `Regex` API has no archive constructor.
+
+This moves reusable preparation out of startup. It does not promise faster
+searches, zero local setup, or full coverage of every path through a grammar.
+The host still supplies grammar definitions and discovers the scanner groups
+it wants to prepare.
 
 ## Prepare and publish a matched pair
 

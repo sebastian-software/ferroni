@@ -155,6 +155,21 @@
 //! assert_eq!(cache.len(), 3); // the string pattern was compiled once
 //! ```
 //!
+//! ### Reuse scanner preparation across starts
+//!
+//! The optional `precompiled` Cargo feature exports compiled scanner programs
+//! for later processes. `precompiled-eager` also stores prepared scanner-group
+//! instructions, so compatible native and WebAssembly builds can reuse that
+//! Eager preparation. The host can embed the paired archives or deliver them
+//! as application assets. This works through [`ScannerPatternCache`], including
+//! for a scanner with one expression; [`Regex`] has no archive constructor.
+//!
+//! Requested records decode and validate on demand. Missing or incompatible
+//! groups use normal Eager preparation; search scratch space and mutable caches
+//! remain local. Keep the original patterns and compatible compile settings.
+//! See [prepared Eager archives](https://ferroni.dev/guide/precompiled-eager)
+//! for the producer/consumer workflow and format contract.
+//!
 //! ## Untrusted input
 //!
 //! Some pattern and input pairs take exponential time in a backtracking engine.
