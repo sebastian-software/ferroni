@@ -17,6 +17,11 @@ Archives are available through `ScannerPatternCache`, including for a scanner
 with a single expression. The `Regex` API has no archive constructor; loading
 an archive supplies programs for `Scanner::with_pattern_cache`.
 
+Want to reuse Eager group preparation too? Choose
+[`precompiled-eager`](/guide/precompiled-eager). It includes this program format
+and adds portable prepared scanner-group instructions. The `precompiled`
+feature described here leaves group preparation in the consuming process.
+
 ## Enable archive support
 
 ```toml

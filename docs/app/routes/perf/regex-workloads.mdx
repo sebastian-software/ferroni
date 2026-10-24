@@ -20,6 +20,12 @@ when startup matters. Each chart row compares Ferroni with one engine on the
 tasks they both run; different task counts mean the rows are not a universal
 engine ranking.
 
+For repeated tokenizer or highlighter startup,
+[prepared Eager archives](/guide/precompiled-eager) move reusable scanner
+preparation into an asset-generation step. The regex timings on this page do
+not measure archive loading, decompression, downloads, or TextMate startup.
+They do not establish a search-speed improvement from prepared archives.
+
 ## Results
 
 <SpeedSummary />
