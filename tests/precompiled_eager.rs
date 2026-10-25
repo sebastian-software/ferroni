@@ -7,6 +7,88 @@ use ferroni::prelude::*;
 use support::*;
 
 #[test]
+fn inefficient_prepared_prefilter_retires_without_changing_results() {
+    // Ferriki's inline HTML/SVG/template group (issue #465). Its negative
+    // searches generate more portable states than the cache can reuse.
+    let patterns = [
+        r"(?i)(\s?\/\*\s?(html|svg|template|inline-html|inline-template)\s?\*\/\s?)(`)",
+        r"(?i)(\s*(html|svg|template|inline-html|inline-template))(`)",
+        r"(?i)(?<=\s|\,|\=|\:|\(|\$\()\s{0,}(((\/\*)|(\/\/))\s?(html|svg|template|inline-html|inline-template)[ ]{0,1000}\*?\/?)[ ]{0,1000}$",
+        r"(\$\{)",
+        r"(\$\(`)",
+    ];
+    let config = config().options(ferroni::oniguruma::ONIG_OPTION_CAPTURE_GROUP);
+    let mut producer = ScannerPatternCache::new();
+    Scanner::with_pattern_cache(&patterns, &config, &mut producer).unwrap();
+    let pair = producer.export_precompiled_eager().unwrap();
+    let mut cache = ScannerPatternCache::new();
+    cache.add_precompiled_eager(pair.clone());
+    let mut prepared = Scanner::with_pattern_cache(&patterns, &config, &mut cache).unwrap();
+    let mut plain = Scanner::with_config(
+        &patterns,
+        &config.clone().acceleration(AccelerationMode::Off),
+    )
+    .unwrap();
+    assert_eq!(pair.stats().loaded_groups, 1);
+    assert!(prepared.prefilter_stats().built);
+    let subjects = [
+        OnigString::new("export interface LanguageRegistration {\n"),
+        OnigString::new(
+            "  /** Automatic regex prefiltering. Disable to avoid construction for one-shot use. */\n",
+        ),
+        OnigString::new(
+            "export declare function getSingletonHighlighter(options?: HighlighterOptions): Promise<Highlighter>;\n",
+        ),
+        OnigString::new(
+            "  /** Includes TextMate scopes or token types in HTML transformer callback tokens. */\n",
+        ),
+        OnigString::new("export interface HtmlWithCss {\n"),
+        OnigString::new("  html: string;\n"),
+        OnigString::new("  htmlAttrs?: Readonly<Record<string, string>>;\n"),
+        OnigString::new("  htmlStyle?: Readonly<Record<string, string>>;\n"),
+        OnigString::new(
+            "  /** Callback-only metadata from `HighlightOptions.data`; omitted from HTML. */\n",
+        ),
+        OnigString::new("  /** Unavailable during span/line hooks and for inline structure. */\n"),
+    ];
+    // Separate identities mirror the standalone replay: subject memoization
+    // must not hide repeated transition generation.
+    let queries: Vec<_> = subjects
+        .iter()
+        .flat_map(|subject| {
+            (0..=subject.utf16_len()).map(|start| (OnigString::new(subject.content()), start))
+        })
+        .collect();
+    for _ in 0..32 {
+        for (subject, start) in &queries {
+            assert_eq!(
+                prepared.find_next_match_utf16(subject, *start, ScannerFindOptions::NONE),
+                plain.find_next_match_utf16(subject, *start, ScannerFindOptions::NONE)
+            );
+        }
+        if prepared.prefilter_stats().retired {
+            break;
+        }
+    }
+    assert!(
+        prepared.prefilter_stats().retired,
+        "{:?}",
+        prepared.prefilter_stats()
+    );
+    assert!(!prepared.prefilter_stats().built);
+    // Retirement is permanent, and subsequent positive searches still return
+    // the same pattern, UTF-16 offsets, and captures as the ordinary scanner.
+    let positive = OnigString::new("é💻 html`<div>${value}</div>`");
+    for start in 0..=positive.utf16_len() {
+        assert_eq!(
+            prepared.find_next_match_utf16(&positive, start, ScannerFindOptions::NONE),
+            plain.find_next_match_utf16(&positive, start, ScannerFindOptions::NONE)
+        );
+    }
+    assert!(prepared.prefilter_stats().retired);
+}
+
+#[test]
 fn frozen_native_pair_preserves_results_and_wire_format() {
     check_fixture();
     assert_eq!(

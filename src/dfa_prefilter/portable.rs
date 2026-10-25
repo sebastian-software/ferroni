@@ -64,6 +64,8 @@ struct Machine {
     bytes: usize,
     limit: usize,
     clears: usize,
+    searched: usize,
+    minimum_bytes_per_state: usize,
     first: bool,
     starts: [[u32; 5]; 2],
 }
@@ -408,7 +410,7 @@ fn assertions(previous: u8, next: u8, reverse: bool) -> u32 {
 }
 
 impl Machine {
-    fn new(program: &Program, first: bool, limit: usize) -> Self {
+    fn new(program: &Program, first: bool, limit: usize, minimum_bytes_per_state: usize) -> Self {
         Self {
             states: Vec::new(),
             transitions: Vec::new(),
@@ -424,24 +426,38 @@ impl Machine {
             bytes: 0,
             limit,
             clears: 0,
+            searched: 0,
+            minimum_bytes_per_state,
             first,
             starts: [[UNKNOWN; 5]; 2],
         }
     }
 
-    fn intern(&mut self, _program: &Program, key: Key) -> u32 {
+    fn intern(&mut self, key: Key) -> Option<u32> {
         if let Some(&id) = self.ids.get(&key) {
-            return id;
+            return Some(id);
         }
         let bytes =
             2 * (key.roots.len() + key.matches.len()) * 4 + (1usize << self.stride2) * 4 + 128;
         if self.bytes + bytes > self.limit && !self.states.is_empty() {
+            // Match the hybrid DFA's efficiency policy: allow initial cache
+            // growth, then give up only when the states are not reused enough.
+            // Count bytes across searches, but only since the last clear.
+            if self.clears >= MIN_CACHE_CLEARS
+                && self.searched
+                    < self
+                        .minimum_bytes_per_state
+                        .saturating_mul(self.states.len())
+            {
+                return None;
+            }
             self.states.clear();
             self.transitions.clear();
             self.ids.clear();
             self.starts = [[UNKNOWN; 5]; 2];
             self.bytes = 0;
             self.clears += 1;
+            self.searched = 0;
         }
         let mut id = self.transitions.len() as u32;
         if !key.matches.is_empty() {
@@ -455,47 +471,51 @@ impl Machine {
         self.transitions
             .resize(self.transitions.len() + (1 << self.stride2), UNKNOWN);
         self.bytes += bytes;
-        id
+        Some(id)
     }
 
     #[inline]
-    fn start(&mut self, program: &Program, anchored: bool, previous: Option<u8>) -> u32 {
+    fn start(&mut self, program: &Program, anchored: bool, previous: Option<u8>) -> Option<u32> {
         let previous = if program.looks { context(previous) } else { 0 };
         let slot = usize::from(anchored);
         let cached = self.starts[slot][previous as usize];
         if cached != UNKNOWN {
-            return cached;
+            return Some(cached);
         }
-        let sid = self.intern(
-            program,
-            Key {
-                roots: vec![if anchored {
-                    program.anchored
-                } else {
-                    program.unanchored
-                }],
-                matches: Vec::new(),
-                previous,
-            },
-        );
+        let sid = self.intern(Key {
+            roots: vec![if anchored {
+                program.anchored
+            } else {
+                program.unanchored
+            }],
+            matches: Vec::new(),
+            previous,
+        })?;
         self.starts[slot][previous as usize] = sid;
-        sid
+        Some(sid)
     }
 
     #[inline]
-    fn step(&mut self, program: &Program, sid: u32, byte: Option<u8>) -> u32 {
+    fn step(&mut self, program: &Program, sid: u32, byte: Option<u8>) -> Option<u32> {
+        self.searched = self.searched.saturating_add(usize::from(byte.is_some()));
         let class = byte.map_or(program.representatives.len(), |b| {
             program.classes[b as usize] as usize
         });
         let next = self.transitions[index(sid) + class];
         if next != UNKNOWN {
-            return next;
+            return Some(next);
         }
         self.transition(program, sid, byte, class)
     }
 
     #[inline(never)]
-    fn transition(&mut self, program: &Program, sid: u32, byte: Option<u8>, class: usize) -> u32 {
+    fn transition(
+        &mut self,
+        program: &Program,
+        sid: u32,
+        byte: Option<u8>,
+        class: usize,
+    ) -> Option<u32> {
         self.generation = self.generation.wrapping_add(1);
         if self.generation == 0 {
             self.seen.fill(0);
@@ -566,11 +586,11 @@ impl Machine {
             },
         };
         let clears = self.clears;
-        let next = self.intern(program, key);
+        let next = self.intern(key)?;
         if clears == self.clears {
             self.transitions[index(sid) + class] = next;
         }
-        next
+        Some(next)
     }
 
     fn dead(&self, sid: u32) -> bool {
@@ -632,9 +652,24 @@ impl Portable {
             crate::scanner::load_profile::Phase::PortableScratch,
         );
         Caches {
-            walk: Machine::new(&self.forward, false, OVERLAPPING_CACHE_CAPACITY),
-            forward: Machine::new(&self.forward, true, SEARCH_CACHE_CAPACITY),
-            reverse: Machine::new(&self.reverse, false, SEARCH_CACHE_CAPACITY),
+            walk: Machine::new(
+                &self.forward,
+                false,
+                OVERLAPPING_CACHE_CAPACITY,
+                MIN_BYTES_PER_STATE,
+            ),
+            forward: Machine::new(
+                &self.forward,
+                true,
+                SEARCH_CACHE_CAPACITY,
+                SEARCH_MIN_BYTES_PER_STATE,
+            ),
+            reverse: Machine::new(
+                &self.reverse,
+                false,
+                SEARCH_CACHE_CAPACITY,
+                SEARCH_MIN_BYTES_PER_STATE,
+            ),
         }
     }
     pub(super) fn nfa_states(&self) -> usize {
@@ -650,17 +685,21 @@ impl Portable {
         haystack: &[u8],
         from: usize,
         until: usize,
-    ) -> Option<regex_automata::Match> {
+    ) -> std::result::Result<Option<regex_automata::Match>, ()> {
         let machine = &mut cache.forward;
-        let mut sid = machine.start(
-            &self.forward,
-            false,
-            from.checked_sub(1).map(|p| haystack[p]),
-        );
+        let mut sid = machine
+            .start(
+                &self.forward,
+                false,
+                from.checked_sub(1).map(|p| haystack[p]),
+            )
+            .ok_or(())?;
         let mut end = None;
         let mut p = from;
         while p < until {
-            sid = machine.step(&self.forward, sid, Some(haystack[p]));
+            sid = machine
+                .step(&self.forward, sid, Some(haystack[p]))
+                .ok_or(())?;
             if machine.matched(sid) {
                 end = Some(p);
             }
@@ -670,18 +709,26 @@ impl Portable {
             p += 1;
         }
         if p == until {
-            sid = machine.step(&self.forward, sid, haystack.get(p).copied());
+            sid = machine
+                .step(&self.forward, sid, haystack.get(p).copied())
+                .ok_or(())?;
             if machine.matched(sid) {
                 end = Some(p);
             }
         }
-        let end = end?;
+        let Some(end) = end else {
+            return Ok(None);
+        };
         let machine = &mut cache.reverse;
-        let mut sid = machine.start(&self.reverse, true, haystack.get(end).copied());
+        let mut sid = machine
+            .start(&self.reverse, true, haystack.get(end).copied())
+            .ok_or(())?;
         let mut start = None;
         let mut p = end;
         while p > from {
-            sid = machine.step(&self.reverse, sid, Some(haystack[p - 1]));
+            sid = machine
+                .step(&self.reverse, sid, Some(haystack[p - 1]))
+                .ok_or(())?;
             if machine.matched(sid) {
                 start = Some(p);
             }
@@ -691,12 +738,14 @@ impl Portable {
             p -= 1;
         }
         if p == from {
-            sid = machine.step(&self.reverse, sid, p.checked_sub(1).map(|p| haystack[p]));
+            sid = machine
+                .step(&self.reverse, sid, p.checked_sub(1).map(|p| haystack[p]))
+                .ok_or(())?;
             if machine.matched(sid) {
                 start = Some(p);
             }
         }
-        start.map(|start| regex_automata::Match::new(PatternID::ZERO, start..end))
+        Ok(start.map(|start| regex_automata::Match::new(PatternID::ZERO, start..end)))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -716,7 +765,11 @@ impl Portable {
         admits: &mut dyn FnMut(u16, usize) -> bool,
     ) -> (ScanEnd, bool) {
         let cache = &mut caches.walk;
-        let mut sid = cache.start(&self.forward, true, at.checked_sub(1).map(|p| haystack[p]));
+        let Some(mut sid) =
+            cache.start(&self.forward, true, at.checked_sub(1).map(|p| haystack[p]))
+        else {
+            return (ScanEnd::GaveUp, false);
+        };
         let end = haystack.len();
         let cut = end.min(at.saturating_add(CANDIDATE_SCAN_BYTES));
         let ask = at.saturating_add(if ask_early {
@@ -726,9 +779,17 @@ impl Portable {
         });
         let mut i = at;
         let mut recorded = None;
+        macro_rules! step {
+            ($byte:expr, $asked:expr) => {
+                match cache.step(&self.forward, sid, $byte) {
+                    Some(next) => sid = next,
+                    None => return (ScanEnd::GaveUp, $asked),
+                }
+            };
+        }
         macro_rules! finish {
             ($asked:expr) => {{
-                sid = cache.step(&self.forward, sid, None);
+                step!(None, $asked);
                 cache.record(sid, patset);
                 return (ScanEnd::Finished, $asked);
             }};
@@ -756,7 +817,7 @@ impl Portable {
                 }
                 break;
             }
-            sid = cache.step(&self.forward, sid, Some(haystack[i]));
+            step!(Some(haystack[i]), false);
             i += 1;
         }
         *stamp = stamp.wrapping_add(1);
@@ -779,7 +840,7 @@ impl Portable {
             return (ScanEnd::Settled, true);
         }
         loop {
-            sid = cache.step(&self.forward, sid, Some(haystack[i]));
+            step!(Some(haystack[i]), true);
             i += 1;
             if cache.dead(sid) {
                 return (ScanEnd::Finished, true);
@@ -831,6 +892,112 @@ mod tests {
             unanchored: 2,
             reverse: false,
             looks: true,
+        }
+    }
+
+    #[test]
+    fn cache_efficiency_counts_reused_transitions_between_clears() {
+        // Two states loop on 'a' and switch on 'b'. One fits in the cache:
+        // switching constantly must give up, while long runs remain useful.
+        let program = Program {
+            code: vec![[0; 4], [1, 0, 2, 0], [1, 4, 2, 0]],
+            pool: vec![0x6161, 1, 0x6262, 2, 0x6161, 2, 0x6262, 1],
+            classes: std::array::from_fn(|i| match i as u8 {
+                b'a' => 0,
+                b'b' => 1,
+                _ => 2,
+            }),
+            representatives: vec![b'a', b'b', 0],
+            anchored: 1,
+            unanchored: 1,
+            reverse: false,
+            looks: false,
+        };
+        for minimum in [MIN_BYTES_PER_STATE, SEARCH_MIN_BYTES_PER_STATE] {
+            let mut inefficient = Machine::new(&program, false, 200, minimum);
+            let mut sid = inefficient.start(&program, true, None).unwrap();
+            for _ in 0..MIN_CACHE_CLEARS {
+                sid = inefficient.step(&program, sid, Some(b'b')).unwrap();
+            }
+            assert!(inefficient.step(&program, sid, Some(b'b')).is_none());
+
+            let mut efficient = Machine::new(&program, false, 200, minimum);
+            let mut sid = efficient.start(&program, true, None).unwrap();
+            for _ in 0..MIN_CACHE_CLEARS * 3 {
+                for _ in 0..minimum {
+                    sid = efficient.step(&program, sid, Some(b'a')).unwrap();
+                }
+                sid = efficient.step(&program, sid, Some(b'b')).unwrap();
+            }
+            assert!(efficient.clears > MIN_CACHE_CLEARS);
+        }
+    }
+
+    #[test]
+    fn walk_forward_and_reverse_searches_propagate_bad_efficiency() {
+        let mut bytes = Vec::new();
+        for reverse in [false, true] {
+            let nfa = thompson::Compiler::new()
+                .configure(
+                    thompson::Config::new()
+                        .which_captures(thompson::WhichCaptures::None)
+                        .reverse(reverse),
+                )
+                .build("ab")
+                .unwrap();
+            Program::write(&nfa, &mut bytes).unwrap();
+        }
+        let portable = Portable::read(&mut Reader::new(&bytes), 1, true).unwrap();
+        let _limits = crate::regexec::shared_limits();
+        let (reg, seek) = crate::regcomp::onig_new_for_scanner(
+            b"ab",
+            crate::oniguruma::ONIG_OPTION_CAPTURE_GROUP,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+            false,
+            true,
+        )
+        .unwrap();
+        let mut automata = Automata::build(std::iter::once((seek.as_ref(), &reg)), false).unwrap();
+        automata.portable = Some(Arc::new(portable));
+        let mut ordinary = SetPrefilter::new(&automata);
+        assert_eq!(ordinary.search_in(b"zzab", 0, 4, &mut |_, _| true), Some(2));
+        assert!(!ordinary.gave_up());
+        for reverse in [false, true] {
+            let mut prefilter = SetPrefilter::new(&automata);
+            let (_, caches) = prefilter.portable.as_mut().unwrap();
+            let machine = if reverse {
+                &mut caches.reverse
+            } else {
+                &mut caches.forward
+            };
+            machine.limit = 1;
+            machine.clears = MIN_CACHE_CLEARS;
+            // A failed forward or reverse search must return the earliest
+            // possible position, discarding even a forward match at offset 2.
+            assert_eq!(
+                prefilter.search_in(b"zzab", 0, 4, &mut |_, _| true),
+                Some(0)
+            );
+            assert!(prefilter.gave_up());
+        }
+        for asked in [false, true] {
+            let mut prefilter = SetPrefilter::new(&automata);
+            if asked {
+                prefilter.long = vec![0];
+                prefilter.settle = 0;
+                prefilter.ask_early = true;
+            }
+            let (_, caches) = prefilter.portable.as_mut().unwrap();
+            caches.walk.limit = 1;
+            caches.walk.clears = MIN_CACHE_CLEARS;
+            // Both before and after long-seek admission, give-up must retain
+            // every possible candidate and mark the scanner for retirement.
+            assert_eq!(
+                prefilter.candidates_at(b"ab", 0, &mut |_, _| true),
+                Some(&[0][..])
+            );
+            assert!(prefilter.gave_up());
         }
     }
 
@@ -958,6 +1125,11 @@ mod tests {
             // A tiny limit exercises state-ID reuse while searches are active.
             caches.forward.limit = 512;
             caches.reverse.limit = 512;
+            // This differential checks continued state-ID reuse. The separate
+            // efficiency regressions exercise give-up and scanner fallback.
+            caches.walk.minimum_bytes_per_state = 0;
+            caches.forward.minimum_bytes_per_state = 0;
+            caches.reverse.minimum_bytes_per_state = 0;
             let mut reference_cache = reference.create_cache();
             let mut seed = 0x64F0_1234u32;
             let alphabet = b"abcdforsz012% \n\r\0\xC3\xA9";
@@ -1069,6 +1241,7 @@ mod tests {
                             .map(|m| m.range());
                         let actual = portable
                             .search(&mut caches, &text, start, end)
+                            .unwrap()
                             .map(|m| m.range());
                         assert_eq!(actual, expected, "{patterns:?} {text:?} {start}..{end}");
                     }
