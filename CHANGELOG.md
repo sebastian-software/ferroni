@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.1](https://github.com/sebastian-software/ferroni/compare/v2.7.0...v2.7.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **scanner:** retire inefficient portable prefilters ([#466](https://github.com/sebastian-software/ferroni/issues/466)) ([f1e0955](https://github.com/sebastian-software/ferroni/commit/f1e0955a2e9a9a74c3ee635531fe58c4fef32fd2)), closes [#465](https://github.com/sebastian-software/ferroni/issues/465)
+
 ## [2.7.0](https://github.com/sebastian-software/ferroni/compare/v2.6.0...v2.7.0) (2026-10-24)
 
 
