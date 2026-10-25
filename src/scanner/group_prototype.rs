@@ -39,7 +39,7 @@ pub struct GroupStats {
 }
 
 pub(crate) struct GroupSource {
-    bytes: Arc<[u8]>,
+    bytes: PrecompiledBytes,
     ids: HashMap<Vec<u8>, u32>,
     groups: HashMap<Vec<u32>, (Range<usize>, u32)>,
     stats: GroupStats,
@@ -50,7 +50,10 @@ pub(crate) struct GroupSource {
 
 impl GroupSource {
     #[cfg(feature = "precompiled-eager")]
-    pub(super) fn open_portable(bytes: Arc<[u8]>, programs: &PrecompiledPatterns) -> Result<Self> {
+    pub(super) fn open_portable(
+        bytes: PrecompiledBytes,
+        programs: &PrecompiledPatterns,
+    ) -> Result<Self> {
         if ![PORTABLE_MAGIC, PORTABLE_MAGIC_V2, PORTABLE_MAGIC_V1]
             .iter()
             .any(|magic| bytes.starts_with(*magic))
@@ -94,7 +97,7 @@ impl GroupSource {
         Ok(())
     }
 
-    fn open(bytes: Arc<[u8]>, programs: &PrecompiledPatterns) -> Result<Self> {
+    fn open(bytes: PrecompiledBytes, programs: &PrecompiledPatterns) -> Result<Self> {
         #[cfg(feature = "scanner-load-profile")]
         let _phase =
             crate::scanner::load_profile::scope(crate::scanner::load_profile::Phase::GroupIndex);
@@ -309,6 +312,7 @@ impl ScannerPatternCache {
             .precompiled
             .last()
             .ok_or(PrecompiledError::InvalidData)?;
+        let bytes: Arc<[u8]> = bytes.into();
         let source = GroupSource::open(bytes.into(), programs)?;
         let stats = source.stats;
         self.group_source = Some(Arc::new(source));

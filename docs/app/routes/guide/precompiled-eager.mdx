@@ -123,6 +123,38 @@ Already decoded cache entries remain. `cache.clear()` drops decoded entries
 but retains archive sources; `cache.clear_precompiled()` removes the sources.
 Existing scanners remain usable in either case.
 
+## Share host-owned storage
+
+`PrecompiledBytes` retains an immutable host allocation and creates checked
+views without copying bytes. When programs and groups are sections of one
+decoded container, both can share that container. This also avoids converting
+an owned `Vec<u8>` into a separate `Arc<[u8]>` allocation.
+
+```rust
+use ferroni::prelude::*;
+
+fn open_container(
+    container: Vec<u8>,
+    programs: std::ops::Range<usize>,
+    groups: std::ops::Range<usize>,
+) -> Result<PrecompiledEager, PrecompiledError> {
+    let image = PrecompiledBytes::new(container);
+    PrecompiledEager::from_shared_bytes(image.slice(programs)?, image.slice(groups)?)
+}
+```
+
+Use `PrecompiledBytes::from_shared_owner` for an existing `Arc<Vec<u8>>` or
+another shared owner implementing `AsRef<[u8]> + Send + Sync`. The owner must
+expose the same immutable byte image while any view survives. Range checks,
+index validation, pair binding, lazy record checks, export bytes and wire
+versions are unchanged. Ordinary `PrecompiledPatterns` also accepts
+`from_shared_bytes`; existing `from_bytes` APIs keep their signatures.
+
+Ferroni adds no filesystem access or memory mapping. Other storage owners may
+expose a stable image, but the host must meet their lifetime and immutability
+requirements. Shared storage avoids copies; it does not eliminate requested
+record decoding or imply that an arbitrary mutable cache file is safe to map.
+
 ## What is prepared, and what stays local
 
 The group image contains Ferroni's portable instructions, byte classes,

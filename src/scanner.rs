@@ -12,7 +12,9 @@ use smallvec::SmallVec;
 #[cfg(feature = "precompiled")]
 mod precompiled;
 #[cfg(feature = "precompiled")]
-pub use precompiled::{PRECOMPILED_FORMAT_VERSION, PrecompiledError, PrecompiledPatterns};
+pub use precompiled::{
+    PRECOMPILED_FORMAT_VERSION, PrecompiledBytes, PrecompiledError, PrecompiledPatterns,
+};
 #[cfg(feature = "precompiled-eager")]
 mod prepared;
 #[cfg(feature = "precompiled-eager")]

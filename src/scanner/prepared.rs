@@ -1,6 +1,8 @@
 //! Stable ownership and compatibility boundary for prepared Eager archives.
 
-use super::{PrecompiledError, PrecompiledPatterns, ScannerPatternCache, group_prototype};
+use super::{
+    PrecompiledBytes, PrecompiledError, PrecompiledPatterns, ScannerPatternCache, group_prototype,
+};
 use std::{fmt, sync::Arc};
 
 /// Current portable Eager group format, independent of the crate version.
@@ -55,8 +57,23 @@ impl PrecompiledEager {
         programs: impl Into<Arc<[u8]>>,
         groups: impl Into<Arc<[u8]>>,
     ) -> Result<Self, PrecompiledError> {
-        let programs = PrecompiledPatterns::from_bytes(programs)?;
-        let groups = group_prototype::GroupSource::open_portable(groups.into(), &programs)?;
+        Self::from_shared_bytes(
+            PrecompiledBytes::from(programs.into()),
+            PrecompiledBytes::from(groups.into()),
+        )
+    }
+
+    /// Open shared program and group views without copying their backing bytes.
+    ///
+    /// Both views may refer to sections of one host-owned decoded container.
+    /// Index, binding and record validation match [`Self::from_bytes`]; archive
+    /// versions and the returned byte slices retain the same contract.
+    pub fn from_shared_bytes(
+        programs: PrecompiledBytes,
+        groups: PrecompiledBytes,
+    ) -> Result<Self, PrecompiledError> {
+        let programs = PrecompiledPatterns::from_shared_bytes(programs)?;
+        let groups = group_prototype::GroupSource::open_portable(groups, &programs)?;
         Ok(Self {
             programs,
             groups: Arc::new(groups),

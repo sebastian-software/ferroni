@@ -236,3 +236,44 @@ fn valid_checksums_do_not_bypass_instruction_validation() {
     }
     assert_eq!(source.stats().invalid_groups, 1);
 }
+
+#[test]
+fn shared_container_views_preserve_ownership_validation_and_results() {
+    use ferroni::scanner::PrecompiledBytes;
+    use std::sync::Arc;
+    let mut bytes = b"host prefix".to_vec();
+    let program_start = bytes.len();
+    bytes.extend_from_slice(PROGRAMS);
+    let group_start = bytes.len();
+    bytes.extend_from_slice(GROUPS);
+    let group_end = bytes.len();
+    bytes.extend_from_slice(b"host suffix");
+    let owner = Arc::new(bytes);
+    let weak = Arc::downgrade(&owner);
+    let image = PrecompiledBytes::from_shared_owner(Arc::clone(&owner));
+    let programs = image.slice(program_start..group_start).unwrap();
+    let groups = image.slice(group_start..group_end).unwrap();
+    let pair = PrecompiledEager::from_shared_bytes(programs.clone(), groups.clone()).unwrap();
+    assert_eq!(
+        pair.program_bytes().as_ptr(),
+        owner[program_start..].as_ptr()
+    );
+    assert_eq!(pair.group_bytes().as_ptr(), owner[group_start..].as_ptr());
+    assert_eq!(pair.program_bytes(), PROGRAMS);
+    assert_eq!(pair.group_bytes(), GROUPS);
+    pair.validate_groups().unwrap();
+    assert!(PrecompiledEager::from_shared_bytes(groups, programs).is_err());
+    drop(image);
+    drop(owner);
+    let mut cache = ScannerPatternCache::new();
+    cache.add_precompiled_eager(pair.clone());
+    for patterns in SETS {
+        compare(patterns, &config(), &mut cache);
+    }
+    assert!(pair.stats().loaded_groups > 0);
+    assert_eq!(pair.stats().invalid_groups, 0);
+    assert!(weak.upgrade().is_some());
+    drop(pair);
+    cache.clear_precompiled();
+    assert!(weak.upgrade().is_none());
+}
