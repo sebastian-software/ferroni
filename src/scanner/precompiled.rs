@@ -1,4 +1,6 @@
 //! Indexed, versioned scanner programs. See ADR-018 for the compatibility contract.
+mod bytes;
+pub use bytes::PrecompiledBytes;
 mod schema;
 mod validate;
 mod wire;
@@ -53,7 +55,7 @@ impl std::error::Error for PrecompiledError {}
 /// Search limits continue to apply as they do to compiled patterns.
 #[derive(Clone)]
 pub struct PrecompiledPatterns {
-    bytes: Arc<[u8]>,
+    bytes: PrecompiledBytes,
     index: Arc<HashMap<Vec<u8>, Entry>>,
 }
 #[derive(Clone)]
@@ -192,10 +194,17 @@ impl PrecompiledPatterns {
     /// indexes return an error; a bad individual program is reported by
     /// [`validate_pattern`](Self::validate_pattern), or ignored by the cache.
     pub fn from_bytes(bytes: impl Into<Arc<[u8]>>) -> Result<Self> {
+        Self::from_shared_bytes(PrecompiledBytes::from(bytes.into()))
+    }
+
+    /// Open a shared byte image without copying it into an `Arc<[u8]>`.
+    ///
+    /// Validation and lazy decoding are identical to [`Self::from_bytes`].
+    /// The retained view keeps its owner alive until its final clone is dropped.
+    pub fn from_shared_bytes(bytes: PrecompiledBytes) -> Result<Self> {
         #[cfg(feature = "scanner-load-profile")]
         let _phase =
             crate::scanner::load_profile::scope(crate::scanner::load_profile::Phase::ProgramIndex);
-        let bytes = bytes.into();
         if bytes.len() > MAX_BLOB {
             return Err(PrecompiledError::ResourceLimit);
         }

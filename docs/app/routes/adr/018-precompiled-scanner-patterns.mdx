@@ -59,6 +59,13 @@ graph would couple the format to implementation fields and include runtime
 objects that need rebuilding anyway. A separate explicit schema makes version
 changes reviewable and keeps ordinary builds unchanged.
 
+Host-owned byte storage is supported through `PrecompiledBytes` and
+`from_shared_bytes`. Views share one immutable owner and check relative ranges.
+Existing `from_bytes` signatures, export byte slices, archive bounds, binding
+checks, record validation and wire versions stay unchanged. The host retains
+responsibility for any backing storage's lifetime and immutability requirements;
+Ferroni adds neither filesystem I/O nor unsafe code.
+
 ## Consequences
 
 Archives are optional accelerators. The caller keeps original pattern text and
@@ -85,3 +92,8 @@ recomputed checksums. `scanner_compile_bench` compares fresh-cache compilation
 with archive indexing, per-pattern decoding, assembly, and teardown. These
 construction measurements exclude downloads and do not predict full-page
 highlighting latency.
+
+## History
+
+- 2026-10-25: Add shared host-owned byte views to avoid copying decoded archive
+  sections while preserving the existing wire and validation contracts.

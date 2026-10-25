@@ -48,19 +48,28 @@ pub fn compare(patterns: &[&str], config: &ScannerConfig, cache: &mut ScannerPat
 }
 
 pub fn check_fixture() {
-    let prepared = fixture();
-    assert_eq!(prepared.len(), SETS.len());
-    assert!(!prepared.is_empty());
-    prepared.validate_groups().unwrap();
-    assert_eq!(prepared.stats(), PrecompiledEagerStats::default());
-    let mut cache = ScannerPatternCache::new();
-    cache.add_precompiled_eager(prepared.clone());
-    for patterns in SETS {
-        compare(patterns, &config(), &mut cache);
+    let mut bytes = PROGRAMS.to_vec();
+    bytes.extend_from_slice(GROUPS);
+    let image = PrecompiledBytes::new(bytes);
+    let shared = PrecompiledEager::from_shared_bytes(
+        image.slice(0..PROGRAMS.len()).unwrap(),
+        image.slice(PROGRAMS.len()..image.len()).unwrap(),
+    )
+    .unwrap();
+    for prepared in [fixture(), shared] {
+        assert_eq!(prepared.len(), SETS.len());
+        assert!(!prepared.is_empty());
+        prepared.validate_groups().unwrap();
+        assert_eq!(prepared.stats(), PrecompiledEagerStats::default());
+        let mut cache = ScannerPatternCache::new();
+        cache.add_precompiled_eager(prepared.clone());
+        for patterns in SETS {
+            compare(patterns, &config(), &mut cache);
+        }
+        assert_eq!(prepared.stats().loaded_groups, SETS.len());
+        assert_eq!(prepared.stats().invalid_groups, 0);
+        let exported = cache.export_precompiled_eager().unwrap();
+        assert_eq!(exported.program_bytes(), PROGRAMS);
+        assert_eq!(exported.group_bytes(), GROUPS);
     }
-    assert_eq!(prepared.stats().loaded_groups, SETS.len());
-    assert_eq!(prepared.stats().invalid_groups, 0);
-    let exported = cache.export_precompiled_eager().unwrap();
-    assert_eq!(exported.program_bytes(), PROGRAMS);
-    assert_eq!(exported.group_bytes(), GROUPS);
 }
