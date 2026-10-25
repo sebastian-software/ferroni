@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.2](https://github.com/sebastian-software/ferroni/compare/v2.7.1...v2.7.2) (2026-10-25)
+
+
+### Performance Improvements
+
+* **scanner:** share host-owned precompiled archive bytes ([7b91663](https://github.com/sebastian-software/ferroni/commit/7b91663252fb30e757e190e3314eb0d08f715d08))
+
 ## [2.7.1](https://github.com/sebastian-software/ferroni/compare/v2.7.0...v2.7.1) (2026-10-25)
 
 
