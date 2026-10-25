@@ -2178,7 +2178,8 @@ impl SetPrefilter {
             };
             #[cfg(feature = "precompiled-eager")]
             let result = if let Some((p, c)) = &mut self.portable {
-                Ok(p.search(c, haystack, next, span_end))
+                p.search(c, haystack, next, span_end)
+                    .map_err(|()| regex_automata::MatchError::gave_up(next))
             } else {
                 ordinary()
             };
@@ -2334,7 +2335,7 @@ impl SetPrefilter {
     ) -> (ScanEnd, bool) {
         #[cfg(feature = "precompiled-eager")]
         if let Some((p, c)) = &mut self.portable {
-            return p.scan(
+            let (end, asked) = p.scan(
                 c,
                 &mut self.patset,
                 &self.entries,
@@ -2348,6 +2349,11 @@ impl SetPrefilter {
                 at,
                 admits,
             );
+            if end == ScanEnd::GaveUp {
+                self.gave_up = true;
+                return (ScanEnd::Bound, asked);
+            }
+            return (end, asked);
         }
 
         #[cfg(feature = "scanner-group-prototype")]
