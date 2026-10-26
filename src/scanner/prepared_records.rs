@@ -1,4 +1,4 @@
-//! Experimental selective import. The manifest is not a new execution format:
+//! Source-scoped selective import. The index is not a new execution format:
 //! payloads retain the ordinary program and portable-group codecs.
 use super::{
     PatternSettings, PrecompiledBytes, PrecompiledEager, PrecompiledError, RegexType,
@@ -18,6 +18,9 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, PrecompiledError>;
+/// Version of the selective-import index, independent of program and group codecs.
+/// Incompatible changes to the dictionary, references or binding require a bump.
+pub const PRECOMPILED_EAGER_INDEX_FORMAT_VERSION: u32 = 1;
 const MAGIC: &[u8; 8] = b"FREC001\0";
 const MAX_PROGRAM_BYTES: usize = 256 << 20;
 const MAX_GROUP_BYTES: usize = 512 << 20;
@@ -28,11 +31,18 @@ struct Record {
     checksum: u32,
 }
 
-#[derive(Debug)]
+struct Program {
+    record: Record,
+    settings: PatternSettings,
+}
+struct Group {
+    record: Record,
+    patterns: usize,
+}
 struct Index {
-    programs: Vec<Record>,
+    programs: Vec<Program>,
     ids: HashMap<Vec<u8>, u32>,
-    groups: Vec<Record>,
+    groups: Vec<Group>,
     group_ids: HashMap<Vec<u32>, u32>,
     parallel: bool,
 }
@@ -84,8 +94,8 @@ impl PrecompiledEagerRecord {
     }
     fn metadata(&self) -> &Record {
         match self.kind {
-            PrecompiledEagerRecordKind::Program => &self.source.programs[self.id],
-            PrecompiledEagerRecordKind::Group => &self.source.groups[self.id],
+            PrecompiledEagerRecordKind::Program => &self.source.programs[self.id].record,
+            PrecompiledEagerRecordKind::Group => &self.source.groups[self.id].record,
         }
     }
 }
@@ -118,10 +128,10 @@ pub struct PrecompiledEagerRecordsStats {
     pub invalid_groups: usize,
 }
 
-/// Experimental source-scoped dictionary and individually supplied payloads.
+/// A source-scoped dictionary and individually supplied prepared Eager records.
 ///
-/// Enable `precompiled-eager-records-prototype`. This API and its FREC001
-/// manifest are experimental. Generate the manifest once from a checked
+/// Enable `precompiled-eager`. The versioned FREC001 index is independent of the
+/// program and group codecs. Generate the index once from a checked
 /// [`PrecompiledEager`] pair using [`PrecompiledEager::export_record_index`].
 /// Opening checks manifest integrity, versions, bounds, keys and references;
 /// supplied records retain their checksums and structural validation on use.
@@ -150,7 +160,7 @@ impl fmt::Debug for PrecompiledEagerRecords {
 }
 
 impl PrecompiledEager {
-    /// Export an experimental selective-import manifest for this checked pair.
+    /// Export a versioned selective-import index for this checked pair.
     ///
     /// Persist it with the original archives or individually addressable records.
     /// The manifest includes no payload bytes. This does not change either
@@ -247,18 +257,16 @@ impl PrecompiledEagerRecords {
         let mut total = 0;
         for id in 0..count {
             let key = input.blob()?.to_vec();
-            precompiled::check_key(&key)?;
+            let settings = precompiled::key_settings(&key)?;
             if id != 0 && key <= last {
                 return Err(PrecompiledError::InvalidData);
             }
             last.clone_from(&key);
             ids.insert(key, id as u32);
-            programs.push(read_record(
-                &mut input,
-                16 << 20,
-                MAX_PROGRAM_BYTES,
-                &mut total,
-            )?);
+            programs.push(Program {
+                record: read_record(&mut input, 16 << 20, MAX_PROGRAM_BYTES, &mut total)?,
+                settings,
+            });
         }
         let count = input.count(100_000)?;
         let mut groups = Vec::new();
@@ -266,17 +274,16 @@ impl PrecompiledEagerRecords {
         total = 0;
         for id in 0..count {
             let key = input.u32s(65_535)?;
+            let patterns = key.len();
             if key.iter().any(|&id| id as usize >= programs.len())
                 || group_ids.insert(key, id as u32).is_some()
             {
                 return Err(PrecompiledError::InvalidData);
             }
-            groups.push(read_record(
-                &mut input,
-                64 << 20,
-                MAX_GROUP_BYTES,
-                &mut total,
-            )?);
+            groups.push(Group {
+                record: read_record(&mut input, 64 << 20, MAX_GROUP_BYTES, &mut total)?,
+                patterns,
+            });
         }
         input.done()?;
         Ok(Self {
@@ -384,6 +391,43 @@ impl PrecompiledEagerRecords {
         }
         .cloned()
     }
+    /// Validate a supplied record without executing or retaining decoded code.
+    ///
+    /// Returns `false` when the payload has not been supplied, and an error for
+    /// a foreign descriptor or invalid payload. This optional diagnostic leaves
+    /// load counters unchanged. Scanner construction still validates on use;
+    /// avoid preflighting the same data on a latency-sensitive startup path.
+    pub fn validate_record(&self, record: &PrecompiledEagerRecord) -> Result<bool> {
+        if !Arc::ptr_eq(&self.index, &record.source) {
+            return Err(PrecompiledError::InvalidData);
+        }
+        let Some(bytes) = self.payload(record) else {
+            return Ok(false);
+        };
+        match record.kind {
+            PrecompiledEagerRecordKind::Program => {
+                let program = &self.index.programs[record.id];
+                precompiled::decode_record(&bytes, program.record.checksum, program.settings)?;
+            }
+            PrecompiledEagerRecordKind::Group => {
+                self.decode_group(record, &bytes)?;
+            }
+        }
+        Ok(true)
+    }
+    fn decode_group(
+        &self,
+        record: &PrecompiledEagerRecord,
+        bytes: &[u8],
+    ) -> Result<Option<crate::dfa_prefilter::Automata>> {
+        if !matches!(bytes.first(), Some(0 | 5 | 6))
+            || group_prototype::record_checksum(bytes, self.index.parallel)
+                != record.metadata().checksum
+        {
+            return Err(PrecompiledError::InvalidData);
+        }
+        group_archive::decode(bytes, self.index.groups[record.id].patterns)
+    }
     /// Return shared decode counters, excluding missing payloads and cache hits.
     pub fn stats(&self) -> PrecompiledEagerRecordsStats {
         PrecompiledEagerRecordsStats {
@@ -431,14 +475,7 @@ impl PrecompiledEagerRecords {
             self.group_id(patterns, settings)?,
         );
         let bytes = self.payload(&record)?;
-        let result = if !matches!(bytes.first(), Some(0 | 5 | 6))
-            || group_prototype::record_checksum(&bytes, self.index.parallel)
-                != record.metadata().checksum
-        {
-            Err(PrecompiledError::InvalidData)
-        } else {
-            group_archive::decode(&bytes, patterns.len())
-        };
+        let result = self.decode_group(&record, &bytes);
         match result {
             Ok(automata) => {
                 self.counters.groups.fetch_add(1, Ordering::Relaxed);
@@ -453,7 +490,7 @@ impl PrecompiledEagerRecords {
 }
 
 impl ScannerPatternCache {
-    /// Attach an experimental record source. Program sources retain insertion
+    /// Attach a selective record source. Program sources retain insertion
     /// order; this replaces the prepared-group source, matching the archive API.
     /// Already decoded entries stay cached. Sources survive `clear`; remove them
     /// with `clear_precompiled`. Only Eager consumes prepared groups.

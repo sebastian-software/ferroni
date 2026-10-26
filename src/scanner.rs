@@ -19,12 +19,12 @@ pub use precompiled::{
 mod prepared;
 #[cfg(feature = "precompiled-eager")]
 pub use prepared::{PRECOMPILED_EAGER_FORMAT_VERSION, PrecompiledEager, PrecompiledEagerStats};
-#[cfg(feature = "precompiled-eager-records-prototype")]
+#[cfg(feature = "precompiled-eager")]
 mod prepared_records;
-#[cfg(feature = "precompiled-eager-records-prototype")]
+#[cfg(feature = "precompiled-eager")]
 pub use prepared_records::{
-    PrecompiledEagerRecord, PrecompiledEagerRecordKind, PrecompiledEagerRecords,
-    PrecompiledEagerRecordsStats,
+    PRECOMPILED_EAGER_INDEX_FORMAT_VERSION, PrecompiledEagerRecord, PrecompiledEagerRecordKind,
+    PrecompiledEagerRecords, PrecompiledEagerRecordsStats,
 };
 #[cfg(feature = "scanner-group-nfa-prototype")]
 #[doc(hidden)]

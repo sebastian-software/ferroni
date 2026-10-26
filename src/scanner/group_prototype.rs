@@ -49,7 +49,7 @@ pub(crate) struct GroupSource {
 }
 
 impl GroupSource {
-    #[cfg(feature = "precompiled-eager-records-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     pub(super) fn records(&self) -> Vec<(Vec<u32>, Range<usize>, u32)> {
         let mut entries: Vec<_> = self
             .groups
@@ -60,7 +60,7 @@ impl GroupSource {
         entries
     }
 
-    #[cfg(feature = "precompiled-eager-records-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     pub(super) fn parallel_checksum(&self) -> bool {
         self.parallel_checksum
     }
@@ -228,7 +228,7 @@ impl GroupSource {
 #[derive(Clone)]
 pub(super) enum GroupSourceRef {
     Archive(Arc<GroupSource>),
-    #[cfg(feature = "precompiled-eager-records-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     Records(super::PrecompiledEagerRecords),
 }
 
@@ -240,7 +240,7 @@ impl GroupSourceRef {
     ) -> Option<AutomataCell> {
         match self {
             Self::Archive(source) => source.load(patterns, settings),
-            #[cfg(feature = "precompiled-eager-records-prototype")]
+            #[cfg(feature = "precompiled-eager")]
             Self::Records(source) => source.load_group(patterns, settings),
         }
     }
@@ -251,7 +251,7 @@ impl GroupSourceRef {
                 source.loads.load(Ordering::Relaxed),
                 source.failures.load(Ordering::Relaxed),
             ),
-            #[cfg(feature = "precompiled-eager-records-prototype")]
+            #[cfg(feature = "precompiled-eager")]
             Self::Records(source) => {
                 let stats = source.stats();
                 (stats.loaded_groups, stats.invalid_groups)

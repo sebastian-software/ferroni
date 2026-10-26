@@ -71,7 +71,7 @@ def main():
         "base_commit": run("git", "rev-parse", "HEAD"),
         "git_status": run("git", "status", "--short"),
         "rustc": run("rustc", "-Vv"), "platform": platform.platform(),
-        "binary_sha256": digest(binary), "features": "precompiled-eager-records-prototype",
+        "binary_sha256": digest(binary), "features": "precompiled-eager",
         "profile": "release, thin LTO", "repetitions": args.repetitions,
         "cases": args.cases, "call_limit": args.call_limit,
         "samples_per_process": args.samples,

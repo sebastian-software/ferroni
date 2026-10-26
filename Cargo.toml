@@ -58,7 +58,7 @@ precompiled = []
 scanner-group-nfa-prototype = ["precompiled", "dfa-prefilter"]
 # Prepared Eager scanner groups with a portable, versioned wire format.
 precompiled-eager = ["scanner-group-nfa-prototype"]
-# Experimental source-scoped import of individually supplied prepared records.
+# Compatibility alias for the initial selective-import prototype.
 precompiled-eager-records-prototype = ["precompiled-eager"]
 # Compatibility alias for the earlier opt-in prototype.
 portable-eager-prototype = ["precompiled-eager"]
@@ -114,7 +114,7 @@ required-features = ["precompiled"]
 
 [[example]]
 name = "prepared_record_import"
-required-features = ["precompiled-eager-records-prototype"]
+required-features = ["precompiled-eager"]
 
 [[example]]
 name = "precompiled_eager"

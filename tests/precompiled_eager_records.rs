@@ -1,14 +1,14 @@
 //! Selective record imports, shared ownership, source identity and fallbacks.
-#![cfg(feature = "precompiled-eager-records-prototype")]
+#![cfg(feature = "precompiled-eager")]
 
 #[path = "support/precompiled_eager.rs"]
 mod support;
 use ferroni::scanner::{PrecompiledBytes, PrecompiledEagerRecordKind, PrecompiledEagerRecords};
 use ferroni::{AccelerationMode, Scanner, ScannerConfig, ScannerPatternCache};
-use support::{GROUPS, PROGRAMS, SETS, compare, config, fixture};
+use support::{GROUPS, INDEX, PROGRAMS, SETS, compare, config, fixture};
 
 fn source() -> PrecompiledEagerRecords {
-    PrecompiledEagerRecords::from_index(&fixture().export_record_index().unwrap()).unwrap()
+    PrecompiledEagerRecords::from_index(INDEX).unwrap()
 }
 fn supply(source: &PrecompiledEagerRecords, patterns: &[&str]) {
     for record in patterns
@@ -262,4 +262,143 @@ fn repaired_payload_checksums_still_require_valid_group_instructions() {
     assert_eq!(source.stats().invalid_groups, 1);
     assert_eq!(source.stats().loaded_groups, SETS.len() - 1);
     assert_eq!(source.stats().invalid_programs, 0);
+}
+
+#[test]
+fn frozen_native_index_and_payloads_round_trip_without_wire_changes() {
+    support::check_record_fixture();
+}
+
+#[test]
+fn preflight_is_optional_does_not_execute_or_change_decode_counters() {
+    let other = source();
+    let source = source();
+    for record in source.programs().chain(source.groups()) {
+        assert_eq!(source.validate_record(&record), Ok(false));
+        assert_eq!(
+            other.validate_record(&record),
+            Err(ferroni::PrecompiledError::InvalidData)
+        );
+    }
+    supply(&source, SETS[0]);
+    for record in SETS[0]
+        .iter()
+        .map(|pattern| source.program(pattern, &config(), false).unwrap())
+        .chain(source.group(SETS[0], &config(), false))
+    {
+        assert_eq!(source.validate_record(&record), Ok(true));
+        let mut bytes = if record.kind() == PrecompiledEagerRecordKind::Program {
+            PROGRAMS
+        } else {
+            GROUPS
+        }[record.range()]
+        .to_vec();
+        bytes[0] ^= 0xff;
+        source.insert(&record, bytes.into()).unwrap();
+        assert_eq!(
+            source.validate_record(&record),
+            Err(ferroni::PrecompiledError::InvalidData)
+        );
+    }
+    assert_eq!(source.stats(), Default::default());
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[test]
+fn clones_share_records_across_concurrent_independent_pattern_caches() {
+    let source = source();
+    std::thread::scope(|scope| {
+        let a = source.clone();
+        let b = source.clone();
+        scope.spawn(move || {
+            supply(&a, SETS[0]);
+            let mut cache = ScannerPatternCache::new();
+            cache.add_precompiled_eager_records(a);
+            compare(SETS[0], &config(), &mut cache);
+        });
+        scope.spawn(move || {
+            supply(&b, SETS[1]);
+            let mut cache = ScannerPatternCache::new();
+            cache.add_precompiled_eager_records(b);
+            compare(SETS[1], &config(), &mut cache);
+        });
+    });
+    assert_eq!(source.stats().loaded_programs, 6);
+    assert_eq!(source.stats().loaded_groups, 2);
+}
+
+#[test]
+fn preflight_and_loading_preserve_syntax_options_and_rewrite_settings() {
+    use ferroni::{Syntax, oniguruma::ONIG_OPTION_IGNORECASE};
+    for syntax in [
+        Syntax::Oniguruma,
+        Syntax::Asis,
+        Syntax::PosixBasic,
+        Syntax::PosixExtended,
+        Syntax::Emacs,
+        Syntax::Grep,
+        Syntax::GnuRegex,
+        Syntax::Java,
+        Syntax::Perl,
+        Syntax::PerlNg,
+        Syntax::Ruby,
+        Syntax::Python,
+    ] {
+        let config = config().syntax(syntax).options(ONIG_OPTION_IGNORECASE);
+        let patterns = ["abc", "[0-9]+"];
+        for rewrite in [false, true] {
+            let mut producer = ScannerPatternCache::new();
+            if rewrite {
+                Scanner::with_backtracking_optimization_and_pattern_cache(
+                    &patterns,
+                    &config,
+                    &mut producer,
+                )
+                .unwrap();
+            } else {
+                Scanner::with_pattern_cache(&patterns, &config, &mut producer).unwrap();
+            }
+            let pair = producer.export_precompiled_eager().unwrap();
+            let source =
+                PrecompiledEagerRecords::from_index(&pair.export_record_index().unwrap()).unwrap();
+            for record in source.programs().chain(source.groups()) {
+                let archive = if record.kind() == PrecompiledEagerRecordKind::Program {
+                    pair.program_bytes()
+                } else {
+                    pair.group_bytes()
+                };
+                source
+                    .insert(&record, archive[record.range()].to_vec().into())
+                    .unwrap();
+                assert_eq!(source.validate_record(&record), Ok(true));
+            }
+            let mut cache = ScannerPatternCache::new();
+            cache.add_precompiled_eager_records(source.clone());
+            if rewrite {
+                let mut actual = Scanner::with_backtracking_optimization_and_pattern_cache(
+                    &patterns, &config, &mut cache,
+                )
+                .unwrap();
+                let mut expected =
+                    Scanner::with_backtracking_optimization(&patterns, &config).unwrap();
+                for text in ["ABC 007", "123", "[0-9]+", "no match", ""] {
+                    assert_eq!(
+                        actual.find_next_match(text, 0, ferroni::ScannerFindOptions::NONE),
+                        expected.find_next_match(text, 0, ferroni::ScannerFindOptions::NONE)
+                    );
+                }
+            } else {
+                compare(&patterns, &config, &mut cache);
+            }
+            assert_eq!(source.stats().loaded_programs, 2);
+            assert_eq!(source.stats().loaded_groups, 1);
+            assert_eq!(
+                (
+                    source.stats().invalid_programs,
+                    source.stats().invalid_groups
+                ),
+                (0, 0)
+            );
+        }
+    }
 }

@@ -1,0 +1,72 @@
+---
+order: 20
+title: "Selective Prepared Record Import"
+---
+
+# Selective Prepared Record Import
+
+## Status
+
+Accepted. Additive to [ADR-019](/adr/019-prepared-eager-archives); the existing
+complete-pair API and its whole-program-archive binding remain unchanged.
+
+## Context
+
+A host may read individual prepared records from a local package or download
+only the records needed for a grammar. The complete-pair API requires that host
+to assemble a contiguous subset archive, remap ordered program IDs and compute
+a new whole-image binding for each pattern list. Overlapping lists duplicate
+serialized programs even though the pattern cache already shares decoded ones.
+
+Shared byte views avoid another ownership copy after assembly, but do not
+remove that assembly. Requiring complete images instead would prevent selective
+I/O. A stable record boundary must keep format interpretation and validation
+inside Ferroni while leaving storage and fetching with the host.
+
+## Decision
+
+The `precompiled-eager` feature also exposes `PrecompiledEagerRecords` and
+source-scoped record descriptors. A checked `PrecompiledEager` pair exports a
+versioned index containing its original program dictionary, ordered group
+references, record ranges and expected checksums. The index has its own format
+version, independent of the program and group codecs.
+
+The consumer validates the index once and supplies immutable `PrecompiledBytes`
+views for requested records. Descriptors belong to one opened source; clones
+share that identity and the supplied records. Overlapping groups retain their
+original program IDs, pattern order and duplicates. Each `ScannerPatternCache`
+continues to own its decoded-program and group reuse. Searches do not consult
+the record store or acquire its lock.
+
+The index integrity check binds dictionary keys and group references to the
+expected individual record checksums. This replaces the complete-image binding
+only for this selective API. Bounds, compile keys, versions, per-record corruption
+checks and the existing structural decoders remain required. An optional record
+preflight validates without executing instructions or changing load counters.
+Missing or invalid data retains ordinary compilation and Eager preparation.
+
+The host owns I/O, compression, package integrity, authentication and any
+asynchronous fetching. The source must come from a trusted producer: neither
+binding scheme proves that bytecode implements its claimed regex. This API adds
+no callbacks, transport dependencies, unsafe code or dependency forks.
+
+## Consequences
+
+Hosts can attach one source and supply additional records before later scanner
+construction, without rebuilding pairs. The complete-pair path remains useful
+when most of an archive is needed. A controlled native diagnostic demonstrates
+lower load costs than subset assembly; application startup, download and
+consumer-specific packaging require their own measurements.
+
+The API and versioned index are part of the public prepared Eager contract.
+Incompatible index layout or binding changes require a version bump and explicit
+rejection; incompatible payloads retain their independent codec checks.
+CI exercises frozen native-produced indexes and payloads on native, WASI and
+browser Wasm as a portability check.
+Mutation tests and decoder fuzzing repair checksums before structural validation;
+mutated bytecode is never executed. Reopen this decision if binding, ownership,
+validation or portability semantics change.
+
+The [prepared Eager guide](/guide/precompiled-eager) owns usage, lifecycle and
+fallback examples. The earlier `precompiled-eager-records-prototype` feature is
+retained as a compatibility alias for reproducible diagnostics.

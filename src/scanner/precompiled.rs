@@ -141,16 +141,40 @@ fn syntax_tag(syntax: Syntax) -> u8 {
     }
 }
 pub(super) fn check_key(bytes: &[u8]) -> Result<()> {
+    key_settings(bytes).map(|_| ())
+}
+
+pub(super) fn key_settings(bytes: &[u8]) -> Result<PatternSettings> {
     let mut input = Reader::new(bytes);
-    OnigOptionType::from_bits(u32::read(&mut input)?).ok_or(PrecompiledError::InvalidData)?;
-    if u8::read(&mut input)? > 11 {
-        return Err(PrecompiledError::InvalidData);
-    }
-    bool::read(&mut input)?;
-    bool::read(&mut input)?;
+    let options =
+        OnigOptionType::from_bits(u32::read(&mut input)?).ok_or(PrecompiledError::InvalidData)?;
+    let syntax = match u8::read(&mut input)? {
+        0 => Syntax::Oniguruma,
+        1 => Syntax::Asis,
+        2 => Syntax::PosixBasic,
+        3 => Syntax::PosixExtended,
+        4 => Syntax::Emacs,
+        5 => Syntax::Grep,
+        6 => Syntax::GnuRegex,
+        7 => Syntax::Java,
+        8 => Syntax::Perl,
+        9 => Syntax::PerlNg,
+        10 => Syntax::Ruby,
+        11 => Syntax::Python,
+        _ => return Err(PrecompiledError::InvalidData),
+    };
+    let optimize_backtracking = bool::read(&mut input)?;
+    let prefilter = bool::read(&mut input)?;
     Environment::read(&mut input)?;
     String::read(&mut input)?;
-    input.done()
+    input.done()?;
+    Ok(PatternSettings {
+        options,
+        syntax,
+        optimize_backtracking,
+        prefilter,
+        prefilter_warmup: 0,
+    })
 }
 // A corruption check, not authentication. The structural validator still runs
 // after it, including for a maliciously recomputed checksum. FNV-1a over
@@ -171,7 +195,7 @@ pub(super) fn checksum(bytes: &[u8]) -> u32 {
     (hash ^ (hash >> 32)) as u32
 }
 impl PrecompiledPatterns {
-    #[cfg(feature = "precompiled-eager-records-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     pub(super) fn records(&self) -> Vec<(Vec<u8>, Range<usize>, u32)> {
         let mut entries: Vec<_> = self
             .index
@@ -344,7 +368,7 @@ pub(super) fn decode_record(
 #[derive(Clone)]
 pub(super) enum ProgramSource {
     Archive(PrecompiledPatterns),
-    #[cfg(feature = "precompiled-eager-records-prototype")]
+    #[cfg(feature = "precompiled-eager")]
     Records(super::PrecompiledEagerRecords),
 }
 
@@ -357,7 +381,7 @@ impl ProgramSource {
     ) -> Result<Option<(Arc<RegexType>, SharedSeek)>> {
         match self {
             Self::Archive(source) => source.load(pattern, settings, env),
-            #[cfg(feature = "precompiled-eager-records-prototype")]
+            #[cfg(feature = "precompiled-eager")]
             Self::Records(source) => source.load_program(pattern, settings, env),
         }
     }
@@ -366,7 +390,7 @@ impl ProgramSource {
     pub(super) fn archive(&self) -> Option<&PrecompiledPatterns> {
         match self {
             Self::Archive(source) => Some(source),
-            #[cfg(feature = "precompiled-eager-records-prototype")]
+            #[cfg(feature = "precompiled-eager")]
             Self::Records(_) => None,
         }
     }
