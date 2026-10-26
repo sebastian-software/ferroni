@@ -1,0 +1,52 @@
+{
+  "json": {
+    "subset": 7143424,
+    "records": 7045120,
+    "archive": 7012352
+  },
+  "c": {
+    "subset": 23642112,
+    "records": 22134784,
+    "archive": 22085632
+  },
+  "cpp": {
+    "subset": 89260032,
+    "records": 76218368,
+    "archive": 76251136
+  },
+  "scss": {
+    "subset": 41074688,
+    "records": 35831808,
+    "archive": 35569664
+  },
+  "java": {
+    "subset": 14532608,
+    "records": 12550144,
+    "archive": 12484608
+  },
+  "rust": {
+    "subset": 10108928,
+    "records": 9666560,
+    "archive": 9502720
+  },
+  "tsx": {
+    "subset": 94765056,
+    "records": 68845568,
+    "archive": 68190208
+  },
+  "html": {
+    "subset": 84180992,
+    "records": 68567040,
+    "archive": 67960832
+  },
+  "astro": {
+    "subset": 110772224,
+    "records": 77561856,
+    "archive": 76873728
+  },
+  "php": {
+    "subset": 55574528,
+    "records": 44187648,
+    "archive": 43843584
+  }
+}

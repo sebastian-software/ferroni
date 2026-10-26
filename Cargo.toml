@@ -12,7 +12,7 @@ keywords = ["regex", "oniguruma", "textmate", "syntax-highlighting", "ferramenta
 categories = ["text-processing", "parsing", "text-editors"]
 rust-version = "1.94"
 autobenches = false
-exclude = [".cache/", ".cargo/", "benches/", "docs/", "fuzz/", "scripts/", "examples/backtrack_rewrite_census.rs", "examples/prefilter_census.rs", "examples/scanner_group_archive.rs", "examples/profile_cpp_scanner.rs", "examples/profile_scanner_patterns.rs"]
+exclude = [".cache/", ".cargo/", "benches/", "docs/", "fuzz/", "scripts/", "examples/backtrack_rewrite_census.rs", "examples/prefilter_census.rs", "examples/scanner_group_archive.rs", "examples/prepared_record_import.rs", "examples/profile_cpp_scanner.rs", "examples/profile_scanner_patterns.rs"]
 
 [package.metadata.docs.rs]
 # The `ffi` feature links a local Oniguruma C checkout that docs.rs cannot
@@ -58,6 +58,8 @@ precompiled = []
 scanner-group-nfa-prototype = ["precompiled", "dfa-prefilter"]
 # Prepared Eager scanner groups with a portable, versioned wire format.
 precompiled-eager = ["scanner-group-nfa-prototype"]
+# Experimental source-scoped import of individually supplied prepared records.
+precompiled-eager-records-prototype = ["precompiled-eager"]
 # Compatibility alias for the earlier opt-in prototype.
 portable-eager-prototype = ["precompiled-eager"]
 # Diagnostic phase clocks, compiled out of ordinary builds and timings.
@@ -109,6 +111,10 @@ lto = "thin"
 [[example]]
 name = "scanner_group_archive"
 required-features = ["precompiled"]
+
+[[example]]
+name = "prepared_record_import"
+required-features = ["precompiled-eager-records-prototype"]
 
 [[example]]
 name = "precompiled_eager"
