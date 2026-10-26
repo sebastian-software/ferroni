@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/sebastian-software/ferroni/compare/v2.7.2...v2.8.0) (2026-10-26)
+
+
+### Features
+
+* **scanner:** load prepared Eager records without subset archives ([#471](https://github.com/sebastian-software/ferroni/issues/471)) ([2c7367f](https://github.com/sebastian-software/ferroni/commit/2c7367f08ae7bf9f12e8682ba0c1dd980af92780))
+
 ## [2.7.2](https://github.com/sebastian-software/ferroni/compare/v2.7.1...v2.7.2) (2026-10-25)
 
 
