@@ -25,7 +25,9 @@ pub use crate::scanner::{
 };
 #[cfg(feature = "precompiled-eager")]
 pub use crate::scanner::{
-    PRECOMPILED_EAGER_FORMAT_VERSION, PrecompiledEager, PrecompiledEagerStats,
+    PRECOMPILED_EAGER_FORMAT_VERSION, PRECOMPILED_EAGER_INDEX_FORMAT_VERSION, PrecompiledEager,
+    PrecompiledEagerRecord, PrecompiledEagerRecordKind, PrecompiledEagerRecords,
+    PrecompiledEagerRecordsStats, PrecompiledEagerStats,
 };
 #[cfg(feature = "precompiled")]
 pub use crate::scanner::{

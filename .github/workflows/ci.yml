@@ -95,6 +95,8 @@ jobs:
         run: cargo test --locked --features precompiled --doc
       - name: Portable Eager archives and load-phase diagnostics
         run: cargo test --locked --features precompiled-eager,scanner-load-profile --lib --test precompiled_scanner --test compat_prefilter_differential
+      - name: Selective prepared records with checked prefilter
+        run: cargo test --locked --features precompiled-eager,prefilter-self-check --test precompiled_eager --test precompiled_eager_records
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -312,7 +314,7 @@ jobs:
           --skip start_checks_panic_for_every_at_method
 
       - name: Prepared Eager API on WASI
-        run: cargo test --locked --target wasm32-wasip1 --features precompiled-eager,prefilter-self-check --test precompiled_eager
+        run: cargo test --locked --target wasm32-wasip1 --features precompiled-eager,prefilter-self-check --test precompiled_eager --test precompiled_eager_records
       - name: Build import-free browser conformance example
         run: cargo rustc --locked --release --target wasm32-unknown-unknown --features precompiled-eager --example precompiled_eager_portability -- -C link-arg=--export=main
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

@@ -31,14 +31,20 @@ cd -- "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-nightly}"
 
 echo "==> Coverage (library unit tests)"
-cargo llvm-cov --no-report --release --lib
+cargo llvm-cov --no-report --release --features precompiled-eager --lib
 
 echo "==> Coverage (API + non-stack-heavy suites)"
-cargo llvm-cov --release --no-clean \
+cargo llvm-cov --release --features precompiled-eager --no-clean \
   --test api_test \
   --test compat_syntax \
   --test compat_options \
   --test compat_regset
+
+echo "==> Coverage (prepared archives and selective records)"
+cargo llvm-cov --release --features precompiled-eager --no-clean \
+  --test precompiled_scanner \
+  --test precompiled_eager \
+  --test precompiled_eager_records
 
 # Coverage instrumentation adds stack frames, so compat_utf8 needs the release
 # value ADR-013 documents, and the deepest recursive and backreference tests
@@ -46,7 +52,7 @@ cargo llvm-cov --release --no-clean \
 # lanes run them unskipped.
 echo "==> Coverage (compat_utf8, skipping stack-heavy tests)"
 RUST_MIN_STACK=268435456 \
-  cargo llvm-cov --release --no-clean \
+  cargo llvm-cov --release --features precompiled-eager --no-clean \
   --test compat_utf8 \
   -- --test-threads=4 \
   --skip recursive_ \

@@ -221,3 +221,101 @@ checks compressed and decompressed lengths and digests, caps output, and limits
 the decoder window. Use its `decodePackage` for a raw `.zst` download or
 `splitPayload` if HTTP has already decompressed the body. Other hosts must
 provide equivalent transport bounds before handing bytes to Ferroni.
+
+## Load individual prepared records
+
+Hosts can read individual records from a local package or CDN without rebuilding
+an archive for each scanner's pattern list.
+`PrecompiledEagerRecords` is available with `precompiled-eager`, alongside the
+complete-pair API. Its `FREC001` index has an independent format version,
+`PRECOMPILED_EAGER_INDEX_FORMAT_VERSION`; program and group codecs keep their
+own versions. See [ADR-020](/adr/020-selective-prepared-record-import) for the
+selective binding contract.
+
+The producer calls `prepared.export_record_index()` on a checked pair and
+publishes that metadata with the original archives or individual records. The
+consumer opens it with `PrecompiledEagerRecords::from_index(&index_bytes)` and
+attaches a clone using `cache.add_precompiled_eager_records(source.clone())`.
+Before constructing each scanner, it looks up descriptors with
+`source.program(pattern, &config, false)` and
+`source.group(&patterns, &config, false)`. Each descriptor provides its original
+source-local ID, archive kind, and byte range. The final Boolean selects the
+experimental backtracking rewrite configuration, as with ordinary archives.
+
+The host reads only absent payloads, wraps them in `PrecompiledBytes`, and calls
+`source.insert(&descriptor, bytes)`. `source.contains(&descriptor)` also sees
+records supplied through other clones. The host can fetch asynchronously before
+scanner construction; Ferroni performs no I/O and invokes no blocking provider.
+Descriptors from another opened source are rejected. One program record can
+serve several ordered groups without copying bytes into a new archive,
+remapping IDs, or computing a whole-program-archive binding for each list.
+
+The manifest checks its own integrity, versions, compile keys, resource bounds
+and group references. It binds groups to the original dictionary and expected
+record checksums. Individual record checksums and the existing structural
+decoders still run on use. This is a different binding contract from the stable
+whole-archive checksum: trust and authentication remain the host's job.
+Missing or invalid payloads keep normal compilation and Eager preparation.
+Only Eager consumes supplied groups; Auto and Off keep their existing behavior.
+
+Clones share supplied byte views and decode counters. Decoded programs and groups
+are reused within each `ScannerPatternCache`; search scratch space remains with
+its scanners. Sources retain supplied records until their final clone is dropped.
+Replacing a payload does not invalidate engines already decoded in a cache.
+`source.stats()` reports successful and invalid program/group decodes, excluding
+missing payloads and cache hits. `source.validate_record(&descriptor)` optionally
+checks a supplied payload without executing it, retaining decoded code, or
+changing those counters. It returns `false` if the payload has not been supplied.
+Avoid repeating that preflight during normal startup: scanner construction still
+validates records when it decodes them.
+
+The producer example writes the index with the pair. Its selective consumer reads
+only descriptors needed for its requested scanner and keeps normal fallback:
+
+```bash
+cargo run --release --features precompiled-eager --example precompiled_eager -- generate .cache/prepared
+cargo run --release --features precompiled-eager --example precompiled_eager -- load-records .cache/prepared '42'
+```
+
+A minimal in-memory version uses the same API; a host can replace each slice with
+an individually fetched payload:
+
+```rust
+use ferroni::prelude::*;
+
+let config = ScannerConfig::default().acceleration(AccelerationMode::Eager);
+let mut producer = ScannerPatternCache::new();
+Scanner::with_pattern_cache(&[r"\d+", r"\w+"], &config, &mut producer)?;
+let prepared = producer.export_precompiled_eager()?;
+let index = prepared.export_record_index()?;
+let source = PrecompiledEagerRecords::from_index(&index)?;
+let programs = PrecompiledBytes::new(prepared.program_bytes().to_vec());
+let groups = PrecompiledBytes::new(prepared.group_bytes().to_vec());
+for record in source.programs().chain(source.groups()) {
+    let image = match record.kind() {
+        PrecompiledEagerRecordKind::Program => &programs,
+        PrecompiledEagerRecordKind::Group => &groups,
+        _ => return Err(PrecompiledError::UnsupportedFormat.into()),
+    };
+    source.insert(&record, image.slice(record.range())?)?;
+}
+let mut cache = ScannerPatternCache::new();
+cache.add_precompiled_eager_records(source.clone());
+let mut scanner = Scanner::with_pattern_cache(&[r"\d+", r"\w+"], &config, &mut cache)?;
+assert_eq!(scanner.find_next_match("42", 0, ScannerFindOptions::NONE).unwrap().index, 0);
+assert_eq!(source.stats().loaded_groups, 1);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+The local diagnostic compares record import with per-list subset assembly and
+with opening one complete prepared pair. It validates every captured match and
+capture before reporting timing. Reading metadata files and parsing traces are
+excluded; manifest opening, payload reads, import, and scanner construction are
+included. This measures
+native scanner loading from populated local files, not download, decompression,
+or Ferriki startup:
+
+```bash
+cargo build --locked --release --features precompiled-eager --example prepared_record_import
+python3 scripts/compare-record-import.py .cache/record-import-comparison
+```

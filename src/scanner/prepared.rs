@@ -29,8 +29,8 @@ pub const PRECOMPILED_EAGER_FORMAT_VERSION: u32 = 3;
 /// scanners keep their own search scratch space and warm transition caches.
 #[derive(Clone)]
 pub struct PrecompiledEager {
-    programs: PrecompiledPatterns,
-    groups: Arc<group_prototype::GroupSource>,
+    pub(super) programs: PrecompiledPatterns,
+    pub(super) groups: Arc<group_prototype::GroupSource>,
 }
 
 /// Group loading observations shared by clones of one [`PrecompiledEager`].
@@ -167,7 +167,7 @@ impl ScannerPatternCache {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn add_precompiled_eager(&mut self, archive: PrecompiledEager) {
-        self.precompiled.push(archive.programs);
-        self.group_source = Some(archive.groups);
+        self.add_precompiled(archive.programs);
+        self.group_source = Some(group_prototype::GroupSourceRef::Archive(archive.groups));
     }
 }

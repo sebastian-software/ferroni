@@ -50,6 +50,21 @@ pub(crate) struct GroupSource {
 
 impl GroupSource {
     #[cfg(feature = "precompiled-eager")]
+    pub(super) fn records(&self) -> Vec<(Vec<u32>, Range<usize>, u32)> {
+        let mut entries: Vec<_> = self
+            .groups
+            .iter()
+            .map(|(key, (range, checksum))| (key.clone(), range.clone(), *checksum))
+            .collect();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        entries
+    }
+
+    #[cfg(feature = "precompiled-eager")]
+    pub(super) fn parallel_checksum(&self) -> bool {
+        self.parallel_checksum
+    }
+    #[cfg(feature = "precompiled-eager")]
     pub(super) fn open_portable(
         bytes: PrecompiledBytes,
         programs: &PrecompiledPatterns,
@@ -210,6 +225,41 @@ impl GroupSource {
     }
 }
 
+#[derive(Clone)]
+pub(super) enum GroupSourceRef {
+    Archive(Arc<GroupSource>),
+    #[cfg(feature = "precompiled-eager")]
+    Records(super::PrecompiledEagerRecords),
+}
+
+impl GroupSourceRef {
+    pub(super) fn load(
+        &self,
+        patterns: &[&str],
+        settings: PatternSettings,
+    ) -> Option<AutomataCell> {
+        match self {
+            Self::Archive(source) => source.load(patterns, settings),
+            #[cfg(feature = "precompiled-eager")]
+            Self::Records(source) => source.load_group(patterns, settings),
+        }
+    }
+
+    fn load_stats(&self) -> (usize, usize) {
+        match self {
+            Self::Archive(source) => (
+                source.loads.load(Ordering::Relaxed),
+                source.failures.load(Ordering::Relaxed),
+            ),
+            #[cfg(feature = "precompiled-eager")]
+            Self::Records(source) => {
+                let stats = source.stats();
+                (stats.loaded_groups, stats.invalid_groups)
+            }
+        }
+    }
+}
+
 // Version 2 stripes the corruption check across four independent lanes. This
 // removes the per-word dependency chain on large instruction images. It is
 // deliberately not authentication; all structural validation still runs.
@@ -311,23 +361,21 @@ impl ScannerPatternCache {
         let programs = self
             .precompiled
             .last()
+            .and_then(precompiled::ProgramSource::archive)
             .ok_or(PrecompiledError::InvalidData)?;
         let bytes: Arc<[u8]> = bytes.into();
         let source = GroupSource::open(bytes.into(), programs)?;
         let stats = source.stats;
-        self.group_source = Some(Arc::new(source));
+        self.group_source = Some(GroupSourceRef::Archive(Arc::new(source)));
         Ok(stats)
     }
 
     /// Successfully decoded groups and invalid groups that fell back to a
     /// runtime build. Intended to keep benchmark coverage honest.
     pub fn group_prototype_load_stats(&self) -> (usize, usize) {
-        self.group_source.as_ref().map_or((0, 0), |source| {
-            (
-                source.loads.load(Ordering::Relaxed),
-                source.failures.load(Ordering::Relaxed),
-            )
-        })
+        self.group_source
+            .as_ref()
+            .map_or((0, 0), GroupSourceRef::load_stats)
     }
 }
 

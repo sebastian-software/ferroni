@@ -164,9 +164,12 @@
 //! as application assets. This works through [`ScannerPatternCache`], including
 //! for a scanner with one expression; [`Regex`] has no archive constructor.
 //!
-//! Requested records decode and validate on demand. Missing or incompatible
-//! groups use normal Eager preparation; search scratch space and mutable caches
-//! remain local. Keep the original patterns and compatible compile settings.
+//! `PrecompiledEagerRecords` also accepts individually supplied records from
+//! a versioned source index, so hosts can fetch selectively without assembling
+//! subset archives. Requested records decode and validate on demand. Missing
+//! or incompatible groups use normal Eager preparation; search scratch space
+//! and mutable caches remain local. Keep the original patterns and compatible
+//! compile settings.
 //! See [prepared Eager archives](https://ferroni.dev/guide/precompiled-eager)
 //! for the producer/consumer workflow and format contract.
 //!

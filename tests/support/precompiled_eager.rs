@@ -8,6 +8,7 @@ pub const SETS: &[&[&str]] = &[
     &[r"\A\z"],
 ];
 pub const PROGRAMS: &[u8] = include_bytes!("../fixtures/precompiled-eager/patterns.programs");
+pub const INDEX: &[u8] = include_bytes!("../fixtures/precompiled-eager/patterns.records");
 pub const GROUPS: &[u8] = include_bytes!("../fixtures/precompiled-eager/patterns.portable");
 
 pub fn config() -> ScannerConfig {
@@ -47,7 +48,51 @@ pub fn compare(patterns: &[&str], config: &ScannerConfig, cache: &mut ScannerPat
     }
 }
 
+pub fn check_record_fixture() {
+    assert_eq!(PRECOMPILED_EAGER_INDEX_FORMAT_VERSION, 1);
+    assert_eq!(fixture().export_record_index().unwrap(), INDEX);
+    let source = PrecompiledEagerRecords::from_index(INDEX).unwrap();
+    let programs = PrecompiledBytes::new(PROGRAMS.to_vec());
+    let groups = PrecompiledBytes::new(GROUPS.to_vec());
+    for record in source.programs().chain(source.groups()) {
+        assert_eq!(source.validate_record(&record), Ok(false));
+        let image = match record.kind() {
+            PrecompiledEagerRecordKind::Program => &programs,
+            PrecompiledEagerRecordKind::Group => &groups,
+            _ => unreachable!(),
+        };
+        source
+            .insert(&record, image.slice(record.range()).unwrap())
+            .unwrap();
+        assert_eq!(source.validate_record(&record), Ok(true));
+    }
+    assert_eq!(source.stats(), PrecompiledEagerRecordsStats::default());
+    let mut cache = ScannerPatternCache::new();
+    cache.add_precompiled_eager_records(source.clone());
+    for patterns in SETS {
+        compare(patterns, &config(), &mut cache);
+    }
+    assert_eq!(source.stats().loaded_programs, source.programs().len());
+    assert_eq!(source.stats().loaded_groups, source.groups().len());
+    assert_eq!(
+        (
+            source.stats().invalid_programs,
+            source.stats().invalid_groups
+        ),
+        (0, 0)
+    );
+    assert_eq!(
+        cache
+            .export_precompiled_eager()
+            .unwrap()
+            .export_record_index()
+            .unwrap(),
+        INDEX
+    );
+}
+
 pub fn check_fixture() {
+    check_record_fixture();
     let mut bytes = PROGRAMS.to_vec();
     bytes.extend_from_slice(GROUPS);
     let image = PrecompiledBytes::new(bytes);

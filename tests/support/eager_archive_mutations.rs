@@ -36,7 +36,7 @@ pub fn repair_checksums(bytes: &mut [u8]) {
 
 // FPRT002/FPRT003 four-lane checksum. Keep independent of the loader so
 // decoder fuzzing can repair checksums without exporting implementation APIs.
-fn checksum(bytes: &[u8]) -> u32 {
+pub fn checksum(bytes: &[u8]) -> u32 {
     const PRIME: u64 = 0x0000_0100_0000_01b3;
     let mut lanes = [
         0xcbf2_9ce4_8422_2325u64,

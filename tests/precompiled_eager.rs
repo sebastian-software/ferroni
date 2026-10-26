@@ -277,3 +277,10 @@ fn shared_container_views_preserve_ownership_validation_and_results() {
     cache.clear_precompiled();
     assert!(weak.upgrade().is_none());
 }
+
+#[test]
+fn imported_and_fallback_compiled_programs_share_encoding_identity() {
+    let mut cache = ScannerPatternCache::new();
+    cache.add_precompiled_eager(fixture());
+    compare(&[SETS[0][0], "not-in-the-archive"], &config(), &mut cache);
+}

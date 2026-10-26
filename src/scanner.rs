@@ -19,6 +19,13 @@ pub use precompiled::{
 mod prepared;
 #[cfg(feature = "precompiled-eager")]
 pub use prepared::{PRECOMPILED_EAGER_FORMAT_VERSION, PrecompiledEager, PrecompiledEagerStats};
+#[cfg(feature = "precompiled-eager")]
+mod prepared_records;
+#[cfg(feature = "precompiled-eager")]
+pub use prepared_records::{
+    PRECOMPILED_EAGER_INDEX_FORMAT_VERSION, PrecompiledEagerRecord, PrecompiledEagerRecordKind,
+    PrecompiledEagerRecords, PrecompiledEagerRecordsStats,
+};
 #[cfg(feature = "scanner-group-nfa-prototype")]
 #[doc(hidden)]
 pub mod group_prototype;
@@ -29,6 +36,10 @@ pub mod load_profile;
 use crate::AccelerationMode;
 use crate::api::Syntax;
 use crate::encodings::utf8::ONIG_ENCODING_UTF8;
+
+// Regsets compare encoding trait objects by identity. Keep one coercion for
+// both compiled and imported programs: vtables may differ across codegen units.
+static SCANNER_ENCODING: crate::regenc::OnigEncoding = &ONIG_ENCODING_UTF8;
 use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new_for_scanner;
@@ -465,9 +476,9 @@ pub struct ScannerPatternCache {
     next_id: u32,
     /// Indexed archives, consulted in insertion order on a cache miss.
     #[cfg(feature = "precompiled")]
-    precompiled: Vec<PrecompiledPatterns>,
+    precompiled: Vec<precompiled::ProgramSource>,
     #[cfg(feature = "scanner-group-nfa-prototype")]
-    group_source: Option<Arc<group_prototype::GroupSource>>,
+    group_source: Option<group_prototype::GroupSourceRef>,
 }
 
 /// Compiled programs by pattern text, for one `PatternSettings`.
@@ -672,7 +683,7 @@ impl PatternSettings {
         let (reg, seek) = onig_new_for_scanner(
             pattern.as_bytes(),
             self.options,
-            &ONIG_ENCODING_UTF8,
+            SCANNER_ENCODING,
             self.syntax.as_onig_syntax(),
             self.optimize_backtracking,
             self.prefilter,
