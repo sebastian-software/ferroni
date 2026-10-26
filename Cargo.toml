@@ -1,6 +1,6 @@
 [package]
 name = "ferroni"
-version = "2.7.2"
+version = "2.8.0"
 edition = "2024"
 description = "Oniguruma regex in pure Rust, with a TextMate scanner, portable prepared Eager archives, and no C toolchain"
 license = "BSD-2-Clause"
