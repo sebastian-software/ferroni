@@ -1,32 +1,22 @@
-import { Mark } from "ferramenta-family";
-import highlightedInput from "virtual:ferroni-sample";
+import { FerraExample } from "ferramenta-family/ferra";
 
 import sample from "../data/regex-sample.json";
-import { HighlightedRust } from "./highlighted-rust";
 
 export function HomeRunSample() {
   return (
-    <div className="fam-run fr-run">
-      <div className="fam-run-input">
-        <div className="fam-run-wide">
-          <HighlightedRust caption="website_sample.rs" html={highlightedInput} />
-        </div>
-        <details className="fam-run-narrow">
-          <summary>
-            <span>website_sample.rs</span>
-            <small>Rust source</small>
-            <Mark name="chev" className="icon" size={16} />
-          </summary>
-          <HighlightedRust caption="website_sample.rs" html={highlightedInput} />
-        </details>
-      </div>
-      <Mark name="arrow" className="icon fam-run-arrow" />
-      <figure className="fam-run-output">
-        <figcaption>Ferroni {sample.version} · stdout</figcaption>
-        <pre tabIndex={0}>
-          <code>{sample.stdout.trimEnd()}</code>
-        </pre>
-      </figure>
-    </div>
+    <FerraExample
+      title="A date, captured by name"
+      introduction="Look behind the label, then read the year, month and day."
+      source={sample.input.replaceAll(/^\/\/!.*\n/gm, "").trimStart()}
+      footer={
+        <a href="https://github.com/sebastian-software/ferroni/blob/main/examples/website_sample.rs">
+          Runnable Rust source and verified output
+        </a>
+      }
+    >
+      <pre tabIndex={0} aria-label="Example output">
+        <code>{sample.stdout.trimEnd()}</code>
+      </pre>
+    </FerraExample>
   );
 }

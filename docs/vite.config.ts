@@ -1,4 +1,4 @@
-import { ardo, highlightCode } from "ardo/vite";
+import { highlightCode } from "ardo/vite";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
@@ -6,8 +6,11 @@ import { defineConfig, type Plugin } from "vite";
 import examples from "./app/data/home-code.json" with { type: "json" };
 import walkthrough from "./app/data/regex-walkthrough.json" with { type: "json" };
 
-const cargoToml = readFileSync("../Cargo.toml", "utf8");
-const version = /^version\s*=\s*"(.+)"/m.exec(cargoToml)?.[1] ?? "0.0.0";
+function codeSpans(html: string) {
+  const content = /<code[^>]*>([\s\S]*)<\/code>/.exec(html)?.[1];
+  if (content === undefined) throw new Error("The highlighter must return one code block.");
+  return content;
+}
 
 // Use one theme for Rust examples and regular-expression patterns on the home page.
 function sampleHighlight(): Plugin {
@@ -34,17 +37,17 @@ function sampleHighlight(): Plugin {
       const html = await highlightCode(
         sample.input.replaceAll(/^\/\/!.*\n/gm, "").trimStart(),
         "rust",
-        { theme: "gruvbox-dark-hard" },
+        { theme: "github-light-default" },
       );
       const snippets = await Promise.all(
         Object.entries(examples).map(async ([name, code]) => {
-          const highlighted = await highlightCode(code, "rust", { theme: "gruvbox-dark-hard" });
-          return `export const ${name}Html = ${JSON.stringify(highlighted)};`;
+          const highlighted = await highlightCode(code, "rust", { theme: "github-light-default" });
+          return `export const ${name}Html = ${JSON.stringify(codeSpans(highlighted))};`;
         }),
       );
       const patterns = await Promise.all(
         walkthrough.syntax.map(async (example) =>
-          highlightCode(example.pattern, "regexp", { theme: "gruvbox-dark-hard" }),
+          highlightCode(example.pattern, "regexp", { theme: "github-light-default" }),
         ),
       );
       return `export default ${JSON.stringify(html)};\n${snippets.join("\n")}\nexport const patternHtml = ${JSON.stringify(patterns)};`;
@@ -52,25 +55,4 @@ function sampleHighlight(): Plugin {
   };
 }
 
-export default defineConfig({
-  base: "/",
-  plugins: [
-    sampleHighlight(),
-    ardo({
-      title: "Ferroni",
-      description: "Oniguruma regex in pure Rust. Familiar API, TextMate scanner, no C toolchain.",
-      githubPages: false,
-      siteUrl: "https://ferroni.dev",
-
-      project: { version },
-      // The theme contract moved from the ADR list to docs/readme-theme.md,
-      // which is not part of the site. Old links land on that file on GitHub.
-      redirects: [
-        {
-          from: "/adr/readme-theme-composition",
-          to: "https://github.com/sebastian-software/ferroni/blob/main/docs/readme-theme.md",
-        },
-      ],
-    }),
-  ],
-});
+export default defineConfig({ plugins: [sampleHighlight()] });
