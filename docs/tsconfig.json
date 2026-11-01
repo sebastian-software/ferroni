@@ -1,20 +1,9 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "allowImportingTsExtensions": true,
     "allowJs": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "jsx": "react-jsx",
-    "types": ["vite/client", "ardo/virtual"]
+    "skipLibCheck": true
   },
   "include": ["app/**/*", "*.ts", "*.config.ts", "scripts/**/*.mjs", "archive/research/**/*.js"],
-  "exclude": ["node_modules", "build"]
+  "exclude": ["node_modules", "build"],
+  "extends": "ardo/tsconfig"
 }

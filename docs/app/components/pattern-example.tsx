@@ -1,36 +1,29 @@
+import { FerraExample } from "ferramenta-family/ferra";
+
 type PatternExampleProps = {
-  example: { title: string; explanation: string; before: string; matched: string; after: string };
-  html: string;
+  example: {
+    title: string;
+    explanation: string;
+    before: string;
+    matched: string;
+    after: string;
+    pattern: string;
+  };
 };
 
-export function PatternExample({ example, html }: PatternExampleProps) {
+export function PatternExample({ example }: PatternExampleProps) {
   return (
-    <article className="fr-example">
-      <h3>{example.title}</h3>
-      <p>{example.explanation}</p>
-      <dl>
-        <div className="fr-example-pattern">
-          <dt>Pattern</dt>
-          {/* oxlint-disable-next-line react/no-danger -- trusted build-time regex highlighting. */}
-          <dd dangerouslySetInnerHTML={{ __html: html }} />
-        </div>
-        <div className="fr-example-input">
-          <dt>Input text · highlighted match</dt>
-          <dd>
-            <code>
-              {example.before}
-              <mark>{example.matched}</mark>
-              {example.after}
-            </code>
-          </dd>
-        </div>
-        <div className="fr-example-match">
-          <dt>Matched text</dt>
-          <dd>
-            <code>{example.matched}</code>
-          </dd>
-        </div>
-      </dl>
-    </article>
+    <FerraExample title={example.title} introduction={example.explanation} source={example.pattern}>
+      <p>
+        <code>
+          {example.before}
+          <mark>{example.matched}</mark>
+          {example.after}
+        </code>
+      </p>
+      <p>
+        Matched text: <code>{example.matched}</code>
+      </p>
+    </FerraExample>
   );
 }

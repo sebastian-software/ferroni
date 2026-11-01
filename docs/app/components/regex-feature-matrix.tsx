@@ -1,36 +1,41 @@
-import { type ComparisonRow, ComparisonTable } from "ferramenta-family";
+import { FerraTable } from "ferramenta-family/ferra";
 
 import capabilities from "../data/regex-capabilities.json";
-import "./regex-feature-matrix.css";
 
-const rows: ComparisonRow[] = capabilities.features.map((feature) => ({
-  label: feature.label,
-  values: feature.support,
-}));
+/** Each cell is backed by an executable check in tests/regex_feature_matrix.rs. */
+function FeatureRow({ feature }: { feature: (typeof capabilities.features)[number] }) {
+  return (
+    <tr>
+      <th scope="row">{feature.label}</th>
+      {capabilities.engines.map((engine) => (
+        <td key={engine.id} data-own={engine.id === "rust" || undefined}>
+          {Object.entries(feature.support).find(([id]) => id === engine.id)?.[1] ? "Yes" : "No"}
+        </td>
+      ))}
+    </tr>
+  );
+}
 
-/**
- * Selected syntax across the compared engines. Each cell is an executable
- * check in tests/regex_feature_matrix.rs; the page around it says how to read
- * the marks.
- */
 export function RegexFeatureMatrix() {
   return (
-    <div className="regex-feature-matrix">
-      <ComparisonTable
-        caption="Selected regex features · checked with untimed compatibility examples"
-        subject="Feature"
-        contenders={capabilities.engines.map((engine) => ({
-          id: engine.id,
-          label: (
-            <>
+    <FerraTable caption="Selected regex features · checked with untimed compatibility examples">
+      <thead>
+        <tr>
+          <th scope="col">Feature</th>
+          {capabilities.engines.map((engine) => (
+            <th key={engine.id} scope="col" data-own={engine.id === "rust" || undefined}>
               {engine.label}
+              <br />
               <small>{engine.language}</small>
-            </>
-          ),
-          own: engine.id === "rust",
-        }))}
-        rows={rows}
-      />
-    </div>
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {capabilities.features.map((feature) => (
+          <FeatureRow key={feature.label} feature={feature} />
+        ))}
+      </tbody>
+    </FerraTable>
   );
 }

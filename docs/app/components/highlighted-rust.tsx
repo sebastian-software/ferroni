@@ -1,9 +1,10 @@
+import { FerraCode } from "ferramenta-family/ferra";
+
 export function HighlightedRust({ caption, html }: { caption: string; html: string }) {
   return (
-    <figure className="fam-code fr-rust">
-      <figcaption>{caption}</figcaption>
-      {/* oxlint-disable-next-line react/no-danger -- trusted HTML produced by the build's Rust highlighter. */}
-      <div dangerouslySetInnerHTML={{ __html: html }} />
-    </figure>
+    <FerraCode caption={caption}>
+      {/* oxlint-disable-next-line react/no-danger -- Trusted inline spans from the build-time code highlighter. */}
+      <span dangerouslySetInnerHTML={{ __html: html }} />
+    </FerraCode>
   );
 }

@@ -16,7 +16,7 @@ measurements are [in the repository](#all-numbers-and-raw-data).
 
 Evaluating Ferroni for your application? Start with steady reuse if you compile
 a pattern once and search many inputs. Check compilation and first-use results
-when startup matters. Each chart row compares Ferroni with one engine on the
+when startup matters. Each table row compares Ferroni with one engine on the
 tasks they both run; different task counts mean the rows are not a universal
 engine ranking.
 
@@ -53,8 +53,7 @@ not a model of production traffic.
 - **Same output first.** An engine that rejects a pattern or returns a
   different result is left out of that task instead of being timed.
 - **Three phases.** Compile prepares one pattern, first use adds its first
-  input, and steady reuse runs a prepared pattern over all of its inputs. The
-  chart shows steady reuse.
+  input, and steady reuse runs a prepared pattern over all of its inputs. Use the phase selector for compilation, first use, or steady reuse.
 - **Repeated on separate machines.** Three processes per platform, each on its
   own Blacksmith VM, with 30 Criterion samples per phase. A task counts for one
   engine only when all three runs agree; otherwise it is inconclusive.
@@ -74,7 +73,7 @@ selected features directly, one executable example per cell.
 
 <RegexFeatureMatrix />
 
-A check means the illustrated syntax returns the expected match; a cross means
+Yes means the illustrated syntax returns the expected match; No means
 it is rejected or behaves differently, though a rewritten pattern may still
 solve the task. Variable-length look-behind here includes an unbounded `\s*`;
 multi-character case folding means `strasse` matching `straße` with case

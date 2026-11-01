@@ -25,6 +25,23 @@ English.
   before changing direction.
 - Conventional commits without exception; release-please depends on them.
 
+## Website
+
+The public site lives in `docs/` and uses Ardo 6 with the shared Ferra entry
+from `ferramenta-family`. Keep presentation in the family package; the site
+has no local CSS. React and static routing come from Ardo, not React Router.
+
+Run `pnpm install --frozen-lockfile` and `pnpm verify` in `docs/` for lint,
+types, formatting, benchmark claims, the production build and rendered links.
+`pnpm sample:check` also reruns the Rust examples behind the displayed matches
+and scanner steps. Check mobile and desktop rendering before shipping a design
+change, including the documentation menu, search and benchmark selectors.
+
+`docs/app/data/site.json` is generated from `Cargo.toml` and the documentation
+frontmatter by `docs/scripts/write-site-data.mjs`; do not edit it by hand.
+The dev, typecheck and build commands regenerate it. Retain published route
+and section URLs when reorganizing the site.
+
 ## Testing
 
 [CONTRIBUTING.md](CONTRIBUTING.md#running-tests) carries the runnable command

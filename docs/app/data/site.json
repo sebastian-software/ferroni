@@ -1,0 +1,171 @@
+{
+  "version": "2.8.0",
+  "navigation": [
+    {
+      "id": "guide",
+      "label": "Guide",
+      "href": "/guide/getting-started",
+      "pages": [
+        {
+          "title": "Getting Started",
+          "href": "/guide/getting-started",
+          "order": 1
+        },
+        {
+          "title": "Scanner Guide",
+          "href": "/guide/scanner",
+          "order": 2
+        },
+        {
+          "title": "Precompiled Scanner Patterns",
+          "href": "/guide/precompiled-patterns",
+          "order": 2.5
+        },
+        {
+          "title": "Prepared Eager Archives",
+          "href": "/guide/precompiled-eager",
+          "order": 2.6
+        },
+        {
+          "title": "Untrusted Input",
+          "href": "/guide/untrusted-input",
+          "order": 3
+        },
+        {
+          "title": "Compatibility",
+          "href": "/guide/compatibility",
+          "order": 4
+        },
+        {
+          "title": "Coming from regex or onig",
+          "href": "/guide/coming-from-regex",
+          "order": 5
+        },
+        {
+          "title": "Migrating to 2.0",
+          "href": "/guide/migrating-to-2",
+          "order": 6
+        }
+      ]
+    },
+    {
+      "id": "perf",
+      "label": "Performance",
+      "href": "/perf/regex-workloads",
+      "pages": [
+        {
+          "title": "Regex Benchmarks",
+          "href": "/perf/regex-workloads",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "adr",
+      "label": "Architecture",
+      "href": "/adr/001-one-to-one-parity-with-c-original",
+      "pages": [
+        {
+          "title": "1:1 Parity Goal with C Original",
+          "href": "/adr/001-one-to-one-parity-with-c-original",
+          "order": 1
+        },
+        {
+          "title": "Unsafe Code Policy",
+          "href": "/adr/002-unsafe-code-policy",
+          "order": 2
+        },
+        {
+          "title": "Encoding Scope — ASCII and UTF-8 Only",
+          "href": "/adr/003-encoding-scope-ascii-and-utf8-only",
+          "order": 3
+        },
+        {
+          "title": "C-to-Rust Translation Patterns",
+          "href": "/adr/004-c-to-rust-translation-patterns",
+          "order": 4
+        },
+        {
+          "title": "Idiomatic Rust API Layer",
+          "href": "/adr/005-idiomatic-rust-api-layer",
+          "order": 5
+        },
+        {
+          "title": "Scanner API for Multi-Pattern TextMate Tokenization",
+          "href": "/adr/006-scanner-api",
+          "order": 6
+        },
+        {
+          "title": "SIMD-Accelerated Search via memchr",
+          "href": "/adr/007-simd-accelerated-search",
+          "order": 7
+        },
+        {
+          "title": "Rust-Only Optimizations and Performance Philosophy",
+          "href": "/adr/008-rust-only-optimizations",
+          "order": 8
+        },
+        {
+          "title": "Dependency Philosophy",
+          "href": "/adr/009-dependency-philosophy",
+          "order": 9
+        },
+        {
+          "title": "Benchmark Strategy",
+          "href": "/adr/010-benchmark-strategy",
+          "order": 10
+        },
+        {
+          "title": "Test Strategy and C Test Suite Parity",
+          "href": "/adr/011-test-strategy-and-c-test-parity",
+          "order": 11
+        },
+        {
+          "title": "POSIX and GNU API Not Ported",
+          "href": "/adr/012-posix-and-gnu-api-not-ported",
+          "order": 12
+        },
+        {
+          "title": "Stack Overflow in Debug Builds During Full Test Suite",
+          "href": "/adr/013-stack-overflow-debug-builds",
+          "order": 13
+        },
+        {
+          "title": "Porting Bugs -- Lessons Learned",
+          "href": "/adr/014-porting-bugs-lessons-learned",
+          "order": 14
+        },
+        {
+          "title": "Generate Unicode Tables from the UCD",
+          "href": "/adr/015-unicode-data-from-ucd",
+          "order": 15
+        },
+        {
+          "title": "Compilation and Search-Time Tradeoffs",
+          "href": "/adr/016-compilation-and-search-tradeoffs",
+          "order": 16
+        },
+        {
+          "title": "Limit Outcomes Relative to C",
+          "href": "/adr/017-limit-outcomes-relative-to-c",
+          "order": 17
+        },
+        {
+          "title": "Precompiled Scanner Patterns",
+          "href": "/adr/018-precompiled-scanner-patterns",
+          "order": 18
+        },
+        {
+          "title": "Prepared Eager Archives",
+          "href": "/adr/019-prepared-eager-archives",
+          "order": 19
+        },
+        {
+          "title": "Selective Prepared Record Import",
+          "href": "/adr/020-selective-prepared-record-import",
+          "order": 20
+        }
+      ]
+    }
+  ]
+}

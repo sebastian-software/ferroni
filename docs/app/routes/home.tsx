@@ -1,11 +1,23 @@
 // cspell:words mbstring
-import { EvidenceFigures, family, Mark, ProjectHero, Section, WorkWithUs } from "ferramenta-family";
-import { Link, type MetaFunction } from "react-router";
-import config from "virtual:ardo/config";
+import type { ArdoMetaFunction } from "ardo/runtime";
 
-import { comparison, factor, runDate, summary } from "../components/benchmark-summary";
+import { ArdoLink as Link } from "ardo/runtime";
+import { Mark, RegistryFacts } from "ferramenta-family";
+import {
+  FerraAction,
+  FerraArticle,
+  FerraColumns,
+  FerraEditorialRow,
+  FerraInstrument,
+  FerraNotes,
+  FerraProductLead,
+  FerraProductPage,
+  FerraReleaseFacts,
+} from "ferramenta-family/ferra";
+import { family, WORKSHOP } from "ferramenta-family/registry";
+
+import { comparison, factor, summary } from "../components/benchmark-summary";
 import { SyntaxSection } from "../components/home-examples";
-import { SpeedSummary } from "../components/speed-summary";
 import {
   ClosingSection,
   FitSection,
@@ -14,25 +26,25 @@ import {
   ScannerSection,
   StartSection,
   StatusSection,
-} from "./home-bottom-sections";
-// React Router requires `meta` as a named route export.
-// oxlint-disable-next-line react/only-export-components -- React Router requires this route export.
-export const meta: MetaFunction = () => [
+} from "../components/home-sections";
+import { version } from "../data/site.json";
+
+// oxlint-disable-next-line react/only-export-components -- Ardo reads route metadata.
+export const meta: ArdoMetaFunction = () => [
   { title: "Ferroni — Oniguruma regex in pure Rust" },
   {
     name: "description",
     content:
-      "Oniguruma regex in pure Rust. Look-behind, backreferences, recursion and portable prepared scanner archives for native and WebAssembly apps.",
+      "Keep your Oniguruma patterns in native Rust: lookbehind, backreferences, Unicode and a TextMate scanner. No C toolchain required.",
   },
 ];
+// oxlint-disable-next-line react/only-export-components -- Ardo reads the route layout.
+export const handle = { layout: "bare" };
 
-function ferroni() {
-  const tool = family.find((entry) => entry.name === "ferroni");
-  if (tool === undefined) throw new Error("Ferroni is missing from the family registry.");
-  return tool;
-}
+const entry = family.find((member) => member.name === "ferroni");
+if (entry === undefined) throw new Error("Ferroni is missing from the family registry.");
+const tool = { ...entry, version };
 
-/* Ferroni's reuse throughput against C Oniguruma, low to high across the two platforms. */
 function speedupOverC() {
   const values = [comparison("linux-x86-64", "c"), comparison("macos-arm64", "c")]
     .map((pair) => pair.family_weighted_ratio)
@@ -40,147 +52,141 @@ function speedupOverC() {
   return `${values[0].toFixed(1)}–${factor(values[1])}`;
 }
 
-/*
- * What it succeeds and what it is checked against come from the registry; the
- * release is the version this site was built from, read from Cargo.toml.
- */
-function HeroSection() {
-  const tool = ferroni();
-  const version = config.project?.version;
+function Opening() {
   return (
-    <ProjectHero
-      icon="ferroni"
-      title={<span translate="no">Ferroni</span>}
-      what="Your Oniguruma patterns. Pure Rust."
-      lede={
+    <FerraProductLead
+      id="overview"
+      title="Your Oniguruma patterns. Pure Rust."
+      introduction="Keep the lookbehind, backreferences and Unicode matching your application relies on. Ferroni brings Oniguruma to native Rust, with a familiar API and a scanner for syntax highlighters. Cargo handles the build."
+      art={<FerraInstrument product="ferroni" />}
+      byline={
         <>
-          Keep the look-behind, backreferences and recursion your patterns rely on. Get a familiar
-          Rust API and a scanner for syntax highlighters. Prepare scanner groups once and ship their
-          portable archives to native and WebAssembly apps. Cargo handles the build, with no C
-          compiler or bindgen.
+          An open-source project by <a href={WORKSHOP.openSource}>{WORKSHOP.company}</a>.
         </>
       }
-      actions={
-        <>
-          <Link to="/guide/getting-started" className="fam-btn fam-btn-primary">
-            Run your first match <Mark name="arrow" className="icon" size={18} />
-          </Link>
-          <Link to="/guide/scanner" className="fam-btn fam-btn-ghost">
-            Explore the Scanner
-          </Link>
-        </>
-      }
-      install={<code translate="no">cargo add ferroni</code>}
-      facts={[
-        { label: "Succeeds", value: tool.succeeds },
-        { label: "Checked against", value: tool.evidence },
-        ...(version == null ? [] : [{ label: "Release", value: `v${version}` }]),
-      ]}
-    />
+    >
+      <div className="ferra-actions">
+        <FerraAction href="/guide/getting-started">Run your first match</FerraAction>
+        <FerraAction variant="secondary" href="/guide/scanner">
+          Build a scanner
+        </FerraAction>
+      </div>
+    </FerraProductLead>
   );
 }
 
-/*
- * The parity count is the total of the table in guide/compatibility.mdx.
- */
-function EngineEvidence() {
-  const arm = comparison("macos-arm64", "c").family_weighted_ratio;
-  const x86 = comparison("linux-x86-64", "c").family_weighted_ratio;
+function Overview() {
   return (
-    <EvidenceFigures
-      figures={[
-        {
-          label: "Faster than C",
-          value: factor(arm),
-          detail: <>Reused patterns on ARM64; {factor(x86)} on x86-64</>,
-        },
-        {
-          label: "Upstream tests",
-          value: "2,974",
-          detail: "Every UTF-8 test of C Oniguruma passes",
-        },
-        {
-          label: "Syntax modes",
-          value: "12",
-          detail: "From Oniguruma and Ruby to Python",
-        },
-        {
-          label: "Unicode",
-          value: "18.0",
-          detail: "C Oniguruma ships 16.0",
-        },
-      ]}
-    />
+    <FerraColumns>
+      <FerraArticle
+        title="The syntax you came for."
+        icon={<Mark name="pen" size={28} />}
+        meta={<Link to="/guide/compatibility">Read the compatibility contract</Link>}
+      >
+        <p>
+          Lookbehind, named captures, backreferences and recursion, across all twelve syntax modes.
+          Ferroni passes every upstream UTF-8 test and keeps the original module structure close at
+          hand.
+        </p>
+        <a href="#fr-syntax">See the patterns in action</a>
+      </FerraArticle>
+      <FerraArticle
+        title="Built to keep searching."
+        icon={<Mark name="document" size={28} />}
+        meta={<FerraReleaseFacts tool={tool} />}
+      >
+        <p>
+          Compile a pattern once, then reuse it. On our recorded workloads, Ferroni delivered{" "}
+          {speedupOverC()} the matching throughput of C Oniguruma on ARM64 macOS and x86-64 Linux.
+        </p>
+        <a href="#fr-speed">See the measurements and tradeoffs</a>
+      </FerraArticle>
+    </FerraColumns>
   );
 }
 
 function WhySection() {
   return (
-    <Section
+    <FerraArticle
       id="fr-why"
-      layout="split"
-      tone="dim"
       title="An established engine. A Rust future."
-      intro={
-        <>
-          Oniguruma powers regex matching in TextMate grammars, PHP&rsquo;s mbstring and jq. Its C
-          project closed in April 2025. Ferroni carries that work forward, ported function by
-          function and checked against every upstream UTF-8 test. On the published workloads,
-          compiled patterns run {speedupOverC()} faster than C Oniguruma.
-        </>
-      }
-      note={
-        <>
-          Speed from the {runDate()} benchmark run.{" "}
-          <Link to="/guide/compatibility">How compatibility is checked</Link>
-        </>
-      }
+      introduction="TextMate grammars, PHP’s mbstring and jq all draw on Oniguruma. Its C project closed in April 2025. Ferroni carries that work forward."
+      meta={<Link to="/guide/compatibility">What carries over, and what changes</Link>}
     >
-      <EngineEvidence />
-    </Section>
+      <p>
+        Rewriting a grammar to fit another regex engine can change what it matches. Ferroni ports
+        the original instead, function by function, then checks the result against its upstream
+        tests. The Rust API adds ownership and familiar capture methods around that core.
+      </p>
+      <p>
+        The scope is deliberate: ASCII and UTF-8, plus the scanner that editors drive. You can adopt
+        Ferroni on its own; no other Ferramenta engine is required.
+      </p>
+    </FerraArticle>
   );
 }
 
 function SpeedSection() {
-  const jitWins = [comparison("macos-arm64", "pcre2_jit"), comparison("linux-x86-64", "pcre2_jit")]
-    .map((pair) => pair.ferroni_cases)
+  const compile = [
+    comparison("macos-arm64", "c", "compile"),
+    comparison("linux-x86-64", "c", "compile"),
+  ]
+    .map((pair) => 1 / pair.family_weighted_ratio)
     .sort((a, b) => a - b);
   return (
-    <Section
+    <FerraArticle
       id="fr-speed"
       title="Compile once. Put it to work."
-      intro={
-        <>
-          Ferroni runs compiled patterns in an interpreter and generates no machine code at runtime.
-          On {summary.case_count} regex tasks taken from Django, Rails, WordPress and eight other
-          projects, Ferroni is faster in each aggregate comparison except against PCRE2&rsquo;s JIT.
-          Each pair uses the tasks both engines can run. Ferroni even leads the JIT on{" "}
-          {jitWins[0] === jitWins[1] ? jitWins[0] : jitWins.join(" to ")} tasks across the two
-          platforms. The chart shows the shared task counts and the tradeoffs.
-        </>
+      introduction="Useful comparisons start with the work you actually do. Ours use regex tasks from Django, Rails, WordPress and eight other projects."
+      meta={
+        <Link to="/perf/regex-workloads">Explore the benchmarks, platforms and source data</Link>
       }
-      note={<Link to="/perf/regex-workloads">How the benchmarks work</Link>}
     >
-      <SpeedSummary />
-    </Section>
+      <p>
+        Across {summary.case_count} tasks, Ferroni leads every measured engine in its aggregate
+        reuse comparison except PCRE2’s JIT. Each comparison covers only the tasks both engines can
+        run, with matching output checked before timing. These results describe isolated regex work,
+        not whole applications.
+      </p>
+      <p>
+        Reuse is the important qualification. C Oniguruma compiles patterns {compile[0].toFixed(1)}–
+        {factor(compile[1])} faster on the measured aggregate. If you create a pattern for a single
+        search, check compilation and first-use results too. Ferroni interprets compiled patterns
+        and generates no machine code at runtime.
+      </p>
+    </FerraArticle>
   );
 }
 
 export default function HomePage() {
   return (
-    <div className="fam-page ferroni-home">
-      <HeroSection />
-      <StartSection />
-      <WhySection />
-      <SyntaxSection />
-      <ScannerSection />
-      <PrecompiledSection />
-      <SpeedSection />
-      <SafetySection />
-      <FitSection />
-      <StatusSection />
-      <ClosingSection />
-      <WorkWithUs />
-    </div>
+    <RegistryFacts>
+      <FerraProductPage>
+        <Opening />
+        <Overview />
+        <FerraEditorialRow
+          notes={
+            <FerraNotes label="Inside the port" notes={tool.editorial?.notes.slice(0, 1) ?? []} />
+          }
+        >
+          <WhySection />
+        </FerraEditorialRow>
+        <StartSection />
+        <SyntaxSection />
+        <FerraEditorialRow
+          notes={
+            <FerraNotes label="Inside the scanner" notes={tool.editorial?.notes.slice(1) ?? []} />
+          }
+        >
+          <ScannerSection />
+        </FerraEditorialRow>
+        <PrecompiledSection />
+        <SpeedSection />
+        <SafetySection />
+        <FitSection />
+        <StatusSection />
+        <ClosingSection />
+      </FerraProductPage>
+    </RegistryFacts>
   );
 }
