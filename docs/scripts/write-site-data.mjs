@@ -14,10 +14,11 @@ function parseFields(frontmatter) {
   );
 }
 
+// Each section shows a line icon from the family mark sprite in the section rail.
 const sections = [
-  { id: "guide", label: "Guide" },
-  { id: "perf", label: "Performance" },
-  { id: "adr", label: "Architecture" },
+  { id: "guide", label: "Guide", icon: "document" },
+  { id: "perf", label: "Performance", icon: "check" },
+  { id: "adr", label: "Architecture", icon: "pen" },
 ];
 const navigation = await Promise.all(
   sections.map(async (section) => {

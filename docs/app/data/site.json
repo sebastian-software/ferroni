@@ -4,6 +4,7 @@
     {
       "id": "guide",
       "label": "Guide",
+      "icon": "document",
       "href": "/guide/getting-started",
       "pages": [
         {
@@ -51,6 +52,7 @@
     {
       "id": "perf",
       "label": "Performance",
+      "icon": "check",
       "href": "/perf/regex-workloads",
       "pages": [
         {
@@ -63,6 +65,7 @@
     {
       "id": "adr",
       "label": "Architecture",
+      "icon": "pen",
       "href": "/adr/001-one-to-one-parity-with-c-original",
       "pages": [
         {

@@ -8,7 +8,7 @@ import {
   ArdoRootLayout,
   ArdoTOC,
 } from "ardo/ui";
-import { MarkDefs } from "ferramenta-family";
+import { Mark, MarkDefs } from "ferramenta-family";
 import {
   FerraFooter,
   FerraGuideNavigation,
@@ -16,7 +16,7 @@ import {
   FerraPage,
   FerraReadingLayout,
   FerraReadingTable,
-  FerraTabs,
+  FerraSectionRail,
 } from "ferramenta-family/ferra";
 import touchIcon from "ferramenta-family/ferra-assets/ferroni/apple-touch-icon.png?url";
 import favicon from "ferramenta-family/ferra-assets/ferroni/favicon.ico?url";
@@ -45,11 +45,8 @@ function GuideNavigation({ onNavigate }: { onNavigate?: () => void }) {
   const path = useArdoPath();
   const current = navigation.find((section) => path.startsWith(`/${section.id}/`)) ?? navigation[0];
   return (
-    <FerraGuideNavigation aria-label="Documentation pages">
-      <NavLink to="/" onClick={onNavigate}>
-        Overview
-      </NavLink>
-      <FerraTabs aria-label="Documentation sections">
+    <>
+      <FerraSectionRail aria-label="Documentation sections">
         {navigation.map((section) => (
           <NavLink
             key={section.id}
@@ -57,17 +54,23 @@ function GuideNavigation({ onNavigate }: { onNavigate?: () => void }) {
             data-active={current.id === section.id}
             onClick={onNavigate}
           >
+            <Mark name={section.icon} />
             {section.label}
           </NavLink>
         ))}
-      </FerraTabs>
-      <p>{current.label}</p>
-      {current.pages.map(({ title, href }) => (
-        <NavLink key={href} to={href} onClick={onNavigate}>
-          {title}
+      </FerraSectionRail>
+      <FerraGuideNavigation aria-label="Documentation pages">
+        <NavLink to="/" onClick={onNavigate}>
+          Overview
         </NavLink>
-      ))}
-    </FerraGuideNavigation>
+        <p>{current.label}</p>
+        {current.pages.map(({ title, href }) => (
+          <NavLink key={href} to={href} onClick={onNavigate}>
+            {title}
+          </NavLink>
+        ))}
+      </FerraGuideNavigation>
+    </>
   );
 }
 
