@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.9.0](https://github.com/sebastian-software/ferroni/compare/v2.8.0...v2.9.0) (2026-11-05)
+
+
+### Features
+
+* **docs:** adopt shared Ferra theme and Ardo 6 ([#474](https://github.com/sebastian-software/ferroni/issues/474)) ([a355ea7](https://github.com/sebastian-software/ferroni/commit/a355ea732b332566ce5d6f3e64c5143f9ea67a65))
+* **docs:** show documentation sections in the Ferra section rail ([c2ee04d](https://github.com/sebastian-software/ferroni/commit/c2ee04d5f5b2dadf7612b6bd711a0c9312aa5559))
+* **docs:** show documentation sections in the Ferra section rail ([19368cd](https://github.com/sebastian-software/ferroni/commit/19368cdac65a961e40c177d01344fdbc19f2dfe5))
+
+
+### Bug Fixes
+
+* **site:** adopt compact code blocks and unframed docs ([#476](https://github.com/sebastian-software/ferroni/issues/476)) ([0cff29d](https://github.com/sebastian-software/ferroni/commit/0cff29de8588766bb3e7916cba051e2f2edf3846))
+
 ## [2.8.0](https://github.com/sebastian-software/ferroni/compare/v2.7.2...v2.8.0) (2026-10-26)
 
 
