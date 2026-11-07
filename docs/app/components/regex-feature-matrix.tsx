@@ -1,4 +1,4 @@
-import { FerraTable } from "ferramenta-family/ferra";
+import { MonoTable } from "ferramenta-family/monografie";
 
 import capabilities from "../data/regex-capabilities.json";
 
@@ -18,7 +18,7 @@ function FeatureRow({ feature }: { feature: (typeof capabilities.features)[numbe
 
 export function RegexFeatureMatrix() {
   return (
-    <FerraTable caption="Selected regex features · checked with untimed compatibility examples">
+    <MonoTable caption="Selected regex features · checked with untimed compatibility examples">
       <thead>
         <tr>
           <th scope="col">Feature</th>
@@ -36,6 +36,6 @@ export function RegexFeatureMatrix() {
           <FeatureRow key={feature.label} feature={feature} />
         ))}
       </tbody>
-    </FerraTable>
+    </MonoTable>
   );
 }
