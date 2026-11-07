@@ -1,5 +1,5 @@
 import { useState } from "ardo/react";
-import { FerraBenchmarkTable, FerraChoices, FerraSelect } from "ferramenta-family/ferra";
+import { MonoBenchmarkTable, MonoChoices, MonoSelect } from "ferramenta-family/monografie";
 
 import { comparison, type Lane, type Profile, summary } from "./benchmark-summary";
 
@@ -25,7 +25,7 @@ const panels = platforms.flatMap((platform) => phases.map((phase) => ({ platform
 
 function ComparisonPanel({ platform, phase }: (typeof panels)[number]) {
   return (
-    <FerraBenchmarkTable caption={`${platform.label} · ${phase.label}`}>
+    <MonoBenchmarkTable caption={`${platform.label} · ${phase.label}`}>
       <thead>
         <tr>
           <th scope="col">Compared engine</th>
@@ -49,7 +49,7 @@ function ComparisonPanel({ platform, phase }: (typeof panels)[number]) {
           );
         })}
       </tbody>
-    </FerraBenchmarkTable>
+    </MonoBenchmarkTable>
   );
 }
 
@@ -59,8 +59,8 @@ export function SpeedChart() {
   const [lane, setLane] = useState<Lane>("steady");
   return (
     <>
-      <FerraChoices>
-        <FerraSelect
+      <MonoChoices>
+        <MonoSelect
           label="Platform"
           value={profile}
           options={platforms}
@@ -69,7 +69,7 @@ export function SpeedChart() {
             if (selected) setProfile(selected.value);
           }}
         />
-        <FerraSelect
+        <MonoSelect
           label="Phase"
           value={lane}
           options={phases}
@@ -78,7 +78,7 @@ export function SpeedChart() {
             if (selected) setLane(selected.value);
           }}
         />
-      </FerraChoices>
+      </MonoChoices>
       <p>
         Ferroni’s throughput relative to each engine. Above 1× favors Ferroni; below 1× favors the
         other engine. Each pair covers its own shared tasks, so these rows are not a universal

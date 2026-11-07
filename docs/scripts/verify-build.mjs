@@ -47,6 +47,32 @@ for (const file of appFiles.filter((name) => name.endsWith(".css"))) {
   }
 }
 
+// Every page stands on Monografie (ADR-0012 in ferramenta): no class of the Ferra
+// theme or the original kit survives. Only Ferra's identity assets keep the name.
+const ferraIdentity = new Set(["ferra-mark", "ferra-instrument", "ferra-workshop-logo"]);
+function ferraClasses(html) {
+  return [...html.matchAll(/class="([^"]*)"/g)]
+    .flatMap(([, value]) => value.split(/\s+/))
+    .filter((name) => /^(?:ferra|fam)-/.test(name) && !ferraIdentity.has(name));
+}
+
+// No source imports the Ferra theme or the original kit, and no built
+// stylesheet carries a selector of theirs.
+const theme =
+  /ferramenta-family\/(?:ferra(?:-ardo|-tokens|-fonts)?\.css|ferra"|landing\.css|chrome\.css)/;
+for (const file of appFiles.filter((name) => /\.(?:tsx?|mdx?|css)$/.test(name))) {
+  const source = await readFile(new URL(`../app/${file}`, import.meta.url), "utf8");
+  if (theme.test(source))
+    throw new Error(`app/${file} imports the Ferra theme or the original kit.`);
+}
+const builtAssets = await readdir(new URL("assets/", output));
+for (const file of builtAssets.filter((name) => name.endsWith(".css"))) {
+  const css = await readFile(new URL(`assets/${file}`, output), "utf8");
+  if (/\.(?:ferra-(?!mark|instrument|workshop-logo)|fam-)[a-z]/.test(css)) {
+    throw new Error(`build/client/assets/${file} carries the Ferra theme or the original kit.`);
+  }
+}
+
 const routes = ["/", ...navigation.flatMap((section) => section.pages.map((page) => page.href))];
 for (const route of routes) {
   const file = route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
@@ -72,8 +98,15 @@ for (const route of routes) {
   if (html.includes('class="ardo-header') || html.includes('class="ardo-footer')) {
     throw new Error(`${route} must use the family chrome once.`);
   }
-  if (route !== "/" && !html.includes('class="ferra-guide-navigation"')) {
+  if (route !== "/" && !html.includes('class="mono-guide-navigation"')) {
     throw new Error(`${route} is missing its documentation navigation.`);
+  }
+  if (route !== "/" && !html.includes('class="mono mono-docs')) {
+    throw new Error(`${route} must stand on the Monografie documentation page.`);
+  }
+  const leftovers = ferraClasses(html);
+  if (leftovers.length > 0) {
+    throw new Error(`${route} still renders ${JSON.stringify([...new Set(leftovers)])}.`);
   }
 }
 
@@ -94,7 +127,7 @@ for (const id of [
   if (!home.includes(`id="${id}"`))
     throw new Error(`Preserve the published homepage anchor #${id}.`);
 }
-if (home.includes("ferra-benchmark-table") || !home.includes('class="mono fr-home"')) {
+if (home.includes("mono-benchmark-table") || !home.includes('class="mono fr-home"')) {
   throw new Error("The homepage should use the Monografie page and link to detailed benchmarks.");
 }
 
@@ -123,8 +156,7 @@ for (const platform of summary.platforms) {
     }
   }
 }
-const assets = await readdir(new URL("assets/", output));
-if (!assets.some((file) => /^search-index-.*\.js$/.test(file))) {
+if (!builtAssets.some((file) => /^search-index-.*\.js$/.test(file))) {
   throw new Error("The site must ship its static search index.");
 }
 console.log(

@@ -1,4 +1,4 @@
-import { FerraExample } from "ferramenta-family/ferra";
+import { MonoExample } from "ferramenta-family/monografie";
 
 type PatternExampleProps = {
   example: {
@@ -13,7 +13,7 @@ type PatternExampleProps = {
 
 export function PatternExample({ example }: PatternExampleProps) {
   return (
-    <FerraExample title={example.title} introduction={example.explanation} source={example.pattern}>
+    <MonoExample title={example.title} introduction={example.explanation} source={example.pattern}>
       <p>
         <code>
           {example.before}
@@ -24,6 +24,6 @@ export function PatternExample({ example }: PatternExampleProps) {
       <p>
         Matched text: <code>{example.matched}</code>
       </p>
-    </FerraExample>
+    </MonoExample>
   );
 }

@@ -1,0 +1,21 @@
+/* ---------- The header's row between 961px and 1024px ---------- */
+/* Ardo shows its documentation menu up to 1024px, while the reading layout
+   keeps its navigation column from 961px. In that band the column is the way
+   into the guide, so the extra button steps aside, and the row closes up so
+   that six links, the release and the search still fit beside the name. */
+@media (min-width: 961px) and (max-width: 1024px) {
+  .fr-docs .mono-header-actions > button[aria-label="Toggle menu"] {
+    display: none;
+  }
+  .fr-docs .mono-header-in {
+    gap: 24px;
+  }
+}
+
+/* Temporary: Shiki's GitHub Light comment gray (#6E7781) reaches only 4.39:1 on
+   the Monografie code sheet. ferramenta PR #138 fixes it in monografie-ardo.css;
+   this rule goes once the pin includes that fix. */
+.fr-docs :is(.ardo-code-block, .ardo-shiki) span[style*="--shiki-light:#6E7781" i],
+.fr-docs :is(.ardo-code-block, .ardo-shiki) span[style*="color:#6E7781" i] {
+  color: #59636e !important;
+}
