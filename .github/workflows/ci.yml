@@ -347,9 +347,9 @@ jobs:
   sample:
     name: Home page sample
     runs-on: ubuntu-latest
-    # The home page shows examples/website_sample.rs and its stdout from
-    # docs/app/data/regex-sample.json. The script reruns the example and fails
-    # when the committed artifact no longer matches its source or its output.
+    # The home page shows the output of examples/website_homepage.rs from
+    # docs/app/data/home-specimens.json. The script reruns the website examples
+    # and fails when a committed artifact no longer matches their output.
     # It needs Rust for the example and Node for the script, so it is neither
     # in the Rust matrix nor in the Node-only docs-format job. Regenerate the
     # artifact with `pnpm sample:write` in docs/.

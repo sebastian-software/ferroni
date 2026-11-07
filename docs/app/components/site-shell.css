@@ -1,0 +1,37 @@
+/* The Monografie chrome inside Ardo's shell, on the homepage (fr-home) and on
+   documentation pages (fr-docs). */
+
+/* Ardo pads its layout for a fixed header; the Monografie header is sticky. */
+.fr-home .ferra-ardo-shell > div {
+  padding-block-start: 0;
+}
+
+/* Anchors and the reading layout's sticky panels clear the 60px sticky header. */
+html:has(.fr-home, .fr-docs) {
+  scroll-padding-top: 76px;
+}
+.fr-docs :is(.ferra-reading-navigation, .ferra-reading-outline) {
+  top: 84px;
+  max-height: calc(100svh - 108px);
+}
+
+/* The copyright line closes the footer row on the right. */
+:is(.fr-home, .fr-docs) .mono-footer .mono-footer-copy {
+  margin-left: auto;
+}
+
+@media (max-width: 960px) {
+  /* The documentation drawer carries the navigation and the brand leads home,
+     so the menu button steps aside and the drawer and search sit at the end. */
+  .fr-docs .mono-header .mono-menu-button {
+    display: none;
+  }
+  .fr-docs .mono-header .mono-header-actions {
+    margin-left: auto;
+  }
+}
+@media (max-width: 640px) {
+  :is(.fr-home, .fr-docs) .mono-footer .mono-footer-copy {
+    margin-left: 0;
+  }
+}

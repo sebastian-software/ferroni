@@ -27,14 +27,18 @@ English.
 
 ## Website
 
-The public site lives in `docs/` and uses Ardo 6 with the shared Ferra entry
-from `ferramenta-family`. Keep presentation in the family package; the site
-has no local CSS. React and static routing come from Ardo, not React Router.
+The public site lives in `docs/` and uses Ardo 6 with `ferramenta-family`:
+every page wears the Monografie header and footer, the homepage is built from
+the Monografie entry, and the documentation keeps the Ferra reading layout.
+Keep presentation in the family package; the only local CSS styles the
+homepage's own specimens, beside their components in `docs/app/components/`,
+with every selector scoped to an `fr-` class and colors from the `--mono-*`
+tokens. React and static routing come from Ardo, not React Router.
 
 Run `pnpm install --frozen-lockfile` and `pnpm verify` in `docs/` for lint,
 types, formatting, benchmark claims, the production build and rendered links.
-`pnpm sample:check` also reruns the Rust examples behind the displayed matches
-and scanner steps. Check mobile and desktop rendering before shipping a design
+`pnpm sample:check` also reruns the Rust examples behind the homepage's
+specimens and the guide's syntax examples. Check mobile and desktop rendering before shipping a design
 change, including the documentation menu, search and benchmark selectors.
 
 `docs/app/data/site.json` is generated from `Cargo.toml` and the documentation

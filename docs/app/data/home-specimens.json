@@ -1,0 +1,319 @@
+{
+  "date": {
+    "captures": [
+      {
+        "end": 10,
+        "name": "year",
+        "start": 6,
+        "value": "2026"
+      },
+      {
+        "end": 13,
+        "name": "month",
+        "start": 11,
+        "value": "09"
+      },
+      {
+        "end": 16,
+        "name": "day",
+        "start": 14,
+        "value": "26"
+      }
+    ],
+    "input": "Date: 2026-09-26",
+    "pattern": "(?<=Date: )(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})",
+    "replaced": "Date: 26.09.2026",
+    "replacement": "${day}.${month}.${year}"
+  },
+  "features": [
+    {
+      "id": "unicode_properties",
+      "input": "κόσμος",
+      "label": "Unicode character properties",
+      "match": {
+        "after": "",
+        "before": "",
+        "end": 12,
+        "matched": "κόσμος",
+        "start": 0
+      },
+      "pattern": "\\p{Greek}+",
+      "support": {
+        "c": true,
+        "fancy_regex": true,
+        "onigmo": true,
+        "pcre2": true,
+        "regex": true,
+        "rust": true
+      }
+    },
+    {
+      "id": "lookaround",
+      "input": "Date: 2026",
+      "label": "Lookahead and lookbehind",
+      "match": {
+        "after": "",
+        "before": "Date: ",
+        "end": 10,
+        "matched": "2026",
+        "start": 6
+      },
+      "pattern": "(?<=Date: )\\d{4}",
+      "support": {
+        "c": true,
+        "fancy_regex": true,
+        "onigmo": true,
+        "pcre2": true,
+        "regex": false,
+        "rust": true
+      }
+    },
+    {
+      "id": "unbounded_lookbehind",
+      "input": "version:   1.3.3",
+      "label": "Unbounded variable-length lookbehind",
+      "match": {
+        "after": "",
+        "before": "version:   ",
+        "end": 16,
+        "matched": "1.3.3",
+        "start": 11
+      },
+      "pattern": "(?<=version:\\s*)\\d+\\.\\d+\\.\\d+",
+      "support": {
+        "c": true,
+        "fancy_regex": true,
+        "onigmo": false,
+        "pcre2": false,
+        "regex": false,
+        "rust": true
+      }
+    },
+    {
+      "id": "full_case_folding",
+      "input": "straße",
+      "label": "Multi-character Unicode case folding",
+      "match": {
+        "after": "",
+        "before": "",
+        "end": 7,
+        "matched": "straße",
+        "start": 0
+      },
+      "pattern": "(?i)\\Astrasse\\z",
+      "support": {
+        "c": true,
+        "fancy_regex": false,
+        "onigmo": true,
+        "pcre2": false,
+        "regex": false,
+        "rust": true
+      }
+    },
+    {
+      "id": "unicode_word_segmentation",
+      "input": "can't",
+      "label": "Unicode word segmentation · UAX #29",
+      "match": {
+        "after": "",
+        "before": "",
+        "end": 5,
+        "matched": "can't",
+        "start": 0
+      },
+      "pattern": "(?y{w})\\y\\X\\y",
+      "support": {
+        "c": true,
+        "fancy_regex": false,
+        "onigmo": false,
+        "pcre2": false,
+        "regex": false,
+        "rust": true
+      }
+    },
+    {
+      "id": "backreference",
+      "input": "the the",
+      "label": "Backreferences",
+      "match": {
+        "after": "",
+        "before": "",
+        "end": 7,
+        "matched": "the the",
+        "start": 0
+      },
+      "pattern": "\\b(\\w+)\\s+\\1\\b",
+      "support": {
+        "c": true,
+        "fancy_regex": true,
+        "onigmo": true,
+        "pcre2": true,
+        "regex": false,
+        "rust": true
+      }
+    },
+    {
+      "id": "subexpression",
+      "input": "(a(b)c)",
+      "label": "Recursive subexpression calls",
+      "match": {
+        "after": "",
+        "before": "",
+        "end": 7,
+        "matched": "(a(b)c)",
+        "start": 0
+      },
+      "pattern": "\\A(?<p>\\((?:[^()]|\\g<p>)*\\))\\z",
+      "support": {
+        "c": true,
+        "fancy_regex": true,
+        "onigmo": true,
+        "pcre2": true,
+        "regex": false,
+        "rust": true
+      }
+    },
+    {
+      "id": "grapheme",
+      "input": "é",
+      "label": "Grapheme clusters · \\X",
+      "match": {
+        "after": "",
+        "before": "",
+        "end": 3,
+        "matched": "é",
+        "start": 0
+      },
+      "pattern": "\\X",
+      "support": {
+        "c": true,
+        "fancy_regex": false,
+        "onigmo": true,
+        "pcre2": true,
+        "regex": false,
+        "rust": true
+      }
+    },
+    {
+      "id": "absent",
+      "input": "ccc",
+      "label": "Absent repeater · (?~...)",
+      "match": {
+        "after": "",
+        "before": "",
+        "end": 3,
+        "matched": "ccc",
+        "start": 0
+      },
+      "pattern": "(?~ab)",
+      "support": {
+        "c": true,
+        "fancy_regex": true,
+        "onigmo": true,
+        "pcre2": false,
+        "regex": false,
+        "rust": true
+      }
+    },
+    {
+      "id": "level_backreference",
+      "input": "reer",
+      "label": "Oniguruma recursion-level backreferences",
+      "match": {
+        "after": "",
+        "before": "",
+        "end": 4,
+        "matched": "reer",
+        "start": 0
+      },
+      "pattern": "\\A(?<a>|.|(?:(?<b>.)\\g<a>\\k<b+0>))\\z",
+      "support": {
+        "c": true,
+        "fancy_regex": false,
+        "onigmo": true,
+        "pcre2": false,
+        "regex": false,
+        "rust": true
+      }
+    }
+  ],
+  "ferroni": "2.8.0",
+  "guardrails": {
+    "pattern": "(a+)+$",
+    "strictError": "syntax error: very inefficient pattern",
+    "timeoutError": "TimeLimitOver",
+    "timeoutMs": 50,
+    "timeoutPattern": "(a+)+b",
+    "timeoutRepeat": 40,
+    "warnings": [
+      "nested unbounded repeat: an inner repeat can match characters that the rest of the enclosing repeat also accepts, so a failing match can retry exponentially many splits of the same input"
+    ]
+  },
+  "scanner": {
+    "ascii": {
+      "input": "const x = \"hello\" // greeting",
+      "steps": [
+        {
+          "end": 5,
+          "from": 0,
+          "index": 0,
+          "matched": "const",
+          "start": 0,
+          "utf16End": 5,
+          "utf16Start": 0
+        },
+        {
+          "end": 17,
+          "from": 5,
+          "index": 1,
+          "matched": "\"hello\"",
+          "start": 10,
+          "utf16End": 17,
+          "utf16Start": 10
+        },
+        {
+          "end": 29,
+          "from": 17,
+          "index": 2,
+          "matched": "// greeting",
+          "start": 18,
+          "utf16End": 29,
+          "utf16Start": 18
+        }
+      ]
+    },
+    "patterns": ["\\b(function|const|let|var)\\b", "\"[^\"]*\"", "//.*$"],
+    "wide": {
+      "input": "let größe = \"Straße\" // Maß",
+      "steps": [
+        {
+          "end": 3,
+          "from": 0,
+          "index": 0,
+          "matched": "let",
+          "start": 0,
+          "utf16End": 3,
+          "utf16Start": 0
+        },
+        {
+          "end": 23,
+          "from": 3,
+          "index": 1,
+          "matched": "\"Straße\"",
+          "start": 14,
+          "utf16End": 20,
+          "utf16Start": 12
+        },
+        {
+          "end": 31,
+          "from": 23,
+          "index": 2,
+          "matched": "// Maß",
+          "start": 24,
+          "utf16End": 27,
+          "utf16Start": 21
+        }
+      ]
+    }
+  }
+}

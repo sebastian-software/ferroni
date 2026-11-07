@@ -126,6 +126,26 @@ const speedup = `${overC[0]}–${overC.at(-1)}× faster than C Oniguruma`;
 if (!readme.replaceAll(/\s+/g, " ").includes(speedup)) {
   errors.push(`Revise the README: Ferroni now matches ${speedup}.`);
 }
+// The homepage names the measuring machines; their runner labels carry the vCPU counts.
+const run = JSON.parse(readFileSync(resolve(root, "benches/production_results/run.json"), "utf8"));
+for (const [profile, name] of [
+  ["macos", "macOS arm64"],
+  ["ubuntu", "Linux x86-64"],
+]) {
+  const labels = new Set(
+    run.jobs
+      .flatMap((job) => job.labels)
+      .filter((label) => label.startsWith("blacksmith-") && label.includes(profile)),
+  );
+  const cpus = [...labels].map((label) => /blacksmith-(\d+)vcpu-/.exec(label)?.[1]);
+  if (cpus.length !== 1 || !flat(home).includes(`${name} with ${cpus[0]} vCPU`)) {
+    errors.push(`Update the homepage's ${name} machine from benches/production_results/run.json.`);
+  }
+}
+if (!flat(home).includes("Run of {runDay}") || summary.run.created_at !== run.created_at) {
+  errors.push("The homepage must date the measurements from the published run.");
+}
+
 const sources = new Set(Object.values(catalog.sources).map((source) => source.url));
 const tokenizerCatalog = JSON.parse(
   readFileSync(resolve(root, "benches/tokenizer_regex/catalog.json"), "utf8"),

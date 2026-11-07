@@ -9,11 +9,42 @@ const output = new URL("../build/client/", import.meta.url);
 const { version, navigation } = JSON.parse(
   await readFile(new URL("../app/data/site.json", import.meta.url), "utf8"),
 );
+/** A selector list split at its top-level commas, so `:is(a, b)` stays whole. */
+function selectorList(prelude) {
+  const selectors = [""];
+  let depth = 0;
+  for (const char of prelude) {
+    if (char === "(") depth += 1;
+    if (char === ")") depth -= 1;
+    if (char === "," && depth === 0) selectors.push("");
+    else selectors[selectors.length - 1] += char;
+  }
+  return selectors;
+}
+
+// Shared presentation lives in ferramenta-family. The site styles only its own
+// homepage specimens, next to their components, under the fr- prefix.
 const appFiles = await readdir(new URL("../app/", import.meta.url), { recursive: true });
-if (appFiles.some((file) => file.endsWith(".css"))) {
-  throw new Error(
-    "Keep shared presentation in ferramenta-family; the Ferroni site has no local CSS.",
-  );
+for (const file of appFiles.filter((name) => name.endsWith(".css"))) {
+  if (!file.startsWith("components/")) {
+    throw new Error(
+      `Keep ${file} beside its specimen in app/components/, or in ferramenta-family.`,
+    );
+  }
+  const css = await readFile(new URL(`../app/${file}`, import.meta.url), "utf8");
+  const preludes = css
+    .replaceAll(/\/\*[\s\S]*?\*\//g, "")
+    .split("{")
+    .slice(0, -1)
+    .map((chunk) =>
+      chunk.slice(Math.max(chunk.lastIndexOf("}"), chunk.lastIndexOf(";")) + 1).trim(),
+    )
+    .filter((prelude) => !prelude.startsWith("@"));
+  for (const selector of preludes.flatMap((prelude) => selectorList(prelude))) {
+    if (!/\.fr-/.test(selector)) {
+      throw new Error(`${file}: scope "${selector.trim()}" to an fr- class.`);
+    }
+  }
 }
 
 const routes = ["/", ...navigation.flatMap((section) => section.pages.map((page) => page.href))];
@@ -22,10 +53,10 @@ for (const route of routes) {
   const source = await readFile(new URL(file, output), "utf8");
   const html = source.replaceAll(/<!--.*?-->/g, "");
   for (const fragment of [
-    'class="ferra-header ferra-wrap"',
-    'class="ferra-footer ferra-wrap"',
+    'class="mono-header"',
+    'class="mono-footer"',
     'rel="icon"',
-    `Ferroni v${version}`,
+    `<span class="mono-release" title="Current release">v${version}</span>`,
     "https://ferramenta.dev",
   ]) {
     requireFragment(html, fragment, route);
@@ -63,10 +94,8 @@ for (const id of [
   if (!home.includes(`id="${id}"`))
     throw new Error(`Preserve the published homepage anchor #${id}.`);
 }
-if (home.includes("ferra-benchmark-table") || home.includes('class="fam-page')) {
-  throw new Error(
-    "The homepage should use the product story layout and link to detailed benchmarks.",
-  );
+if (home.includes("ferra-benchmark-table") || !home.includes('class="mono fr-home"')) {
+  throw new Error("The homepage should use the Monografie page and link to detailed benchmarks.");
 }
 
 const benchmarkSource = await readFile(new URL("perf/regex-workloads/index.html", output), "utf8");

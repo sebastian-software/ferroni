@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "ardo": "^6.0.0",
-    "ferramenta-family": "github:sebastian-software/ferramenta#0e22e8aa755fce55287a1a26a66f5e8de5b91f29&path:/packages/family"
+    "ferramenta-family": "github:sebastian-software/ferramenta#307b6f2cdac5c079854bcb0b02cbf54c33cef511&path:/packages/family"
   },
   "devDependencies": {
     "@sebastian-software/standards": "0.13.0",

@@ -214,16 +214,16 @@ pnpm verify
 The setting also applies to `pnpm dev`. Ferriki still verifies the assets
 against the release's pinned hashes.
 
-The home page's run sample is generated from `examples/website_sample.rs`
-into `docs/app/data/regex-sample.json`. Its highlighted syntax examples and
-scanner steps are generated from `examples/website_walkthrough.rs` into
+The home page's specimens (feature matches, named captures, scanner steps and
+guardrails) are generated from `examples/website_homepage.rs` into
+`docs/app/data/home-specimens.json`. The regex guide's syntax examples are
+generated from `examples/website_walkthrough.rs` into
 `docs/app/data/regex-walkthrough.json`.
 
-After changing either example, run `pnpm sample:write` and `pnpm format` from
-`docs/`, then commit the generated artifacts. `pnpm sample:check` runs both
-examples again: it compares the run sample's source and stdout, and the
-walkthrough's matching results, with the committed artifacts. The run sample's
-caption retains the Ferroni version that originally generated it.
+After changing either example, run `pnpm sample:write` from `docs/` and commit
+the generated, formatted artifacts; never edit them by hand.
+`pnpm sample:check` runs both examples again and compares their results with
+the committed artifacts.
 CI runs the same comparison in the `sample` job of
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml), as
 `node docs/scripts/render-regex-sample.mjs --check`.
