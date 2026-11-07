@@ -1,56 +1,54 @@
-/** Commit the example's actual stdout; escape it only for safe HTML display. */
+/* eslint-disable security/detect-non-literal-fs-filename -- The artifact paths are fixed in this script. */
+/**
+ * Keep the home page's specimens and the guide's syntax examples tied to
+ * Ferroni's actual results: run each website example, then write its JSON
+ * (`pnpm sample:write`) or compare it with the committed file
+ * (`pnpm sample:check`). The written files are never edited by hand.
+ */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
-const artifact = resolve(root, "docs/app/data/regex-sample.json");
-const input = readFileSync(resolve(root, "examples/website_sample.rs"), "utf8");
-const stdout = execFileSync(
-  "cargo",
-  ["run", "--locked", "--quiet", "--example", "website_sample"],
-  {
-    cwd: root,
-    encoding: "utf8",
-  },
-);
-const escaped = stdout.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-const output = `<pre><code>${escaped}</code></pre>`;
+const check = process.argv.includes("--check");
 
-if (process.argv.includes("--check")) {
-  const committed = JSON.parse(readFileSync(artifact, "utf8"));
-  // The caption retains the version that produced the artifact. Later crate
-  // releases may reproduce it without rewriting that historical attribution.
-  if (committed.input !== input || committed.stdout !== stdout || committed.output !== output) {
-    throw new Error("The home-page sample changed. Run pnpm sample:write and commit the result.");
+const artifacts = [
+  {
+    example: "website_homepage",
+    file: "docs/app/data/home-specimens.json",
+    stale: "The home-page specimens changed. Run pnpm sample:write and commit the result.",
+  },
+  {
+    example: "website_walkthrough",
+    file: "docs/app/data/regex-walkthrough.json",
+    stale: "The guide's syntax examples changed. Run pnpm sample:write and commit the result.",
+  },
+];
+
+const written = [];
+for (const { example, file, stale } of artifacts) {
+  const actual = JSON.parse(
+    execFileSync("cargo", ["run", "--locked", "--quiet", "--example", example], {
+      cwd: root,
+      encoding: "utf8",
+    }),
+  );
+  const path = resolve(root, file);
+  if (check) {
+    const committed = JSON.parse(readFileSync(path, "utf8"));
+    if (JSON.stringify(committed) !== JSON.stringify(actual)) throw new Error(stale);
+  } else {
+    writeFileSync(path, `${JSON.stringify(actual, null, 2)}\n`);
+    written.push(path);
   }
-  console.log("The committed home-page sample matches the example's actual output.");
-} else {
-  const cargo = readFileSync(resolve(root, "Cargo.toml"), "utf8");
-  const version = /^version\s*=\s*"(.+)"/m.exec(cargo)?.[1];
-  if (version === undefined) throw new Error("Cargo.toml has no package version.");
-  mkdirSync(resolve(root, "docs/app/data"), { recursive: true });
-  writeFileSync(artifact, `${JSON.stringify({ version, input, stdout, output }, null, 2)}\n`);
-  console.log("Wrote docs/app/data/regex-sample.json from cargo run --example website_sample.");
 }
 
-// Keep the visual walkthrough tied to the engine's actual results too.
-const walkthroughPath = resolve(root, "docs/app/data/regex-walkthrough.json");
-const walkthrough = JSON.parse(
-  execFileSync("cargo", ["run", "--locked", "--quiet", "--example", "website_walkthrough"], {
-    cwd: root,
-    encoding: "utf8",
-  }),
-);
-const walkthroughJson = `${JSON.stringify(walkthrough, null, 2)}\n`;
-if (process.argv.includes("--check")) {
-  if (
-    JSON.stringify(JSON.parse(readFileSync(walkthroughPath, "utf8"))) !==
-    JSON.stringify(walkthrough)
-  ) {
-    throw new Error("The visual walkthrough changed. Run pnpm sample:write.");
-  }
-  console.log("The highlighted matches and scanner steps match Ferroni's actual results.");
+if (check) {
+  console.log("The committed specimens and syntax examples match Ferroni's actual results.");
 } else {
-  writeFileSync(walkthroughPath, walkthroughJson);
+  // Format in the generator, so the committed files pass format:check as written.
+  execFileSync(resolve(root, "docs/node_modules/.bin/oxfmt"), written, {
+    cwd: resolve(root, "docs"),
+  });
+  console.log(`Wrote ${artifacts.map((artifact) => artifact.file).join(" and ")}.`);
 }

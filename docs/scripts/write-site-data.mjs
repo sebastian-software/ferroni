@@ -4,6 +4,8 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 const cargo = await readFile(new URL("../../Cargo.toml", import.meta.url), "utf8");
 const version = /^version\s*=\s*"([^"]+)"/m.exec(cargo)?.[1];
 if (!version) throw new Error("Cargo.toml must declare Ferroni's release version.");
+const rustVersion = /^rust-version\s*=\s*"([^"]+)"/m.exec(cargo)?.[1];
+if (!rustVersion) throw new Error("Cargo.toml must declare Ferroni's minimum Rust version.");
 
 function parseFields(frontmatter) {
   return new Map(
@@ -45,5 +47,5 @@ const navigation = await Promise.all(
 );
 await writeFile(
   new URL("../app/data/site.json", import.meta.url),
-  `${JSON.stringify({ version, navigation }, null, 2)}\n`,
+  `${JSON.stringify({ version, rustVersion, navigation }, null, 2)}\n`,
 );

@@ -20,6 +20,9 @@
     "pnpm",
     "repometa",
     "Shiki",
-    "PCRE"
+    "PCRE",
+    "Ferra",
+    "Monografie",
+    "Onigmo"
   ]
 }

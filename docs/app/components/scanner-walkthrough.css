@@ -1,0 +1,204 @@
+/* The scanner walkthrough (home page). Scoped with fr-, colors from the
+   Monografie --mono-* tokens. */
+.fr-scan {
+  margin: 72px 0 0;
+  background: var(--mono-sheet);
+  box-shadow:
+    0 0 0 1px var(--mono-hair-2),
+    0 18px 36px -28px rgba(38, 35, 31, 0.55),
+    0 2px 4px rgba(38, 35, 31, 0.05);
+  padding: 34px 40px 36px;
+}
+.fr-scan-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+.fr-scan-head p {
+  margin: 0;
+  font: 400 14px/1.45 var(--mono-sans);
+  color: var(--mono-ink-2);
+}
+.fr-scan-line {
+  position: relative;
+  font: 400 30px/1 var(--mono-mono);
+  color: var(--mono-ink);
+  white-space: pre;
+  padding: 30px 0 34px;
+  margin-bottom: 18px;
+}
+.fr-scan-line span {
+  position: relative;
+  transition:
+    background 0.22s ease,
+    color 0.22s ease;
+}
+.fr-scan-line span.fr-past {
+  background: rgba(38, 35, 31, 0.06);
+}
+.fr-scan-line span.fr-now {
+  background: var(--mono-oxide-wash);
+  color: var(--mono-oxide);
+}
+.fr-caret {
+  position: absolute;
+  top: 22px;
+  bottom: 24px;
+  left: -1px;
+  width: 0;
+  border-left: 2px solid var(--mono-oxide);
+  transition: left 0.45s cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+.fr-caret::before {
+  content: attr(data-label);
+  position: absolute;
+  top: -16px;
+  left: -2px;
+  font: 500 12px/1 var(--mono-sans);
+  color: var(--mono-oxide);
+  white-space: nowrap;
+}
+.fr-scan-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 44px;
+  margin-top: 8px;
+}
+.fr-scan-sub {
+  font: 600 13px/1.3 var(--mono-sans);
+  color: var(--mono-ink-2);
+  margin: 0 0 6px;
+}
+.fr-scan-patterns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.fr-scan-patterns li {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  padding: 9px 6px;
+  margin: 0 -6px;
+  border-bottom: 1px solid var(--mono-hair-2);
+  border-radius: 2px;
+  font: 400 14.5px/1.4 var(--mono-mono);
+  transition: background 0.22s ease;
+}
+.fr-scan-patterns b {
+  font: 500 12.5px/1 var(--mono-sans);
+  color: var(--mono-ink-3);
+  min-width: 58px;
+}
+.fr-scan-patterns li.fr-win {
+  background: var(--mono-oxide-wash);
+}
+.fr-scan-patterns li.fr-win b {
+  color: var(--mono-oxide);
+}
+.fr-scan-steps {
+  width: 100%;
+  border-collapse: collapse;
+  font: 400 14px/1.4 var(--mono-sans);
+}
+.fr-scan-steps th {
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 1px solid var(--mono-ink);
+  padding: 0 10px 8px 0;
+}
+.fr-scan-steps td {
+  border-bottom: 1px solid var(--mono-hair-2);
+  padding: 9px 10px 9px 0;
+  transition: background 0.22s ease;
+}
+.fr-scan-steps .fr-num {
+  font-family: var(--mono-mono);
+  text-align: right;
+}
+.fr-scan-steps tr.fr-now td {
+  background: var(--mono-oxide-wash);
+}
+.fr-scan-steps tbody tr {
+  cursor: pointer;
+}
+.fr-scan-steps code {
+  font-size: 13.5px;
+}
+.fr-scan-foot {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 22px;
+  font: 400 13.5px/1.45 var(--mono-sans);
+  color: var(--mono-ink-3);
+}
+.fr-replay {
+  border: 0;
+  font: 500 13px/1 var(--mono-sans);
+  color: var(--mono-oxide);
+  background: transparent;
+  padding: 6px 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The Rust beside the walkthrough carries the longest lines. */
+.fr-scanner-code.mono-card pre {
+  font-size: 12.5px;
+}
+
+@media (max-width: 960px) {
+  .fr-scan {
+    padding: 28px 28px 30px;
+  }
+  .fr-scan-cols {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+  .fr-scan-line {
+    font-size: 24px;
+  }
+}
+@media (max-width: 640px) {
+  .fr-scan {
+    padding: 22px 16px 24px;
+    margin-top: 48px;
+  }
+  .fr-scan-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .fr-scan-line {
+    font-size: clamp(13px, 4.1vw, 18px);
+    padding: 30px 0 28px;
+  }
+  /* the caret marks where each search starts; keep the positions */
+  .fr-scan-steps th:first-child,
+  .fr-scan-steps td:first-child {
+    display: none;
+  }
+  .fr-scan-steps {
+    font-size: 13px;
+  }
+  .fr-scan-steps code {
+    font-size: 12.5px;
+  }
+  .fr-scan-foot {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fr-caret,
+  .fr-scan-line span,
+  .fr-scan-patterns li,
+  .fr-scan-steps td {
+    transition: none;
+  }
+}

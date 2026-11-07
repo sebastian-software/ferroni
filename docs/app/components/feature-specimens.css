@@ -1,0 +1,143 @@
+/* The selected-feature table (home page). Scoped with fr-, colors from the
+   Monografie --mono-* tokens. */
+.fr-features {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 64px 0 0;
+  font: 400 15px/1.4 var(--mono-sans);
+}
+.fr-features th {
+  text-align: left;
+  font: 600 13.5px/1.3 var(--mono-sans);
+  color: var(--mono-ink);
+  padding: 0 10px 12px 0;
+  border-bottom: 1px solid var(--mono-ink);
+  vertical-align: bottom;
+}
+.fr-features th small {
+  display: block;
+  font-weight: 400;
+  color: var(--mono-ink-3);
+}
+.fr-features th.fr-own {
+  color: var(--mono-oxide);
+}
+.fr-features td,
+.fr-features tbody th {
+  padding: 16px 10px 16px 0;
+  border-bottom: 1px solid var(--mono-hair-2);
+  vertical-align: top;
+}
+.fr-features tbody th {
+  font: 500 15px/1.35 var(--mono-sans);
+  width: 25%;
+}
+.fr-features .fr-feature-pattern {
+  display: block;
+  font: 400 14px/1.5 var(--mono-mono);
+  color: var(--mono-ink);
+  word-break: break-all;
+}
+.fr-feature-input {
+  display: block;
+  margin-top: 6px;
+  font: 400 15px/1.5 var(--mono-mono);
+  color: var(--mono-ink-3);
+  white-space: pre;
+}
+.fr-feature-input mark {
+  background: var(--mono-oxide-wash);
+  color: var(--mono-oxide);
+  border-bottom: 1px solid var(--mono-oxide);
+  padding: 0 1px;
+}
+.fr-features td.fr-support {
+  width: 96px;
+  font: 400 13px/1.4 var(--mono-sans);
+  color: var(--mono-ink-3);
+  padding-top: 19px;
+}
+.fr-features td.fr-support[data-yes] {
+  color: var(--mono-ink-2);
+}
+.fr-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: 0;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--mono-steel-3);
+}
+.fr-support[data-yes] .fr-dot {
+  background: var(--mono-steel-2);
+  box-shadow: none;
+}
+.fr-support[data-yes][data-own] .fr-dot {
+  background: var(--mono-oxide);
+}
+
+/* One entry per feature, the engines in a row */
+@media (max-width: 760px) {
+  .fr-features thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .fr-features,
+  .fr-features tbody,
+  .fr-features tr,
+  .fr-features tbody th,
+  .fr-features td {
+    display: block;
+    width: auto;
+  }
+  .fr-features {
+    margin-top: 44px;
+  }
+  .fr-features tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 16px;
+    padding: 16px 0 14px;
+    border-bottom: 1px solid var(--mono-hair-2);
+  }
+  .fr-features tbody th {
+    width: 100%;
+    padding: 0 0 4px;
+    border: 0;
+  }
+  .fr-features td {
+    border: 0;
+    padding: 0;
+  }
+  .fr-features td:not(.fr-support) {
+    width: 100%;
+    margin-bottom: 10px;
+  }
+  .fr-features td.fr-support {
+    width: auto;
+    padding: 2px 0;
+    font-size: 13px;
+  }
+  .fr-features td.fr-support::before {
+    content: attr(data-engine) " ";
+    color: var(--mono-ink);
+  }
+  .fr-features td.fr-support[data-own]::before {
+    color: var(--mono-oxide);
+    font-weight: 600;
+  }
+  .fr-features .fr-dot {
+    width: 8px;
+    height: 8px;
+    margin: 0 4px 0 2px;
+  }
+  .fr-feature-input {
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+}

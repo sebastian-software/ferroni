@@ -1,0 +1,43 @@
+/* The C-to-Rust module list (home page). Scoped with fr-, colors from the
+   Monografie --mono-* tokens. */
+.fr-port {
+  margin: 56px 0 0;
+  font: 400 15px/1.4 var(--mono-sans);
+}
+.fr-port div {
+  display: grid;
+  grid-template-columns: 150px 170px minmax(0, 1fr);
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--mono-hair-2);
+  align-items: baseline;
+}
+.fr-port dt {
+  font: 400 14.5px/1.3 var(--mono-mono);
+  color: var(--mono-ink-2);
+}
+.fr-port dd {
+  margin: 0;
+  color: var(--mono-ink-2);
+}
+.fr-port dd.fr-port-rust {
+  font: 500 14.5px/1.3 var(--mono-mono);
+  color: var(--mono-oxide);
+}
+.fr-port [data-added] dt {
+  color: var(--mono-ink-3);
+}
+/* The passage after the list's credit starts a new thought. */
+.fr-port-credit {
+  margin-bottom: 56px;
+}
+
+@media (max-width: 760px) {
+  .fr-port div {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2px 16px;
+  }
+  .fr-port div dd:last-child {
+    grid-column: 1 / -1;
+  }
+}

@@ -1,0 +1,117 @@
+/* The date pattern and its captures (home page). Scoped with fr-, colors from
+   the Monografie --mono-* tokens. */
+.fr-pattern {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 18px;
+  margin: 6px 0 0;
+}
+.fr-token {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 2px 0;
+  border-radius: 2px;
+  cursor: default;
+  transition: background 0.18s ease;
+}
+.fr-token code {
+  font: 400 17px/1.3 var(--mono-mono);
+  color: var(--mono-ink);
+  white-space: pre;
+}
+.fr-token small {
+  font: 500 12px/1.2 var(--mono-sans);
+  color: var(--mono-ink-3);
+  border-top: 1px solid var(--mono-steel-2);
+  padding: 4px 2px 3px;
+  min-height: 20px;
+}
+.fr-token.fr-literal small {
+  border-top-color: transparent;
+}
+.fr-token.fr-on,
+.fr-hay .fr-on,
+.fr-out li.fr-on {
+  background: var(--mono-oxide-wash);
+}
+.fr-token.fr-on small {
+  color: var(--mono-oxide);
+  border-top-color: var(--mono-oxide);
+}
+.fr-sub {
+  font: 600 13px/1.3 var(--mono-sans);
+  color: var(--mono-ink-2);
+  margin: 16px 0 6px;
+}
+.fr-sub:first-child {
+  margin-top: 0;
+}
+.fr-hay {
+  font: 400 26px/1.4 var(--mono-mono);
+  color: var(--mono-ink);
+  margin: 4px 0 26px;
+  white-space: pre;
+}
+.fr-hay span {
+  border-radius: 2px;
+  transition: background 0.18s ease;
+}
+.fr-hay .fr-cap {
+  border-bottom: 1px solid var(--mono-steel-2);
+}
+.fr-hay .fr-cap.fr-on {
+  border-bottom-color: var(--mono-oxide);
+}
+.fr-hay .fr-look {
+  color: var(--mono-ink-3);
+}
+.fr-out {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font: 400 13.5px/1.5 var(--mono-mono);
+}
+.fr-out li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 4px;
+  margin: 0 -4px;
+  border-bottom: 1px solid var(--mono-hair-2);
+  transition: background 0.18s ease;
+}
+.fr-out li span:last-child {
+  color: var(--mono-ink-3);
+}
+.fr-replaced {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--mono-hair-2);
+}
+.fr-replaced .fr-sub {
+  margin-top: 0;
+}
+.fr-replaced .fr-hay {
+  font-size: 22px;
+  margin-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .fr-hay {
+    font-size: 21px;
+  }
+  .fr-replaced .fr-hay {
+    font-size: 18px;
+  }
+  .fr-token code {
+    font-size: 15px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fr-token,
+  .fr-hay span,
+  .fr-out li {
+    transition: none;
+  }
+}

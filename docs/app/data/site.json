@@ -1,5 +1,6 @@
 {
   "version": "2.8.0",
+  "rustVersion": "1.94",
   "navigation": [
     {
       "id": "guide",
