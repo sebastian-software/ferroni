@@ -34,8 +34,7 @@ pages (`monografie-docs.css` and the Ardo adapter `monografie-ardo.css`). No
 page may import or render the Ferra theme or the original kit; the build fails
 on a `ferra-` or `fam-` class other than Ferra's identity assets. Keep
 presentation in the family package; the only local CSS styles the homepage's
-own specimens and two fits of the documentation pages (`docs-pages.css`),
-beside their components in `docs/app/components/`, with every selector scoped
+own specimens, beside their components in `docs/app/components/`, with every selector scoped
 to an `fr-` class and colors from the `--mono-*` tokens. React and static routing come from Ardo, not React Router.
 
 Run `pnpm install --frozen-lockfile` and `pnpm verify` in `docs/` for lint,
