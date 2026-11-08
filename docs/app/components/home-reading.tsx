@@ -3,7 +3,6 @@ import {
   MonoCard,
   MonoCards,
   MonoCredit,
-  MonoLeadIn,
   MonoPassage,
   MonoSection,
   MonoVerdict,
@@ -30,7 +29,7 @@ export function Explainer() {
         }}
       >
         <p>
-          <MonoLeadIn>A regular expression</MonoLeadIn> is a small language for finding text.{" "}
+          A regular expression is a small language for finding text.{" "}
           <code>{String.raw`\d{4}`}</code> means four digits. <code>(?&lt;year&gt;…)</code> gives
           the part it found a name. Search boxes, form checks, log filters and code editors all
           speak it. Most patterns are simple. Some need to look behind a label, refer back to a word
@@ -70,11 +69,10 @@ export function Syntax() {
       standfirst={`Look behind a label, repeat a word you found, select a script, fold ß into ss. ${capitalized(spelled(featureCount.total))} features, each checked by a test that runs.`}
     >
       <p>
-        <MonoLeadIn>Not every engine</MonoLeadIn> reads every pattern. Rust’s own <code>regex</code>{" "}
-        crate leaves out lookbehind and backreferences on purpose, so it can promise to finish in
-        linear time. That is the right choice for patterns that strangers type. For grammars and
-        code written for Oniguruma, a missing feature changes what a pattern means, or rejects it
-        outright.
+        Not every engine reads every pattern. Rust’s own <code>regex</code> crate leaves out
+        lookbehind and backreferences on purpose, so it can promise to finish in linear time. That
+        is the right choice for patterns that strangers type. For grammars and code written for
+        Oniguruma, a missing feature changes what a pattern means, or rejects it outright.
       </p>
       <MonoPassage
         note={{
@@ -136,10 +134,10 @@ export function Scanner() {
       standfirst="Give the scanner a set of patterns and ask which one matches next. You handle the grammar; Ferroni handles the regex work."
     >
       <p>
-        <MonoLeadIn>Syntax highlighting</MonoLeadIn> repeats one small race thousands of times per
-        file. At each position, every pattern the grammar allows right now is tried, and the
-        earliest match wins. The next search starts where that match ended. Ferroni’s Scanner
-        follows the model of vscode-oniguruma, the engine inside VS Code’s highlighting.
+        Syntax highlighting repeats one small race thousands of times per file. At each position,
+        every pattern the grammar allows right now is tried, and the earliest match wins. The next
+        search starts where that match ended. Ferroni’s Scanner follows the model of
+        vscode-oniguruma, the engine inside VS Code’s highlighting.
       </p>
       <MonoPassage
         note={{
