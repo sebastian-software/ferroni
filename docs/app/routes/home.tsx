@@ -52,7 +52,6 @@ function Opening() {
     <MonoOpening
       product="ferroni"
       instrumentLabel="Ferroni's instrument: a pattern comparator on a machined steel plate, three book-like pattern cassettes beside a linear guide, and a carriage that holds a rust-brown contact tool over a recessed text ribbon."
-      caption="A pattern comparator: three cassettes hold the patterns, and the carriage runs along the text to the position of the selected match."
       kicker={`Ferroni ${release}, a regular-expression engine for Rust`}
       title="Your Oniguruma patterns."
       subtitle="Now in pure Rust, with the scanner editors rely on."
