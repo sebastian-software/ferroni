@@ -8,10 +8,11 @@ import {
   ArdoRootLayout,
   ArdoTOC,
 } from "ardo/ui";
-import { Mark, MarkDefs } from "ferramenta-family";
 import touchIcon from "ferramenta-family/ferra-assets/ferroni/apple-touch-icon.png?url";
 import favicon from "ferramenta-family/ferra-assets/ferroni/favicon.ico?url";
 import {
+  Mark,
+  MarkDefs,
   MonoFooter,
   MonoGuideNavigation,
   MonoHeader,
@@ -24,8 +25,6 @@ import "ferramenta-family/monografie.css";
 import "ferramenta-family/monografie-docs.css";
 import "ferramenta-family/monografie-ardo.css";
 
-// Two fits for the documentation pages, under fr-docs: the header's row and code comments.
-import "./components/docs-pages.css";
 import { navigation, version } from "./data/site.json";
 
 export function Layout({ children }: { children: ReactNode }) {
