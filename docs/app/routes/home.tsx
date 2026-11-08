@@ -6,7 +6,6 @@ import {
   MonoClosing,
   MonoColophon,
   MonoEngraving,
-  MonoLeadIn,
   MonoOpening,
   MonoPassage,
   MonoSection,
@@ -122,10 +121,10 @@ function Speed() {
         }}
       >
         <p>
-          <MonoLeadIn>A highlighter compiles</MonoLeadIn> its grammar’s patterns once, then runs
-          them over every line of every file it opens. A log filter compiles a pattern once and
-          applies it to millions of lines. That reuse is the work Ferroni is built for. It
-          interprets compiled patterns and generates no machine code while your program runs.
+          A highlighter compiles its grammar’s patterns once, then runs them over every line of
+          every file it opens. A log filter compiles a pattern once and applies it to millions of
+          lines. That reuse is the work Ferroni is built for. It interprets compiled patterns and
+          generates no machine code while your program runs.
         </p>
       </MonoPassage>
       <p>

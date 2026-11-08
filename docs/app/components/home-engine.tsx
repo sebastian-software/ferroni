@@ -1,7 +1,6 @@
 // cspell:words Onigmo
 import {
   MonoCredit,
-  MonoLeadIn,
   MonoPassage,
   MonoProofs,
   MonoSection,
@@ -28,12 +27,11 @@ export function Prepared() {
   return (
     <MonoSection id="fr-precompiled" title="Prepare once. Load across starts.">
       <p>
-        <MonoLeadIn>A highlighter loads</MonoLeadIn> the same grammars every time it starts, and
-        preparing their patterns costs time on every start. With the optional{" "}
-        <code>precompiled-eager</code> feature, that preparation moves into your build. Export it
-        once, ship it with your application, and load only the parts a document needs. Patterns that
-        depend on captured text still resolve locally, and anything missing falls back to normal
-        preparation.
+        A highlighter loads the same grammars every time it starts, and preparing their patterns
+        costs time on every start. With the optional <code>precompiled-eager</code> feature, that
+        preparation moves into your build. Export it once, ship it with your application, and load
+        only the parts a document needs. Patterns that depend on captured text still resolve
+        locally, and anything missing falls back to normal preparation.
       </p>
       <MonoWide>
         <MonoTerms
@@ -76,10 +74,10 @@ export function Port() {
         }}
       >
         <p>
-          <MonoLeadIn>Every C source file</MonoLeadIn> of Oniguruma has one Rust module, with the
-          same function names and control flow. When a test fails, the corresponding C function is
-          one search away. A fix upstream can be compared line by line. The idiomatic Rust API, the
-          scanner and the guardrails sit beside the port and do not change how a pattern matches.
+          Every C source file of Oniguruma has one Rust module, with the same function names and
+          control flow. When a test fails, the corresponding C function is one search away. A fix
+          upstream can be compared line by line. The idiomatic Rust API, the scanner and the
+          guardrails sit beside the port and do not change how a pattern matches.
         </p>
       </MonoPassage>
       <PortMap />
@@ -116,12 +114,12 @@ export function Guardrails() {
       standfirst="Backtracking makes expressive patterns possible. Limits keep that work in hand when the text comes from outside."
     >
       <p>
-        <MonoLeadIn>A backtracking engine</MonoLeadIn> tries one way to match, and when it fails, it
-        goes back and tries another. That is what makes lookbehind and backreferences possible. With
-        an unlucky pattern and hostile text, the number of ways explodes. Ferroni flags such
-        patterns when they compile, can refuse them outright, and stops any search at a time or
-        retry limit you set. Only Rust’s <code>regex</code> crate guarantees linear time; choose it
-        when you need that guarantee.
+        A backtracking engine tries one way to match, and when it fails, it goes back and tries
+        another. That is what makes lookbehind and backreferences possible. With an unlucky pattern
+        and hostile text, the number of ways explodes. Ferroni flags such patterns when they
+        compile, can refuse them outright, and stops any search at a time or retry limit you set.
+        Only Rust’s <code>regex</code> crate guarantees linear time; choose it when you need that
+        guarantee.
       </p>
       <MonoPassage note={{ figure: "10", children: "unsafe sites, all linking parse-tree nodes" }}>
         <p>
