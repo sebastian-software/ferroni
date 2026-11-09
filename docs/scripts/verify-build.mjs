@@ -98,7 +98,7 @@ for (const route of routes) {
   if (html.includes('class="ardo-header') || html.includes('class="ardo-footer')) {
     throw new Error(`${route} must use the family chrome once.`);
   }
-  if (route !== "/" && !html.includes('class="mono-guide-navigation"')) {
+  if (route !== "/" && !html.includes('class="ardo-sidebar ')) {
     throw new Error(`${route} is missing its documentation navigation.`);
   }
   if (route !== "/" && !html.includes('class="mono mono-docs')) {
