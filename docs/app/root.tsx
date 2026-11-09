@@ -39,17 +39,11 @@ const links = [
   <NavLink key="scanner" to="/guide/scanner">
     Scanner
   </NavLink>,
-  <a key="speed" href="/#fr-speed">
-    Benchmarks
-  </a>,
   <NavLink key="compatibility" to="/guide/compatibility">
     Compatibility
   </NavLink>,
   <a key="api" href="https://docs.rs/ferroni">
     API
-  </a>,
-  <a key="github" href="https://github.com/sebastian-software/ferroni">
-    GitHub
   </a>,
 ];
 
@@ -61,6 +55,7 @@ export default function Root() {
       name="Ferroni"
       release={version}
       links={links}
+      repository="https://github.com/sebastian-software/ferroni"
       sections={sections}
       homeClassName="fr-home"
       docsClassName="fr-docs"
