@@ -36,8 +36,8 @@ existing regeneration command. The root README uses native theme composition.
 The project README is composed by native mdtheme from `README.md.src`. The outer
 frame is Sebastian Software; Ferramenta is the inner frame. Footers close in
 reverse order. The project content remains the main focus; shared branding is
-compact and maintained upstream. Standards repositories explicitly delegate
-README ownership to mdtheme, so standards cannot append a second company footer.
+compact and maintained upstream. The pinned mdtheme generator owns the complete
+README, including the company footer.
 Pin the CLI with mise and both Git theme revisions in `mdtheme.yaml`. CI checks
 the generated output, and source and output are committed together.
 
