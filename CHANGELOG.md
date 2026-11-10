@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.9.0](https://github.com/sebastian-software/ferroni/compare/v2.8.0...v2.9.0) (2026-11-10)
+
+
+### Features
+
+* **docs:** adopt shared Ferra theme and Ardo 6 ([#474](https://github.com/sebastian-software/ferroni/issues/474)) ([a355ea7](https://github.com/sebastian-software/ferroni/commit/a355ea732b332566ce5d6f3e64c5143f9ea67a65))
+* **docs:** rebuild the homepage on the Monografie page system ([25dc9f8](https://github.com/sebastian-software/ferroni/commit/25dc9f89984e2c5efcf1841bb71017e3a45f96b8))
+* **docs:** rebuild the homepage on the Monografie page system ([99467f2](https://github.com/sebastian-software/ferroni/commit/99467f2a72d7a8e1ac45ad7ac7785f40a8a1e9fa))
+* **docs:** show documentation sections in the Ferra section rail ([c2ee04d](https://github.com/sebastian-software/ferroni/commit/c2ee04d5f5b2dadf7612b6bd711a0c9312aa5559))
+* **docs:** show documentation sections in the Ferra section rail ([19368cd](https://github.com/sebastian-software/ferroni/commit/19368cdac65a961e40c177d01344fdbc19f2dfe5))
+* GitHub as the header's mark, on Ardo 6.4 ([#486](https://github.com/sebastian-software/ferroni/issues/486)) ([95641bd](https://github.com/sebastian-software/ferroni/commit/95641bd39be5cc4f5268d26929204b2335e58472))
+
+
+### Bug Fixes
+
+* **docs:** pin ferramenta-family with the Monografie fixes ([cb507a7](https://github.com/sebastian-software/ferroni/commit/cb507a71679995591d68c3663107a3747a0f71d5))
+* **docs:** pin ferramenta-family with the Monografie fixes ([837f7e5](https://github.com/sebastian-software/ferroni/commit/837f7e575f80f78230c073fc5a150ee16c340883))
+* keep table text off the frame ([#487](https://github.com/sebastian-software/ferroni/issues/487)) ([d6ce246](https://github.com/sebastian-software/ferroni/commit/d6ce2464203934608ab3bdbafbb2c8e032b7e20b))
+* **site:** adopt compact code blocks and unframed docs ([#476](https://github.com/sebastian-software/ferroni/issues/476)) ([0cff29d](https://github.com/sebastian-software/ferroni/commit/0cff29de8588766bb3e7916cba051e2f2edf3846))
+
 ## [2.8.0](https://github.com/sebastian-software/ferroni/compare/v2.7.2...v2.8.0) (2026-10-26)
 
 
