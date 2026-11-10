@@ -5,4 +5,14 @@ allowBuilds:
   esbuild: false
   unrs-resolver: false
 minimumReleaseAgeExclude:
-  - ardo@6.4.1
+  - ardo@6.6.0
+  - ferramenta-family@3.0.0
+  - "@ferrolink/darwin-arm64@0.2.2"
+  - "@ferrolink/darwin-x64@0.2.2"
+  - "@ferrolink/linux-arm64-gnu@0.2.2"
+  - "@ferrolink/linux-arm64-musl@0.2.2"
+  - "@ferrolink/linux-x64-gnu@0.2.2"
+  - "@ferrolink/linux-x64-musl@0.2.2"
+  - "@ferrolink/win32-arm64-msvc@0.2.2"
+  - "@ferrolink/win32-x64-msvc@0.2.2"
+  - ferrolink@0.2.2
