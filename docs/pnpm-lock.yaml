@@ -173,9 +173,6 @@ importers:
         specifier: github:sebastian-software/ferramenta#70d696962356af5a100c970f0f4b0187fdafcccf&path:/packages/family
         version: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/70d696962356af5a100c970f0f4b0187fdafcccf#path:/packages/family(ardo@6.4.1(@types/node@26.6.2)(esbuild@0.27.3)(jiti@2.7.0)(lightningcss@1.33.0)(supports-color@9.4.0)(typescript@6.0.3))(react@19.3.1)
     devDependencies:
-      '@sebastian-software/standards':
-        specifier: 0.13.0
-        version: 0.13.0
       eslint:
         specifier: ^10.12.0
         version: 10.12.0(jiti@2.7.0)(supports-color@9.4.0)
@@ -1986,11 +1983,6 @@ packages:
   '@sebastian-software/app-tracking@0.7.1':
     resolution: {integrity: sha512-bjContXr9AJJA+4lIO+FMWz8RwFj3RpinJrERYa6Xx2qxtyA7M/uG1Lzaf8gScwGzHrJMaEZc+W1yKtKX+UY7w==}
     engines: {node: ^22.0.0 || ^24.0.0 || ^26.0.0}
-
-  '@sebastian-software/standards@0.13.0':
-    resolution: {integrity: sha512-jBK0S1NeaKgBbrzfMP1CnSwIigILFPEbexHt7gldrZdiOGDLp6MRuNgkVLcQ4NFW4e0Ov0KsQOuLTNk0TGXKxg==}
-    engines: {node: '>=24.0.0'}
-    hasBin: true
 
   '@sindresorhus/base62@1.0.0':
     resolution: {integrity: sha512-TeheYy0ILzBEI/CO55CP6zJCSdSWeRtGnHy8U8dWSUH4I68iqTsy7HkMktR4xakThc9jotkPQUXT4ITdbV7cHA==}
@@ -6069,8 +6061,6 @@ snapshots:
     optional: true
 
   '@sebastian-software/app-tracking@0.7.1': {}
-
-  '@sebastian-software/standards@0.13.0': {}
 
   '@sindresorhus/base62@1.0.0': {}
 

@@ -1,6 +1,5 @@
 {
   "version": "0.2",
-  "ignorePaths": [".standards/"],
   "words": [
     "Ardo",
     "Ferramenta",
@@ -18,7 +17,6 @@
     "oxfmt",
     "oxlint",
     "pnpm",
-    "repometa",
     "Shiki",
     "PCRE",
     "Ferra",
