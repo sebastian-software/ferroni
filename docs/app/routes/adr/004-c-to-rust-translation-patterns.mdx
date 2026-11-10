@@ -52,8 +52,9 @@ C's `st.c` (custom hash table for named groups) is replaced by `std::collections
 
 C uses unguarded mutable globals for configuration (match stack limit, retry limit, etc.). In Rust:
 
-- All global state uses `AtomicU32`, `AtomicU64`, or `AtomicPtr` with appropriate ordering.
-- Global function pointers (callout callbacks, warn functions) use `AtomicPtr` + `transmute`, matching the C pattern but with atomic access.
+- Scalar configuration uses atomic types such as `AtomicU32` and `AtomicU64` with appropriate ordering. Other shared configuration uses safe synchronization such as `RwLock`.
+- Global callout callbacks use `GlobalCallbackSlot<F>`: an `AtomicBool` records whether a callback is set, and a `RwLock<Option<F>>` stores the typed function pointer. The setter writes the callback before publishing the flag with release ordering; readers acquire the flag before reading the lock. An unset callback needs only the atomic load.
+- The former `AtomicPtr` plus `transmute` callback pattern is retired. Do not reintroduce it; [ADR-002, Unsafe Code Policy](/adr/002-unsafe-code-policy#no-longer-needed-global-function-pointer-storage) records the decision.
 
 ### Control Flow
 
