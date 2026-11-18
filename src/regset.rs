@@ -3857,27 +3857,18 @@ fn regset_search_body_regex_lead(
     lead: OnigRegSetLead,
     option: OnigOptionType,
 ) -> (i32, i32) {
-    let n = set.entries.len();
     let mut match_index: i32 = ONIG_MISMATCH;
     let mut match_pos: i32 = 0;
     let mut ep = orig_range;
 
-    for i in 0..n {
-        let region = set.entries[i].region.take();
+    for (i, entry) in set.entries.iter_mut().enumerate() {
+        let region = entry.region.take();
         // C: search_in_range(reg, str, end, start, ep, orig_range, ...) --
         // only the start range narrows; a match may still run to orig_range.
         let (r, returned_region) = search_in_range(
-            &set.entries[i].reg,
-            str_data,
-            end,
-            start,
-            ep,
-            orig_range,
-            region,
-            option,
-            None,
+            &entry.reg, str_data, end, start, ep, orig_range, region, option, None,
         );
-        set.entries[i].region = returned_region;
+        entry.region = returned_region;
 
         if r > 0 {
             if (r as usize) < ep {
@@ -4042,9 +4033,9 @@ fn onig_regset_search_impl(
     if eager_region_reset {
         // Clear regions for non-matching regexes with FIND_NOT_EMPTY.
         if result >= 0 {
-            for i in 0..n {
-                if opton_find_not_empty(set.entries[i].reg.options) {
-                    if let Some(ref mut region) = set.entries[i].region {
+            for (i, entry) in set.entries.iter_mut().enumerate().take(n) {
+                if opton_find_not_empty(entry.reg.options) {
+                    if let Some(ref mut region) = entry.region {
                         if (i as i32) != result {
                             region.clear();
                         }

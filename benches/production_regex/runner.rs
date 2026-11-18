@@ -379,9 +379,13 @@ impl Library {
 
     fn replace(&self, input: &Input, replacement: &str) -> Result<String, String> {
         match self {
-            Self::Ferroni(regex, _) => Ok(regex
+            Self::Ferroni(regex, false) => Ok(regex
                 .replace_all(&input.text, ferroni::NoExpand(replacement))
                 .into_owned()),
+            Self::Ferroni(regex, true) => regex
+                .replace_all_with(&input.text, ferroni::NoExpand(replacement), Self::options())
+                .map(|output| output.into_owned())
+                .map_err(|error| error.to_string()),
             Self::Regex(regex) => Ok(regex
                 .replace_all(&input.text, regex::NoExpand(replacement))
                 .into_owned()),

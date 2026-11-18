@@ -155,6 +155,20 @@ assert_eq!(re.replace_all("2025-01 and 2026-10", "$month/$year"), "01/2025 and 1
 assert_eq!(re.replace("2025-01 and 2026-10", "${year}"), "2025 and 2026-10");
 ```
 
+For per-search limits, `replace_all_with` returns a search error instead of
+partial output. `replace_all_bytes_with` provides the same contract for byte
+slices. Replacer closures can have side effects for matches found before an
+error is returned.
+
+```rust
+use ferroni::prelude::*;
+
+let re = Regex::new(r"\d+").unwrap();
+let result = re.replace_all_with("a1 b22", "#", SearchOptions::new())?;
+assert_eq!(result, "a# b#");
+# Ok::<(), ferroni::RegexError>(())
+```
+
 As in Oniguruma, a pattern with named groups does not capture its plain
 `(...)` groups. So `$2` expands to nothing here, and `capture_group(true)`
 turns the plain groups back on:

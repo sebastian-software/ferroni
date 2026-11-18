@@ -557,10 +557,7 @@ pub(crate) fn is_exclusive(x: &Node, y: &Node, reg: &RegexType) -> bool {
                 }
             }
             // If either has no mbuf and is not negated, they can't overlap on multi-byte
-            if (xc.mbuf.is_none() && !xc.is_not()) || (yc.mbuf.is_none() && !yc.is_not()) {
-                return true;
-            }
-            false
+            (xc.mbuf.is_none() && !xc.is_not()) || (yc.mbuf.is_none() && !yc.is_not())
         }
 
         // CClass × String → swap
@@ -4505,8 +4502,8 @@ fn unravel_case_fold_string(node: &mut Node, reg: &mut RegexType, state: i32) ->
                         // Convert codepoints to string bytes
                         let mut buf = Vec::new();
                         let mut tmp = [0u8; 6]; // max UTF-8 bytes per codepoint
-                        for ci in 0..(item.code_len as usize) {
-                            let blen = enc.code_to_mbc(item.code[ci], &mut tmp);
+                        for &code in item.code.iter().take(item.code_len as usize) {
+                            let blen = enc.code_to_mbc(code, &mut tmp);
                             buf.extend_from_slice(&tmp[..blen as usize]);
                         }
                         let new_alt = node_new_alt(node_new_str(&buf), None);
@@ -10985,8 +10982,8 @@ fn set_optimize_map(reg: &mut RegexType, m: &OptMap) {
     // false positives from UTF-8 continuation bytes.
     let mut bytes = [0u8; 3];
     let mut count: u8 = 0;
-    for i in 0..CHAR_MAP_SIZE {
-        if m.map[i] != 0 {
+    for (i, &value) in m.map.iter().enumerate().take(CHAR_MAP_SIZE) {
+        if value != 0 {
             if count >= 3 || i >= 0x80 {
                 count = 0;
                 break;

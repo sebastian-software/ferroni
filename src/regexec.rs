@@ -13996,8 +13996,14 @@ mod tests {
                             "{pattern} group {i}"
                         );
                     }
-                    for i in expected.len()..region.num_regs as usize {
-                        assert_eq!(region.beg[i], ONIG_REGION_NOTPOS, "{pattern} group {i}");
+                    for (i, &beg) in region
+                        .beg
+                        .iter()
+                        .enumerate()
+                        .take(region.num_regs as usize)
+                        .skip(expected.len())
+                    {
+                        assert_eq!(beg, ONIG_REGION_NOTPOS, "{pattern} group {i}");
                     }
                 }
             }
