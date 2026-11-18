@@ -4132,3 +4132,59 @@ fn split_bytes_handles_text_that_is_not_utf8() {
     let parts: Vec<&[u8]> = re.splitn_bytes(text, 2).collect();
     assert_eq!(parts, [&b"\xff"[..], &b"\xfe,"[..]]);
 }
+
+#[test]
+fn fallible_replacement_matches_existing_results() {
+    let re = Regex::new(r"(?<word>\w+)").unwrap();
+    let options = SearchOptions::new();
+    for text in ["", "one two", "!!!"] {
+        for replacement in ["#", "<$word>"] {
+            assert_eq!(
+                re.replace_all_with(text, replacement, options).unwrap(),
+                re.replace_all(text, replacement)
+            );
+            assert_eq!(
+                re.replace_all_bytes_with(text.as_bytes(), replacement.as_bytes(), options)
+                    .unwrap(),
+                re.replace_all_bytes(text.as_bytes(), replacement.as_bytes())
+            );
+        }
+    }
+    assert!(matches!(
+        re.replace_all_with("!!!", "#", options),
+        Ok(Cow::Borrowed(_))
+    ));
+    assert!(matches!(
+        re.replace_all_bytes_with(b"!!!", &b"#"[..], options),
+        Ok(Cow::Borrowed(_))
+    ));
+}
+
+#[test]
+fn fallible_replacement_reports_error_after_a_match() {
+    let re = Regex::new(r"x|a*?b").unwrap();
+    let text = format!("x{}b", "a".repeat(50));
+    let options = SearchOptions::new().retry_limit_in_match(3);
+    let mut matches = re.find_iter_with(&text, options);
+    assert_eq!(matches.next().unwrap().unwrap().as_str(), "x");
+    assert_eq!(
+        matches.next().unwrap().unwrap_err(),
+        RegexError::RetryLimitInMatchOver
+    );
+    assert_eq!(
+        re.replace_all_with(&text, "#", options),
+        Err(RegexError::RetryLimitInMatchOver)
+    );
+    assert_eq!(
+        re.replace_all_with(&text, "$0", options),
+        Err(RegexError::RetryLimitInMatchOver)
+    );
+    assert_eq!(
+        re.replace_all_bytes_with(text.as_bytes(), &b"#"[..], options),
+        Err(RegexError::RetryLimitInMatchOver)
+    );
+    assert_eq!(
+        re.replace_all_bytes_with(text.as_bytes(), &b"$0"[..], options),
+        Err(RegexError::RetryLimitInMatchOver)
+    );
+}

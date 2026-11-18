@@ -11,7 +11,8 @@ use std::borrow::Cow;
 use std::fmt;
 use std::ops::Range;
 
-use crate::api::{Captures, FindIter, Match, Regex};
+use crate::api::{Captures, FindIter, Match, Regex, SearchOptions};
+use crate::error::RegexError;
 
 // === Replacer ===
 
@@ -526,6 +527,50 @@ impl Regex {
         self.replacen(text, 0, rep)
     }
 
+    /// Replace every match under per-search `options`.
+    ///
+    /// Returns a search error instead of partial output if any search stops at
+    /// a limit. Options apply separately to each search. A replacer closure
+    /// may have been called for earlier matches when an error is returned.
+    /// Successful results follow [`Regex::replace_all`], including borrowing
+    /// the input when there are no matches.
+    ///
+    /// ```
+    /// use ferroni::prelude::*;
+    /// let re = Regex::new(r"(?<word>\w+)").unwrap();
+    /// let result = re.replace_all_with("one two", "<$word>", SearchOptions::new())?;
+    /// assert_eq!(result, "<one> <two>");
+    /// # Ok::<(), ferroni::RegexError>(())
+    /// ```
+    pub fn replace_all_with<'h, R: Replacer>(
+        &self,
+        text: &'h str,
+        mut rep: R,
+        options: SearchOptions,
+    ) -> Result<Cow<'h, str>, RegexError> {
+        let mut out: Option<String> = None;
+        let mut last = 0;
+        if let Some(literal) = rep.no_expansion() {
+            for result in self.find_iter_with(text, options) {
+                let m = result?;
+                let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
+                out.push_str(&text[last..m.start()]);
+                out.push_str(&literal);
+                last = m.end();
+            }
+        } else {
+            for result in self.captures_iter_with(text, options) {
+                let caps = result?;
+                let whole = caps.get(0).expect("group 0 is the match");
+                let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
+                out.push_str(&text[last..whole.start()]);
+                rep.replace_append(&caps, out);
+                last = whole.end();
+            }
+        }
+        Ok(finish(text, out, last))
+    }
+
     /// Replace the first `limit` matches in `text` with `rep`, or all of them
     /// when `limit` is 0.
     ///
@@ -593,6 +638,40 @@ impl Regex {
     /// ```
     pub fn replace_all_bytes<'h, R: ReplacerBytes>(&self, text: &'h [u8], rep: R) -> Cow<'h, [u8]> {
         self.replacen_bytes(text, 0, rep)
+    }
+
+    /// Replace every match in bytes under per-search `options`.
+    ///
+    /// Like [`Regex::replace_all_with`], returns a search error rather than
+    /// partial output. A replacer closure may have already been called for
+    /// earlier matches when an error is returned.
+    pub fn replace_all_bytes_with<'h, R: ReplacerBytes>(
+        &self,
+        text: &'h [u8],
+        mut rep: R,
+        options: SearchOptions,
+    ) -> Result<Cow<'h, [u8]>, RegexError> {
+        let mut out: Option<Vec<u8>> = None;
+        let mut last = 0;
+        if let Some(literal) = rep.no_expansion() {
+            for result in self.find_iter_bytes_with(text, options) {
+                let m = result?;
+                let out = out.get_or_insert_with(|| Vec::with_capacity(text.len()));
+                out.extend_from_slice(&text[last..m.start()]);
+                out.extend_from_slice(&literal);
+                last = m.end();
+            }
+        } else {
+            for result in self.captures_iter_bytes_with(text, options) {
+                let caps = result?;
+                let whole = caps.get(0).expect("group 0 is the match");
+                let out = out.get_or_insert_with(|| Vec::with_capacity(text.len()));
+                out.extend_from_slice(&text[last..whole.start()]);
+                rep.replace_append(&caps, out);
+                last = whole.end();
+            }
+        }
+        Ok(finish_bytes(text, out, last))
     }
 
     /// Replace the first `limit` matches in `text` (as bytes) with `rep`, or
