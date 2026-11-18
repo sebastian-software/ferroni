@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ENGINES = ("rust", "rust_erroraware", "c", "onigmo", "pcre2_jit", "pcre2", "fancy_regex", "fancy_regex_seek", "regex")
 PROFILES = {
     "rust": "Ferroni standard public Regex API; explicit source flags; fallible preflight checks",
-    "rust_erroraware": "Ferroni fallible *_with searches/iteration with SearchOptions::new(); standard replacement (no fallible replacement API)",
+    "rust_erroraware": "Ferroni fallible *_with searches, iteration and replacement with SearchOptions::new()",
     "c": "C Oniguruma UTF-8/Oniguruma syntax, -O3; public C API plus output adapters",
     "onigmo": "pinned Ruby Onigmo standalone build; public C API plus output adapters",
     "pcre2_jit": "PCRE2 UTF/UCP, JIT required, NO_UTF_CHECK on trusted &str subjects",

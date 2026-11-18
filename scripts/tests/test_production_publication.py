@@ -15,6 +15,17 @@ spec.loader.exec_module(publication)
 
 
 class PublicationTests(unittest.TestCase):
+    def test_document_describes_the_measured_profile(self):
+        data = {"run": {"head_sha": "a" * 40, "html_url": "https://example.com"},
+                "platforms": [{"profile": "macos-arm64", "context": {
+                    "platform": "macOS", "cpu_count": 1,
+                    "profiles": {"rust_erroraware": "historical standard replacement"}},
+                    "production_comparisons": []}]}
+        self.assertIn("historical standard replacement", publication.document(data))
+        data["platforms"][0]["context"]["profiles"]["rust_erroraware"] = "fallible replacement"
+        self.assertIn("fallible replacement", publication.document(data))
+        self.assertNotIn("historical standard replacement", publication.document(data))
+
     def test_publishing_requires_current_code_but_recorded_results_keep_their_snapshot(self):
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)

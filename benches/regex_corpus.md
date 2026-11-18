@@ -107,9 +107,9 @@ Future equivalent-task implementations must have separate IDs/profiles and
 include their preprocessing and postprocessing costs.
 
 Ferroni's baseline (`rust`) uses its standard public `Regex` methods. The separate
-`rust_erroraware` profile uses fallible `*_with` searches and iteration with
-`SearchOptions::new()`. Both use standard `replace_all` because there is no
-fallible replacement API. Both profiles pass the complete output oracle; the
+`rust_erroraware` profile uses fallible `*_with` searches, iteration and
+replacement with `SearchOptions::new()`. Earlier retained measurements used
+standard `replace_all` in both profiles, as their recorded metadata states. Both profiles pass the complete output oracle; the
 baseline additionally receives a fallible preflight check so execution errors
 cannot silently become negative matches.
 
