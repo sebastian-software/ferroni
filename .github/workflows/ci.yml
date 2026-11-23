@@ -99,7 +99,7 @@ jobs:
         run: cargo test --locked --features precompiled-eager,prefilter-self-check --test precompiled_eager --test precompiled_eager_records
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24.22.3'
+          node-version: '26.13.1'
       - name: Zstd-19 portable package transport
         run: node --test scripts/portable-eager-package.test.mjs
 
@@ -319,7 +319,7 @@ jobs:
         run: cargo rustc --locked --release --target wasm32-unknown-unknown --features precompiled-eager --example precompiled_eager_portability -- -C link-arg=--export=main
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24.22.3'
+          node-version: '26.13.1'
       - name: Native archive in browser Wasm (V8 and Chrome)
         run: node scripts/test-precompiled-eager-wasm.mjs target/wasm32-unknown-unknown/release/examples/precompiled_eager_portability.wasm --browser google-chrome
 
@@ -363,7 +363,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24.22.3'
+          node-version: '26.13.1'
       - name: Check the committed sample against the example
         run: node docs/scripts/render-regex-sample.mjs --check
 
@@ -408,7 +408,7 @@ jobs:
           version: 12.21.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24.22.3'
+          node-version: '26.13.1'
           cache: 'pnpm'
           cache-dependency-path: docs/pnpm-lock.yaml
       - name: Install dependencies
