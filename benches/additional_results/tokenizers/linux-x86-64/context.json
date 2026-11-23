@@ -1,20 +1,20 @@
 {
   "format_version": 1,
-  "started_utc": "2026-10-22T21:21:25.955336+00:00",
+  "started_utc": "2026-11-23T21:36:16.095104+00:00",
   "platform": "Linux-6.6.141-x86_64-with-glibc2.39",
   "machine": "x86_64",
   "cpu_count": 4,
   "corpus": "tokenizer",
-  "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus.",
-  "commit": "817d2b349b88cec0b2c130e416a3caa90220e129",
+  "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus.",
+  "commit": "bd688eea256da1e3255cc5790d8b582913457c27",
   "git_status": "",
-  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
-  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+  "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: x86_64-unknown-linux-gnu\nrelease: 1.100.0\nLLVM version: 23.1.5",
+  "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
   "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
   "build_profile": "bench, thin LTO, features onigmo",
-  "binary_sha256": "24d81fdfc06daeab219da760a4565e55bbff446d009ade544c07c750e659ccfd",
+  "binary_sha256": "60d4536c8cdd7d2ff2235545c1dafdd141a15d459b28fd20a4c6ff2b451f32df",
   "corpus_sha256": "7ddd65db06761271466aa0300e38ff35d333fc06b420b3aa71f14fd1019d3db8",
-  "cargo_lock_sha256": "389060ccf7a2441e59d6adec50ee5ec8ec8fd8f6307963be8057f8e76474d094",
+  "cargo_lock_sha256": "d52d3846efc1dab4bf51da365c41ce9ea90a77ba996fee32f644fdea1a2871e3",
   "rustflags": "",
   "engines": [
     "rust",
@@ -29,7 +29,7 @@
   ],
   "profiles": {
     "rust": "Ferroni standard public Regex API; explicit source flags; fallible preflight checks",
-    "rust_erroraware": "Ferroni fallible *_with searches/iteration with SearchOptions::new(); standard replacement (no fallible replacement API)",
+    "rust_erroraware": "Ferroni fallible *_with searches, iteration and replacement with SearchOptions::new()",
     "c": "C Oniguruma UTF-8/Oniguruma syntax, -O3; public C API plus output adapters",
     "onigmo": "pinned Ruby Onigmo standalone build; public C API plus output adapters",
     "pcre2_jit": "PCRE2 UTF/UCP, JIT required, NO_UTF_CHECK on trusted &str subjects",
@@ -76,7 +76,7 @@
     "--timeout",
     "120",
     "--host-note",
-    "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus."
+    "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus."
   ],
   "order_policy": "seeded case shuffle; rotated engine order, reversed on alternating repetitions",
   "environment_alignment": {
@@ -96,7 +96,7 @@
     "CARGO_PROFILE_BENCH_LTO": null
   },
   "pcre2_build": "PCRE2_SYS_STATIC=1; bundled source from locked pcre2-sys",
-  "source_snapshot_sha256": "706d661d46a9f11373af6ad7f3588f8370f77cf2923cea13de178fda3cceb629",
+  "source_snapshot_sha256": "a2741ea011c0bf7ab1a574758c36b6235ace0eb19e4ea4d239256cfba82fa306",
   "native_sources": {
     "oniguruma": {
       "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -108,20 +108,20 @@
     }
   },
   "environment_sizes": {
-    "1": 7872
+    "1": 8384
   },
   "hosts": [
     {
       "only_run": 1,
-      "started_utc": "2026-10-22T21:21:25.955336+00:00",
+      "started_utc": "2026-11-23T21:36:16.095104+00:00",
       "platform": "Linux-6.6.141-x86_64-with-glibc2.39",
       "cpu_count": 4,
-      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus.",
-      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
-      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus.",
+      "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: x86_64-unknown-linux-gnu\nrelease: 1.100.0\nLLVM version: 23.1.5",
+      "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
       "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
-      "binary_sha256": "24d81fdfc06daeab219da760a4565e55bbff446d009ade544c07c750e659ccfd",
-      "source_snapshot_sha256": "706d661d46a9f11373af6ad7f3588f8370f77cf2923cea13de178fda3cceb629",
+      "binary_sha256": "60d4536c8cdd7d2ff2235545c1dafdd141a15d459b28fd20a4c6ff2b451f32df",
+      "source_snapshot_sha256": "a2741ea011c0bf7ab1a574758c36b6235ace0eb19e4ea4d239256cfba82fa306",
       "native_sources": {
         "oniguruma": {
           "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -145,23 +145,23 @@
         "--timeout",
         "120",
         "--host-note",
-        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus."
+        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus."
       ],
       "environment_sizes": {
-        "1": 7872
+        "1": 8384
       }
     },
     {
       "only_run": 2,
-      "started_utc": "2026-10-22T21:21:57.268072+00:00",
+      "started_utc": "2026-11-23T21:36:18.571507+00:00",
       "platform": "Linux-6.6.141-x86_64-with-glibc2.39",
       "cpu_count": 4,
-      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus.",
-      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
-      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus.",
+      "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: x86_64-unknown-linux-gnu\nrelease: 1.100.0\nLLVM version: 23.1.5",
+      "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
       "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
-      "binary_sha256": "24d81fdfc06daeab219da760a4565e55bbff446d009ade544c07c750e659ccfd",
-      "source_snapshot_sha256": "8d46bef06573d5d8dd4f663d3545199103de43bcc94e64f4d891949811988ae2",
+      "binary_sha256": "eddc9d69affc17955d748976bf18c8f7acccec9d5b02e5f9884264aecb4ced0e",
+      "source_snapshot_sha256": "e120403d64bd2fc7fbf468bf0cc199c2bb0d60b73e926cd690f8e54a3c93e2fd",
       "native_sources": {
         "oniguruma": {
           "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -185,23 +185,23 @@
         "--timeout",
         "120",
         "--host-note",
-        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus."
+        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus."
       ],
       "environment_sizes": {
-        "2": 7896
+        "2": 8408
       }
     },
     {
       "only_run": 3,
-      "started_utc": "2026-10-22T21:21:16.394242+00:00",
+      "started_utc": "2026-11-23T21:35:51.560470+00:00",
       "platform": "Linux-6.6.141-x86_64-with-glibc2.39",
       "cpu_count": 4,
-      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus.",
-      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
-      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus.",
+      "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: x86_64-unknown-linux-gnu\nrelease: 1.100.0\nLLVM version: 23.1.5",
+      "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
       "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
-      "binary_sha256": "24d81fdfc06daeab219da760a4565e55bbff446d009ade544c07c750e659ccfd",
-      "source_snapshot_sha256": "fb0d618aad20a2449f1a3ca8f1ff695fd1d72fa76a5a2cdaf007e9ea98f0d4d8",
+      "binary_sha256": "905025c6235aa88bb8ea659f1fd33dc18f87f5a527818e09c7e74ed938759ff1",
+      "source_snapshot_sha256": "8de6c2a0d4105227aa38e0b20040f97ee3a0f6c3ece88003246a18804b915fec",
       "native_sources": {
         "oniguruma": {
           "source_path": "/home/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -225,10 +225,10 @@
         "--timeout",
         "120",
         "--host-note",
-        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus."
+        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus."
       ],
       "environment_sizes": {
-        "3": 7920
+        "3": 8432
       }
     }
   ]

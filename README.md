@@ -57,7 +57,7 @@ When you need linear-time matching for user-supplied patterns, Rust's
 [`regex`](https://crates.io/crates/regex) crate is a great fit.
 
 **Serious speed for patterns you reuse.** In the published regex workloads,
-Ferroni matches 2.5–3.3× faster than C Oniguruma in the family-weighted
+Ferroni matches 2.7–3.5× faster than C Oniguruma in the family-weighted
 aggregate after compilation, without generating machine code at runtime.
 The tasks come from Django, Rails, WordPress and other projects. Results
 vary by task. C still compiles patterns faster in the aggregate, so check

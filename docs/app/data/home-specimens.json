@@ -237,7 +237,7 @@
       }
     }
   ],
-  "ferroni": "2.8.0",
+  "ferroni": "2.9.0",
   "guardrails": {
     "pattern": "(a+)+$",
     "strictError": "syntax error: very inefficient pattern",

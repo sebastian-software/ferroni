@@ -60,7 +60,9 @@ function usePlayback(line: Line) {
 /** Plays once when the element is half in view. */
 function useFirstView(elementRef: RefObject<HTMLElement | null>, onView: () => void) {
   const callbackRef = useRef(onView);
-  callbackRef.current = onView;
+  useEffect(() => {
+    callbackRef.current = onView;
+  }, [onView]);
   useEffect(() => {
     const target = elementRef.current;
     if (target === null || typeof IntersectionObserver !== "function") return;
