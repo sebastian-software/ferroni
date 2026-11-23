@@ -13,7 +13,7 @@ const lit = (active: string | undefined, group?: string) =>
 const classes = (...names: Array<string | undefined>) =>
   names.filter(Boolean).join(" ") || undefined;
 
-function Token({ token, active, setActive }: { token: PatternToken } & Highlight) {
+function Token({ token, active, setActive }: Highlight & { token: PatternToken }) {
   const { group } = token;
   const show = () => {
     setActive(group);
