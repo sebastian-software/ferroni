@@ -1,20 +1,20 @@
 {
   "format_version": 1,
-  "started_utc": "2026-10-22T21:21:41.733420+00:00",
+  "started_utc": "2026-11-23T21:36:25.808805+00:00",
   "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
   "machine": "arm64",
   "cpu_count": 6,
   "corpus": "tokenizer",
-  "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus.",
-  "commit": "817d2b349b88cec0b2c130e416a3caa90220e129",
+  "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus.",
+  "commit": "bd688eea256da1e3255cc5790d8b582913457c27",
   "git_status": "",
-  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.1",
-  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+  "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-apple-darwin\nrelease: 1.100.0\nLLVM version: 23.1.5",
+  "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
   "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
   "build_profile": "bench, thin LTO, features onigmo",
-  "binary_sha256": "bd00dbd898e91457ff9de0ccb4e250a09fd9cc23614263216684bcba918182e8",
+  "binary_sha256": "51974cbb84fa9ac1d42c490ffa9407e45782e1dd32778a0f5f763a9f5ed9e71a",
   "corpus_sha256": "7ddd65db06761271466aa0300e38ff35d333fc06b420b3aa71f14fd1019d3db8",
-  "cargo_lock_sha256": "389060ccf7a2441e59d6adec50ee5ec8ec8fd8f6307963be8057f8e76474d094",
+  "cargo_lock_sha256": "d52d3846efc1dab4bf51da365c41ce9ea90a77ba996fee32f644fdea1a2871e3",
   "rustflags": "",
   "engines": [
     "rust",
@@ -29,7 +29,7 @@
   ],
   "profiles": {
     "rust": "Ferroni standard public Regex API; explicit source flags; fallible preflight checks",
-    "rust_erroraware": "Ferroni fallible *_with searches/iteration with SearchOptions::new(); standard replacement (no fallible replacement API)",
+    "rust_erroraware": "Ferroni fallible *_with searches, iteration and replacement with SearchOptions::new()",
     "c": "C Oniguruma UTF-8/Oniguruma syntax, -O3; public C API plus output adapters",
     "onigmo": "pinned Ruby Onigmo standalone build; public C API plus output adapters",
     "pcre2_jit": "PCRE2 UTF/UCP, JIT required, NO_UTF_CHECK on trusted &str subjects",
@@ -76,7 +76,7 @@
     "--timeout",
     "120",
     "--host-note",
-    "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus."
+    "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus."
   ],
   "order_policy": "seeded case shuffle; rotated engine order, reversed on alternating repetitions",
   "environment_alignment": {
@@ -96,7 +96,7 @@
     "CARGO_PROFILE_BENCH_LTO": null
   },
   "pcre2_build": "PCRE2_SYS_STATIC=1; bundled source from locked pcre2-sys",
-  "source_snapshot_sha256": "255864f35fa2814118f62ca65917491bdb0aecf3f9561f9ecda2c14517011b75",
+  "source_snapshot_sha256": "2a74352cd4fcc4cd2a144d716674ce85e2054280a7dd2ec505cb656516a76a73",
   "native_sources": {
     "oniguruma": {
       "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -108,20 +108,20 @@
     }
   },
   "environment_sizes": {
-    "1": 8640
+    "1": 8960
   },
   "hosts": [
     {
       "only_run": 1,
-      "started_utc": "2026-10-22T21:21:41.733420+00:00",
+      "started_utc": "2026-11-23T21:36:25.808805+00:00",
       "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
       "cpu_count": 6,
-      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus.",
-      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.1",
-      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus.",
+      "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-apple-darwin\nrelease: 1.100.0\nLLVM version: 23.1.5",
+      "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
       "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
-      "binary_sha256": "bd00dbd898e91457ff9de0ccb4e250a09fd9cc23614263216684bcba918182e8",
-      "source_snapshot_sha256": "255864f35fa2814118f62ca65917491bdb0aecf3f9561f9ecda2c14517011b75",
+      "binary_sha256": "51974cbb84fa9ac1d42c490ffa9407e45782e1dd32778a0f5f763a9f5ed9e71a",
+      "source_snapshot_sha256": "2a74352cd4fcc4cd2a144d716674ce85e2054280a7dd2ec505cb656516a76a73",
       "native_sources": {
         "oniguruma": {
           "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -145,23 +145,23 @@
         "--timeout",
         "120",
         "--host-note",
-        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus."
+        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus."
       ],
       "environment_sizes": {
-        "1": 8640
+        "1": 8960
       }
     },
     {
       "only_run": 2,
-      "started_utc": "2026-10-22T21:21:38.118220+00:00",
+      "started_utc": "2026-11-23T21:36:34.044388+00:00",
       "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
       "cpu_count": 6,
-      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus.",
-      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.1",
-      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus.",
+      "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-apple-darwin\nrelease: 1.100.0\nLLVM version: 23.1.5",
+      "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
       "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
-      "binary_sha256": "bd00dbd898e91457ff9de0ccb4e250a09fd9cc23614263216684bcba918182e8",
-      "source_snapshot_sha256": "308269e3fa56b27339bd1309ee467b8057fd05891b7839aede40a62ed94ab6c5",
+      "binary_sha256": "51974cbb84fa9ac1d42c490ffa9407e45782e1dd32778a0f5f763a9f5ed9e71a",
+      "source_snapshot_sha256": "8b011854228f09c6a8f1674282451ecf5c109f597cb4d92a3dabbc42924ad5ab",
       "native_sources": {
         "oniguruma": {
           "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -185,23 +185,23 @@
         "--timeout",
         "120",
         "--host-note",
-        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus."
+        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus."
       ],
       "environment_sizes": {
-        "2": 8664
+        "2": 8984
       }
     },
     {
       "only_run": 3,
-      "started_utc": "2026-10-22T21:21:41.450713+00:00",
+      "started_utc": "2026-11-23T21:36:27.506471+00:00",
       "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
       "cpu_count": 6,
-      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus.",
-      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.1",
-      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+      "host_note": "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus.",
+      "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-apple-darwin\nrelease: 1.100.0\nLLVM version: 23.1.5",
+      "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
       "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
-      "binary_sha256": "bd00dbd898e91457ff9de0ccb4e250a09fd9cc23614263216684bcba918182e8",
-      "source_snapshot_sha256": "7fb89bcea8f7c4306aa495e4344a021b367909e4b00d4775d6f32336542c807e",
+      "binary_sha256": "51974cbb84fa9ac1d42c490ffa9407e45782e1dd32778a0f5f763a9f5ed9e71a",
+      "source_snapshot_sha256": "c94360246cb403137c0a6b290f73230a441437fd6b3c0c080675d08f13cc631c",
       "native_sources": {
         "oniguruma": {
           "source_path": "/Users/runner/_work/ferroni/ferroni/.cache/upstream/oniguruma-orig",
@@ -225,10 +225,10 @@
         "--timeout",
         "120",
         "--host-note",
-        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 39852407433, attempt 1. Separate LLM pre-tokenization corpus."
+        "Dedicated Blacksmith VM per repetition; host power/thermal state unavailable. Workflow 45266137470, attempt 1. Separate LLM pre-tokenization corpus."
       ],
       "environment_sizes": {
-        "3": 8688
+        "3": 9008
       }
     }
   ]

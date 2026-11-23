@@ -1,6 +1,6 @@
 # Additional source-backed regex comparisons
 
-Measured revision: `817d2b349b88cec0b2c130e416a3caa90220e129`. [Blacksmith run](https://github.com/sebastian-software/ferroni/actions/runs/39852407433).
+Measured revision: `bd688eea256da1e3255cc5790d8b582913457c27`. [Blacksmith run](https://github.com/sebastian-software/ferroni/actions/runs/45266137470).
 
 The separate tiktoken corpus measures complete regex pre-tokenization spans for the current cl100k_base and o200k_base patterns. It excludes BPE merges, token IDs, special-token processing and complete tokenizer throughput. Every profile must reproduce every original Python-regex oracle before timing.
 
@@ -10,27 +10,27 @@ The separate tiktoken corpus measures complete regex pre-tokenization spans for 
 
 | Profile | Phase | Common cases | Ratio: comparator / Ferroni |
 | --- | --- | ---: | ---: |
-| rust_erroraware | steady | 2 | 1.073 |
-| rust_erroraware | compile | 2 | 0.974 |
-| rust_erroraware | first_use | 2 | 0.970 |
-| c | steady | 2 | 2.751 |
-| c | compile | 2 | 1.984 |
-| c | first_use | 2 | 1.989 |
-| onigmo | steady | 2 | 1.590 |
-| onigmo | compile | 2 | 1.974 |
-| onigmo | first_use | 2 | 1.963 |
-| pcre2_jit | steady | 2 | 0.429 |
-| pcre2_jit | compile | 2 | 0.232 |
-| pcre2_jit | first_use | 2 | 0.240 |
-| pcre2 | steady | 2 | 1.942 |
-| pcre2 | compile | 2 | 0.102 |
-| pcre2 | first_use | 2 | 0.109 |
-| fancy_regex | steady | 2 | 1.549 |
-| fancy_regex | compile | 2 | 10.347 |
-| fancy_regex | first_use | 2 | 10.426 |
-| fancy_regex_seek | steady | 2 | 2.096 |
-| fancy_regex_seek | compile | 2 | 19.941 |
-| fancy_regex_seek | first_use | 2 | 22.330 |
+| rust_erroraware | steady | 2 | 1.097 |
+| rust_erroraware | compile | 2 | 1.022 |
+| rust_erroraware | first_use | 2 | 1.009 |
+| c | steady | 2 | 2.865 |
+| c | compile | 2 | 1.969 |
+| c | first_use | 2 | 1.956 |
+| onigmo | steady | 2 | 1.571 |
+| onigmo | compile | 2 | 1.958 |
+| onigmo | first_use | 2 | 1.869 |
+| pcre2_jit | steady | 2 | 0.420 |
+| pcre2_jit | compile | 2 | 0.224 |
+| pcre2_jit | first_use | 2 | 0.237 |
+| pcre2 | steady | 2 | 1.952 |
+| pcre2 | compile | 2 | 0.103 |
+| pcre2 | first_use | 2 | 0.108 |
+| fancy_regex | steady | 2 | 1.629 |
+| fancy_regex | compile | 2 | 10.181 |
+| fancy_regex | first_use | 2 | 10.279 |
+| fancy_regex_seek | steady | 2 | 2.125 |
+| fancy_regex_seek | compile | 2 | 20.033 |
+| fancy_regex_seek | first_use | 2 | 22.048 |
 | regex | steady | 0 | — |
 | regex | compile | 0 | — |
 | regex | first_use | 0 | — |
@@ -39,27 +39,27 @@ The separate tiktoken corpus measures complete regex pre-tokenization spans for 
 
 | Profile | Phase | Common cases | Ratio: comparator / Ferroni |
 | --- | --- | ---: | ---: |
-| rust_erroraware | steady | 2 | 1.090 |
-| rust_erroraware | compile | 2 | 0.952 |
-| rust_erroraware | first_use | 2 | 0.947 |
-| c | steady | 2 | 1.795 |
-| c | compile | 2 | 0.682 |
-| c | first_use | 2 | 0.660 |
-| onigmo | steady | 2 | 1.634 |
-| onigmo | compile | 2 | 0.675 |
-| onigmo | first_use | 2 | 0.656 |
-| pcre2_jit | steady | 2 | 0.455 |
-| pcre2_jit | compile | 2 | 0.204 |
-| pcre2_jit | first_use | 2 | 0.214 |
-| pcre2 | steady | 2 | 1.699 |
-| pcre2 | compile | 2 | 0.091 |
-| pcre2 | first_use | 2 | 0.098 |
-| fancy_regex | steady | 2 | 1.433 |
-| fancy_regex | compile | 2 | 8.061 |
-| fancy_regex | first_use | 2 | 8.165 |
-| fancy_regex_seek | steady | 2 | 2.043 |
-| fancy_regex_seek | compile | 2 | 15.966 |
-| fancy_regex_seek | first_use | 2 | 18.289 |
+| rust_erroraware | steady | 2 | 1.105 |
+| rust_erroraware | compile | 2 | 1.033 |
+| rust_erroraware | first_use | 2 | 0.973 |
+| c | steady | 2 | 1.913 |
+| c | compile | 2 | 0.734 |
+| c | first_use | 2 | 0.688 |
+| onigmo | steady | 2 | 1.549 |
+| onigmo | compile | 2 | 0.692 |
+| onigmo | first_use | 2 | 0.676 |
+| pcre2_jit | steady | 2 | 0.448 |
+| pcre2_jit | compile | 2 | 0.213 |
+| pcre2_jit | first_use | 2 | 0.212 |
+| pcre2 | steady | 2 | 1.739 |
+| pcre2 | compile | 2 | 0.098 |
+| pcre2 | first_use | 2 | 0.104 |
+| fancy_regex | steady | 2 | 1.562 |
+| fancy_regex | compile | 2 | 8.972 |
+| fancy_regex | first_use | 2 | 8.696 |
+| fancy_regex_seek | steady | 2 | 2.278 |
+| fancy_regex_seek | compile | 2 | 17.387 |
+| fancy_regex_seek | first_use | 2 | 18.987 |
 | regex | steady | 0 | — |
 | regex | compile | 0 | — |
 | regex | first_use | 0 | — |
