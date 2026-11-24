@@ -837,13 +837,42 @@ fn normalize_property_name(name: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Register a user-defined Unicode property with associated code point ranges.
-/// Ranges should be in `[start, end, start, end, ...]` pair format.
+/// Ranges should be in `[start, end, start, end, ...]` pair format with `start <= end`.
+/// Out-of-order or overlapping pairs are normalized into sorted disjoint ranges.
 /// Returns `Ok(())` on success, or `Err(error_code)` on failure.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_unicode_define_user_property(name: &[u8], ranges: &[OnigCodePoint]) -> Result<(), i32> {
     let normalized = normalize_property_name(name).ok_or(ONIGERR_INVALID_CHAR_PROPERTY_NAME)?;
 
-    let mut props = USER_DEFINED_PROPERTIES.lock().unwrap();
+    let (chunks, remainder) = ranges.as_chunks::<2>();
+    if !remainder.is_empty() {
+        return Err(ONIGERR_INVALID_ARGUMENT);
+    }
+    let mut pairs: Vec<(OnigCodePoint, OnigCodePoint)> = Vec::with_capacity(chunks.len());
+    for &[start, end] in chunks {
+        if start > end {
+            return Err(ONIGERR_INVALID_ARGUMENT);
+        }
+        pairs.push((start, end));
+    }
+    pairs.sort_unstable();
+    let mut normalized_ranges: Vec<OnigCodePoint> = Vec::with_capacity(pairs.len() * 2);
+    for (start, end) in pairs {
+        if let Some(prev_end) = normalized_ranges.last_mut() {
+            if start <= prev_end.saturating_add(1) {
+                if end > *prev_end {
+                    *prev_end = end;
+                }
+                continue;
+            }
+        }
+        normalized_ranges.push(start);
+        normalized_ranges.push(end);
+    }
+
+    let mut props = USER_DEFINED_PROPERTIES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
 
     // Check for duplicate
     for prop in props.iter() {
@@ -858,7 +887,7 @@ pub fn onig_unicode_define_user_property(name: &[u8], ranges: &[OnigCodePoint]) 
 
     props.push(UserProperty {
         name: normalized,
-        ranges: ranges.to_vec(),
+        ranges: normalized_ranges,
     });
 
     Ok(())
@@ -891,11 +920,12 @@ pub(crate) fn onigenc_unicode_property_name_to_ctype(p: &[u8]) -> i32 {
         Ok(idx) => PROPERTY_NAMES[idx].1 as i32,
         Err(_) => {
             // Check user-defined properties
-            if let Ok(props) = USER_DEFINED_PROPERTIES.lock() {
-                for (i, prop) in props.iter().enumerate() {
-                    if prop.name == key {
-                        return (CODE_RANGES_NUM + i) as i32;
-                    }
+            let props = USER_DEFINED_PROPERTIES
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            for (i, prop) in props.iter().enumerate() {
+                if prop.name == key {
+                    return (CODE_RANGES_NUM + i) as i32;
                 }
             }
             ONIGERR_INVALID_CHAR_PROPERTY_NAME
@@ -948,22 +978,23 @@ pub(crate) fn onigenc_unicode_is_code_ctype(code: OnigCodePoint, ctype: u32) -> 
     if (ctype as usize) >= CODE_RANGES_NUM {
         // Check user-defined properties
         let user_idx = (ctype as usize) - CODE_RANGES_NUM;
-        if let Ok(props) = USER_DEFINED_PROPERTIES.lock() {
-            if user_idx < props.len() {
-                let ranges = &props[user_idx].ranges;
-                let n = ranges.len() / 2;
-                let mut low = 0usize;
-                let mut high = n;
-                while low < high {
-                    let mid = (low + high) / 2;
-                    if code > ranges[mid * 2 + 1] {
-                        low = mid + 1;
-                    } else {
-                        high = mid;
-                    }
+        let props = USER_DEFINED_PROPERTIES
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if user_idx < props.len() {
+            let ranges = &props[user_idx].ranges;
+            let n = ranges.len() / 2;
+            let mut low = 0usize;
+            let mut high = n;
+            while low < high {
+                let mid = (low + high) / 2;
+                if code > ranges[mid * 2 + 1] {
+                    low = mid + 1;
+                } else {
+                    high = mid;
                 }
-                return low < n && code >= ranges[low * 2];
             }
+            return low < n && code >= ranges[low * 2];
         }
         return false;
     }
@@ -1070,7 +1101,7 @@ fn build_egcb_bmp_table() -> EgcbBmpTable {
         let key = block.map(|prop| prop as u8);
         *slot = *ids.entry(key).or_insert_with(|| {
             blocks.push(block);
-            (blocks.len() - 1) as u8
+            u8::try_from(blocks.len() - 1).expect("EGCB BMP table exceeds 256 unique blocks")
         });
     }
     EgcbBmpTable {
@@ -1893,5 +1924,35 @@ mod egcb_table_tests {
             .max()
             .unwrap_or(0);
         assert!(used < table.blocks.len());
+    }
+
+    #[test]
+    fn user_property_validates_and_normalizes_ranges() {
+        assert_eq!(
+            onig_unicode_define_user_property(b"InvalidOddPropTest", &[0xE000]),
+            Err(ONIGERR_INVALID_ARGUMENT)
+        );
+        assert_eq!(
+            onig_unicode_define_user_property(b"InvalidInvertedPropTest", &[0xE010, 0xE005]),
+            Err(ONIGERR_INVALID_ARGUMENT)
+        );
+
+        // Out-of-order and overlapping pairs should normalize cleanly for binary search.
+        onig_unicode_define_user_property(
+            b"NormalizedUserPropTest",
+            &[0xE020, 0xE025, 0xE010, 0xE015, 0xE014, 0xE018],
+        )
+        .unwrap();
+        let ctype = onigenc_unicode_property_name_to_ctype(b"NormalizedUserPropTest");
+        assert!(ctype >= CODE_RANGES_NUM as i32);
+        let ctype = ctype as u32;
+        assert!(!onigenc_unicode_is_code_ctype(0xE00F, ctype));
+        assert!(onigenc_unicode_is_code_ctype(0xE010, ctype));
+        assert!(onigenc_unicode_is_code_ctype(0xE016, ctype));
+        assert!(onigenc_unicode_is_code_ctype(0xE018, ctype));
+        assert!(!onigenc_unicode_is_code_ctype(0xE019, ctype));
+        assert!(onigenc_unicode_is_code_ctype(0xE020, ctype));
+        assert!(onigenc_unicode_is_code_ctype(0xE025, ctype));
+        assert!(!onigenc_unicode_is_code_ctype(0xE026, ctype));
     }
 }
