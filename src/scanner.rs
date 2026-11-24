@@ -44,7 +44,7 @@ use crate::error::RegexError;
 use crate::oniguruma::*;
 use crate::regcomp::onig_new_for_scanner;
 use crate::regexec::{onig_get_global_limit_revision, onig_get_retry_limit_in_search};
-use crate::regint::{ANCR_ANYCHAR_INF, RegexType};
+use crate::regint::{ANCR_ANYCHAR_INF, CheckPositionType, OperationPayload, RegexType};
 use crate::regset::{
     FallbackMemoIdentity, MAX_REGSET_ENTRIES, OnigRegSet, OnigRegSetLead, RegSetEntryEvent,
     SharedAutomata, SharedSeek, onig_regset_entry_search, onig_regset_get_regex,
@@ -855,10 +855,18 @@ struct CacheEntry {
 }
 
 impl CacheEntry {
-    fn new(pattern: &str, anchor: i32) -> Self {
+    fn new(reg: &RegexType) -> Self {
+        let has_g_anchor = reg.ops.iter().any(|op| {
+            matches!(
+                op.payload,
+                OperationPayload::CheckPosition {
+                    check_type: CheckPositionType::SearchStart
+                }
+            )
+        });
         CacheEntry {
-            has_g_anchor: pattern.contains("\\G"),
-            after_newline_only: (anchor & ANCR_ANYCHAR_INF) != 0,
+            has_g_anchor,
+            after_newline_only: (reg.anchor & ANCR_ANYCHAR_INF) != 0,
             last_str_id: 0,
             last_position: 0,
             last_options: u32::MAX, // invalid sentinel
@@ -1217,7 +1225,7 @@ impl Scanner {
         let mut warnings = Vec::with_capacity(patterns.len());
         let mut rewrites = Vec::with_capacity(patterns.len());
 
-        for (pattern, (reg, seek)) in patterns.iter().zip(parts) {
+        for (reg, seek) in parts {
             if eager {
                 #[cfg(feature = "scanner-load-profile")]
                 let _phase = crate::scanner::load_profile::scope(
@@ -1227,7 +1235,7 @@ impl Scanner {
             }
             rewrites.push(reg.backtrack_rewrites.clone());
             warnings.push(reg.backtrack_warnings.clone());
-            caches.push(CacheEntry::new(pattern, reg.anchor));
+            caches.push(CacheEntry::new(&reg));
             regset_regs.push(reg);
             seeks.push(seek);
         }
@@ -4416,5 +4424,14 @@ mod tests {
                 assert_eq!(found, expected, "{name}: call {i}");
             }
         }
+    }
+
+    #[test]
+    fn cache_entry_detects_g_anchor_from_bytecode() {
+        let scanner = Scanner::new(&[r"\Gfoo", r"\\Gfoo", r"[\G]", r"(?<=a|ab)c"]).unwrap();
+        assert!(scanner.caches[0].has_g_anchor);
+        assert!(!scanner.caches[1].has_g_anchor);
+        assert!(!scanner.caches[2].has_g_anchor);
+        assert!(!scanner.caches[3].has_g_anchor);
     }
 }
