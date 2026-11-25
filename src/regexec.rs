@@ -2774,8 +2774,9 @@ impl EncKind {
     fn from_enc(enc: OnigEncoding) -> Self {
         // Compare full fat pointers (data + vtable), not `addr_eq`: zero-sized
         // static encodings (`Utf8Encoding`, `AsciiEncoding`, custom ZSTs) may
-        // share the same data address on Windows MSVC, while distinct concrete
-        // encodings have distinct vtables.
+        // share the same data address on Windows MSVC. Encodings with
+        // different behavior cannot share identical vtables; if a codegen unit
+        // duplicates a built-in vtable, `Custom(enc)` remains a safe fallback.
         if std::ptr::eq(
             enc,
             &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
@@ -4160,7 +4161,8 @@ fn greedy_anychar_lazy(
     if start >= limit {
         return Ok(start);
     }
-    if enc_kind.is_singlebyte() || (enc_kind.is_ascii_compatible() && text[start..limit].is_ascii())
+    if enc_kind.is_singlebyte()
+        || (matches!(enc_kind, EncKind::Utf8) && text[start..limit].is_ascii())
     {
         stack.push(StackEntry::AltLazy {
             pcode: pcode as u32,
@@ -4198,10 +4200,67 @@ fn greedy_anychar_lazy(
     Ok(at)
 }
 
+/// Compute the stop boundary for non-multiline `.*` (`AnyCharStar` /
+/// `AnyCharStarPeekNext`) without stopping on a `0x0A` byte that lies inside
+/// a multibyte character (custom encodings or malformed UTF-8).
+#[inline]
+fn anychar_nl_limit(
+    enc_kind: EncKind,
+    str_data: &[u8],
+    start: usize,
+    right_range: usize,
+    end: usize,
+) -> usize {
+    if start >= right_range {
+        return start;
+    }
+    match enc_kind {
+        EncKind::Ascii => {
+            memchr::memchr(b'\n', &str_data[start..right_range]).map_or(right_range, |i| start + i)
+        }
+        EncKind::Utf8 => {
+            let Some(rel) = memchr::memchr(b'\n', &str_data[start..right_range]) else {
+                return right_range;
+            };
+            let prefix = &str_data[start..start + rel];
+            if prefix.is_ascii() || std::str::from_utf8(prefix).is_ok() {
+                return start + rel;
+            }
+            let mut at = start;
+            while at < right_range {
+                let n = enc_kind.enclen(str_data, at);
+                if at + n > right_range {
+                    break;
+                }
+                if enc_kind.is_mbc_newline(str_data, at, end) {
+                    return at;
+                }
+                at += n;
+            }
+            right_range
+        }
+        EncKind::Custom(_) => {
+            let mut at = start;
+            while at < right_range {
+                let n = enc_kind.enclen(str_data, at);
+                if at + n > right_range {
+                    break;
+                }
+                if enc_kind.is_mbc_newline(str_data, at, end) {
+                    return at;
+                }
+                at += n;
+            }
+            right_range
+        }
+    }
+}
+
 /// Out-of-line handler for `AnyCharStarPeekNext` and `AnyCharMlStarPeekNext`.
 /// Uses an O(1)-stack `AltLazy` range when `match_stack_limit == 0` for
-/// non-NUL ASCII peek bytes in ASCII-compatible encodings, and retains exact
-/// `stack_cap`-checked pushes otherwise.
+/// non-NUL ASCII peek bytes when every ASCII byte in `start..limit` is
+/// guaranteed to be a character head (ASCII, or valid UTF-8), and falls back
+/// to the per-character `enclen` loop otherwise.
 #[inline(never)]
 #[allow(clippy::too_many_arguments)]
 fn greedy_anychar_peek_next(
@@ -4220,9 +4279,16 @@ fn greedy_anychar_peek_next(
         return Ok(start);
     }
     let pcode = pcode as u32;
-    if c < 0x80 && enc_kind.is_ascii_compatible() {
+    let slice = &str_data[start..limit];
+    let byte_scan_exact = c < 0x80
+        && match enc_kind {
+            EncKind::Ascii => true,
+            EncKind::Utf8 => slice.is_ascii() || std::str::from_utf8(slice).is_ok(),
+            EncKind::Custom(_) => false,
+        };
+    if byte_scan_exact {
         if c != 0 && match_stack_limit == 0 && dot_star_ascii_cache_enabled() {
-            if let Some(last) = memchr::memrchr(c, &str_data[start..limit]) {
+            if let Some(last) = memchr::memrchr(c, slice) {
                 stack.push(StackEntry::AltLazy {
                     pcode,
                     pstr: start + last,
@@ -5760,16 +5826,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_ANYCHAR_STAR / OP_ANYCHAR_ML_STAR - .* optimization
             // ================================================================
             OpCode::AnyCharStar => {
-                // Use SIMD to find newline boundary, then record choices up to that point.
-                // In UTF-8/ASCII, 0x0a can only appear as a complete single-byte character,
-                // so memchr finds the exact newline position.
+                // Find the first real newline character boundary (using SIMD
+                // memchr on ASCII / valid UTF-8 and walking `enclen` otherwise).
                 // An absent operator can lower right_range below s; C's loop
                 // (DATA_ENSURE_CHECK1) then simply does not run.
-                let nl_limit = if s < right_range {
-                    memchr::memchr(b'\n', &str_data[s..right_range]).map_or(right_range, |i| s + i)
-                } else {
-                    s
-                };
+                let nl_limit = anychar_nl_limit(enc_kind, str_data, s, right_range, end);
                 let step = if match_stack_limit == 0 && dot_star_ascii_cache_enabled() {
                     greedy_anychar_lazy(
                         &mut stack,
@@ -5821,14 +5882,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
 
             OpCode::AnyCharStarPeekNext => {
                 if let OperationPayload::AnyCharStarPeekNext { c } = op.payload {
-                    // Find newline boundary with SIMD
                     // See AnyCharStar: right_range can be below s here.
-                    let nl_limit = if s < right_range {
-                        memchr::memchr(b'\n', &str_data[s..right_range])
-                            .map_or(right_range, |i| s + i)
-                    } else {
-                        s
-                    };
+                    let nl_limit = anychar_nl_limit(enc_kind, str_data, s, right_range, end);
                     match greedy_anychar_peek_next(
                         &mut stack,
                         p + 1,
@@ -17212,6 +17267,155 @@ mod tests {
                 onig_match_with_param(&reg, input, input.len(), 0, None, ONIG_OPTION_NONE, &mp);
             assert_eq!(default_res, ONIG_MISMATCH, "pattern={pattern:?}");
             assert_eq!(limited_res, ONIG_MISMATCH, "pattern={pattern:?}");
+        }
+
+        // Custom encoding where `0x01 0x0A` is a single non-newline character:
+        // `^.*z` and `^.*(?<=z)` must cross `0x01 0x0A` just like `^.z`.
+        for pattern in [b"^.*z".as_slice(), b"^.*(?<=z)".as_slice()] {
+            let reg = regcomp::onig_new(
+                pattern,
+                ONIG_OPTION_NONE,
+                &CUSTOM_LEAD01,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            let input = b"\x01\nz";
+            let (res, _) = onig_match(&reg, input, input.len(), 0, None, ONIG_OPTION_NONE);
+            assert_eq!(res, 3, "pattern={pattern:?}");
+        }
+
+        // Shift-JIS-style ASCII-compatible custom encoding where 0x81 starts a
+        // 2-byte char whose trail byte can be ASCII `b` (0x62): `^.*b` must not
+        // match inside `0x81 0x62`, and UTF-8 `^.*b` / `(?m)^.*b` must not
+        // match inside malformed `0xC2 0x62`.
+        struct CustomShiftJis;
+        impl Encoding for CustomShiftJis {
+            fn mbc_enc_len(&self, p: &[u8]) -> usize {
+                if !p.is_empty() && p[0] == 0x81 { 2 } else { 1 }
+            }
+            fn name(&self) -> &str {
+                "CUSTOM-SJIS"
+            }
+            fn max_enc_len(&self) -> usize {
+                2
+            }
+            fn min_enc_len(&self) -> usize {
+                1
+            }
+            fn is_mbc_newline(&self, p: &[u8], end: usize) -> bool {
+                onigenc_is_mbc_newline_0x0a(p, end)
+            }
+            fn mbc_to_code(&self, p: &[u8], end: usize) -> OnigCodePoint {
+                let len = self.mbc_enc_len(p).min(end).min(p.len());
+                if len == 2 {
+                    ((p[0] as u32) << 8) | (p[1] as u32)
+                } else {
+                    p[0] as u32
+                }
+            }
+            fn code_to_mbclen(&self, code: OnigCodePoint) -> i32 {
+                if code <= 0xFF { 1 } else { 2 }
+            }
+            fn code_to_mbc(&self, code: OnigCodePoint, buf: &mut [u8]) -> i32 {
+                if code <= 0xFF {
+                    buf[0] = code as u8;
+                    1
+                } else {
+                    buf[0] = (code >> 8) as u8;
+                    buf[1] = (code & 0xFF) as u8;
+                    2
+                }
+            }
+            fn mbc_case_fold(
+                &self,
+                flag: OnigCaseFoldType,
+                pp: &mut usize,
+                end: usize,
+                source: &[u8],
+                fold_buf: &mut [u8],
+            ) -> i32 {
+                onigenc_ascii_mbc_case_fold(flag, pp, end, source, fold_buf)
+            }
+            fn apply_all_case_fold(
+                &self,
+                flag: OnigCaseFoldType,
+                f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
+            ) -> i32 {
+                onigenc_ascii_apply_all_case_fold(flag, f)
+            }
+            fn get_case_fold_codes_by_str(
+                &self,
+                flag: OnigCaseFoldType,
+                p: &[u8],
+                end: usize,
+                items: &mut [OnigCaseFoldCodeItem],
+            ) -> i32 {
+                onigenc_ascii_get_case_fold_codes_by_str(flag, p, end, items)
+            }
+            fn property_name_to_ctype(&self, p: &[u8]) -> i32 {
+                onigenc_minimum_property_name_to_ctype(p)
+            }
+            fn is_code_ctype(&self, code: OnigCodePoint, ctype: u32) -> bool {
+                code < 128 && onigenc_is_ascii_code_ctype(code, ctype)
+            }
+            fn get_ctype_code_range(
+                &self,
+                ctype: u32,
+                sb_out: &mut OnigCodePoint,
+            ) -> Option<&'static [OnigCodePoint]> {
+                onigenc_not_support_get_ctype_code_range(ctype, sb_out)
+            }
+            fn left_adjust_char_head(&self, start: usize, s: usize, data: &[u8]) -> usize {
+                if s > start && data[s - 1] == 0x81 {
+                    s - 1
+                } else {
+                    s
+                }
+            }
+            fn is_allowed_reverse_match(&self, _p: &[u8]) -> bool {
+                true
+            }
+            fn is_valid_mbc_string(&self, _s: &[u8]) -> bool {
+                true
+            }
+            fn flag(&self) -> u32 {
+                ENC_FLAG_ASCII_COMPATIBLE
+            }
+        }
+        static CUSTOM_SJIS: CustomShiftJis = CustomShiftJis;
+
+        let sjis_reg = regcomp::onig_new(
+            b"^.*b",
+            ONIG_OPTION_NONE,
+            &CUSTOM_SJIS,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert_eq!(
+            onig_match(&sjis_reg, b"\x81b", 2, 0, None, ONIG_OPTION_NONE).0,
+            ONIG_MISMATCH
+        );
+        let mp = OnigMatchParam {
+            match_stack_limit: 400,
+            ..onig_new_match_param()
+        };
+        assert_eq!(
+            onig_match_with_param(&sjis_reg, b"\x81b", 2, 0, None, ONIG_OPTION_NONE, &mp).0,
+            ONIG_MISMATCH
+        );
+
+        for pattern in [b"^.*b".as_slice(), b"(?m)^.*b".as_slice()] {
+            let utf8_reg = compile_full(pattern);
+            assert_eq!(
+                onig_match(&utf8_reg, b"\xc2b", 2, 0, None, ONIG_OPTION_NONE).0,
+                ONIG_MISMATCH,
+                "UTF-8 {pattern:?} must not match inside malformed 0xC2 0x62"
+            );
+            assert_eq!(
+                onig_match_with_param(&utf8_reg, b"\xc2b", 2, 0, None, ONIG_OPTION_NONE, &mp).0,
+                ONIG_MISMATCH,
+                "UTF-8 {pattern:?} (limited) must not match inside malformed 0xC2 0x62"
+            );
         }
     }
 }
