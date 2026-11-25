@@ -57,7 +57,7 @@ pub(crate) fn record_decimal_prefix_captures(
         if mem_status_at(reg.push_mem_start, num) {
             let si = stack.len();
             stack.push(StackEntry::MemStart {
-                zid: num,
+                zid: num as u32,
                 pstr: begin,
                 prev_start: mem_start_stk[num],
                 prev_end: mem_end_stk[num],
@@ -73,7 +73,7 @@ pub(crate) fn record_decimal_prefix_captures(
         if mem_status_at(reg.push_mem_end, num) {
             let si = stack.len();
             stack.push(StackEntry::MemEnd {
-                zid: num,
+                zid: num as u32,
                 pstr: finish,
                 prev_start: mem_start_stk[num],
                 prev_end: mem_end_stk[num],

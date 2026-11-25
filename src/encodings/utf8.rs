@@ -30,6 +30,34 @@ static ENC_LEN_UTF8: [u8; 256] = [
     3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 ];
 
+/// Fast UTF-8 lead-byte length lookup for crate-internal VM hot paths.
+#[inline(always)]
+pub(crate) fn utf8_mbc_enc_len(lead: u8) -> usize {
+    ENC_LEN_UTF8[lead as usize] as usize
+}
+
+/// Fast UTF-8 code-point decode for crate-internal VM hot paths.
+#[inline(always)]
+pub(crate) fn utf8_mbc_to_code(p: &[u8], end: usize) -> OnigCodePoint {
+    let mut len = ENC_LEN_UTF8[p[0] as usize] as usize;
+    let available = end.min(p.len());
+    if len > available {
+        len = available;
+    }
+
+    let c = p[0] as u32;
+    if len > 1 {
+        let remaining = len - 1;
+        let mut n = c & ((1u32 << (6 - remaining)) - 1);
+        for &byte in p[1..len].iter() {
+            n = (n << 6) | ((byte as u32) & 0x3f);
+        }
+        n
+    } else {
+        c
+    }
+}
+
 // === UTF-8 Encoding Struct ===
 
 /// The UTF-8 encoding type behind [`ONIG_ENCODING_UTF8`].
@@ -40,7 +68,7 @@ pub static ONIG_ENCODING_UTF8: Utf8Encoding = Utf8Encoding;
 
 impl Encoding for Utf8Encoding {
     fn mbc_enc_len(&self, p: &[u8]) -> usize {
-        ENC_LEN_UTF8[p[0] as usize] as usize
+        utf8_mbc_enc_len(p[0])
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]
@@ -61,23 +89,7 @@ impl Encoding for Utf8Encoding {
     }
 
     fn mbc_to_code(&self, p: &[u8], end: usize) -> OnigCodePoint {
-        let mut len = ENC_LEN_UTF8[p[0] as usize] as usize;
-        let available = end.min(p.len());
-        if len > available {
-            len = available;
-        }
-
-        let c = p[0] as u32;
-        if len > 1 {
-            let remaining = len - 1;
-            let mut n = c & ((1u32 << (6 - remaining)) - 1);
-            for &byte in p[1..len].iter() {
-                n = (n << 6) | ((byte as u32) & 0x3f);
-            }
-            n
-        } else {
-            c
-        }
+        utf8_mbc_to_code(p, end)
     }
 
     fn code_to_mbclen(&self, code: OnigCodePoint) -> i32 {

@@ -1434,50 +1434,52 @@ impl MemPtr {
 
 /// Stack entry - corresponds to C's StackType struct.
 /// Uses enum to distinguish entry types instead of C's type field + union.
+/// Bytecode indices (`pcode`, `ret_addr`) and group/checkpoint IDs (`zid`) are
+/// stored as `u32` so the enum fits in 32 bytes (two entries per cache line).
 #[derive(Clone)]
 pub(crate) enum StackEntry {
     /// Choice point (STK_ALT / STK_SUPER_ALT) - alternate path for backtracking.
     Alt {
-        pcode: usize,   // bytecode index to jump to on backtrack
+        pcode: u32,     // bytecode index to jump to on backtrack
         pstr: usize,    // string position to restore
         zid: i32,       // remaining count for StepBackNext (-1 = unused)
         is_super: bool, // true for SUPER_ALT (survives CutToMark)
     },
     /// Capture group start (STK_MEM_START)
     MemStart {
-        zid: usize,
+        zid: u32,
         pstr: usize,
         prev_start: MemPtr,
         prev_end: MemPtr,
     },
     /// Capture group end (STK_MEM_END)
     MemEnd {
-        zid: usize,
+        zid: u32,
         pstr: usize,
         prev_start: MemPtr,
         prev_end: MemPtr,
     },
     /// Capture group end marker (STK_MEM_END_MARK) - for recursive groups
-    MemEndMark { zid: usize },
+    MemEndMark { zid: u32 },
     /// Repeat counter (STK_REPEAT_INC)
-    RepeatInc { zid: usize, count: i32 },
+    RepeatInc { zid: u32, count: i32 },
     /// Empty check start marker (STK_EMPTY_CHECK_START)
-    EmptyCheckStart { zid: usize, pstr: usize },
+    EmptyCheckStart { zid: u32, pstr: usize },
     /// Empty check end marker (STK_EMPTY_CHECK_END)
-    EmptyCheckEnd { zid: usize },
+    EmptyCheckEnd { zid: u32 },
     /// Named checkpoint (STK_MARK) - for lookaheads/lookbehinds
     Mark {
-        zid: usize,
+        zid: u32,
         pos: Option<usize>, // saved string position (if save_pos)
     },
     /// Saved value (STK_SAVE_VAL)
     SaveVal {
-        zid: usize,
+        zid: u32,
         save_type: SaveType,
         v: usize,
     },
     /// Call frame return address (STK_CALL_FRAME)
-    CallFrame { ret_addr: usize },
+    CallFrame { ret_addr: u32 },
     /// Return marker (STK_RETURN)
     Return,
     /// Callout entry (STK_CALLOUT) - for retraction callbacks
@@ -1492,7 +1494,7 @@ pub(crate) enum StackEntry {
     /// covering the entire matched range. On backtrack, we peel off one character
     /// and re-push for the remaining range.
     AltLazy {
-        pcode: usize,      // bytecode index to jump to on backtrack
+        pcode: u32,        // bytecode index to jump to on backtrack
         pstr: usize,       // current (rightmost) backtrack position
         pstr_start: usize, // leftmost position (don't go below this)
         ascii: bool,       // true = all chars are 1 byte (can decrement by 1)
@@ -1501,6 +1503,8 @@ pub(crate) enum StackEntry {
     /// Voided entry (STK_VOID) - dead space, skipped during pops
     Void,
 }
+
+const _: () = assert!(std::mem::size_of::<StackEntry>() <= 32);
 
 impl StackEntry {
     /// Returns true if this entry is an ALT (choice point) that stops STACK_POP.
@@ -1527,7 +1531,7 @@ impl StackEntry {
 }
 
 // Sentinel value for the bottom ALT entry's pcode
-const FINISH_PCODE: usize = usize::MAX;
+const FINISH_PCODE: u32 = u32::MAX;
 
 // ============================================================================
 // MatchArg - runtime match state (port of C's MatchArg)
@@ -1901,7 +1905,7 @@ fn stack_pop(
     retry_counter: u64,
     msa: &mut MatchArg,
     subexp_call_nest_counter: &mut u64,
-) -> Result<Option<(usize, usize, i32)>, i32> {
+) -> Result<Option<(u32, usize, i32)>, i32> {
     loop {
         let Some(entry) = stack.pop() else {
             return Ok(None);
@@ -1925,7 +1929,6 @@ fn stack_pop(
                 if pstr > pstr_start {
                     let prev = if peek_byte != 0 {
                         // Search backward for the peek byte
-                        let search_end = pstr - pstr_start;
                         memchr::memrchr(peek_byte, &str_data[pstr_start..pstr])
                     } else if ascii {
                         Some(pstr - 1)
@@ -1964,8 +1967,8 @@ fn stack_pop(
                         ..
                     } = &entry
                     {
-                        mem_start_stk[*zid] = *prev_start;
-                        mem_end_stk[*zid] = *prev_end;
+                        mem_start_stk[*zid as usize] = *prev_start;
+                        mem_end_stk[*zid as usize] = *prev_end;
                     }
                 }
                 StackPopLevel::All => {
@@ -1977,8 +1980,8 @@ fn stack_pop(
                             prev_end,
                             ..
                         } => {
-                            mem_start_stk[*zid] = *prev_start;
-                            mem_end_stk[*zid] = *prev_end;
+                            mem_start_stk[*zid as usize] = *prev_start;
+                            mem_end_stk[*zid as usize] = *prev_end;
                         }
                         StackEntry::MemEnd {
                             zid,
@@ -1986,8 +1989,8 @@ fn stack_pop(
                             prev_end,
                             ..
                         } => {
-                            mem_start_stk[*zid] = *prev_start;
-                            mem_end_stk[*zid] = *prev_end;
+                            mem_start_stk[*zid as usize] = *prev_start;
+                            mem_end_stk[*zid as usize] = *prev_end;
                         }
                         StackEntry::Callout {
                             num,
@@ -2061,6 +2064,7 @@ fn stack_pop_to_mark(
     mem_end_stk: &mut [MemPtr],
     subexp_call_nest_counter: &mut u64,
 ) -> Option<usize> {
+    let mark_id = mark_id as u32;
     loop {
         let entry = stack.pop()?;
         match &entry {
@@ -2073,8 +2077,8 @@ fn stack_pop_to_mark(
                 prev_end,
                 ..
             } => {
-                mem_start_stk[*zid] = *prev_start;
-                mem_end_stk[*zid] = *prev_end;
+                mem_start_stk[*zid as usize] = *prev_start;
+                mem_end_stk[*zid as usize] = *prev_end;
             }
             StackEntry::MemEnd {
                 zid,
@@ -2082,8 +2086,8 @@ fn stack_pop_to_mark(
                 prev_end,
                 ..
             } => {
-                mem_start_stk[*zid] = *prev_start;
-                mem_end_stk[*zid] = *prev_end;
+                mem_start_stk[*zid as usize] = *prev_start;
+                mem_end_stk[*zid as usize] = *prev_end;
             }
             // C: POP_CALL
             StackEntry::Return => {
@@ -2103,6 +2107,7 @@ fn stack_pop_to_mark(
 /// etc.) in place.
 /// Returns the mark's saved position. Preserves Super Alt entries and Marks with different IDs.
 fn stack_void_to_mark(stack: &mut [StackEntry], mark_id: usize) -> Option<usize> {
+    let mark_id = mark_id as u32;
     let mut i = stack.len();
     while i > 0 {
         i -= 1;
@@ -2143,6 +2148,7 @@ fn stack_void_to_mark(stack: &mut [StackEntry], mark_id: usize) -> Option<usize>
 /// STK_RETURN) belong to another run of the same repeat, so the scan skips
 /// them.
 fn stack_get_repeat_count(stack: &[StackEntry], zid: usize) -> i32 {
+    let zid = zid as u32;
     let mut k = stack.len();
     while k > 0 {
         k -= 1;
@@ -2173,6 +2179,7 @@ fn stack_get_repeat_count(stack: &[StackEntry], zid: usize) -> i32 {
 /// Check if the empty check for the given zid matches the same string position.
 /// Returns true if the string position hasn't advanced (empty match).
 fn stack_empty_check(stack: &[StackEntry], zid: usize, s: usize) -> bool {
+    let zid = zid as u32;
     for entry in stack.iter().rev() {
         if let StackEntry::EmptyCheckStart { zid: id, pstr } = entry {
             if *id == zid {
@@ -2238,6 +2245,7 @@ fn stack_empty_check_mem(
     s: usize,
     empty_status_mem: u32,
 ) -> bool {
+    let zid = zid as u32;
     // GET_EMPTY_CHECK_START
     let Some(klow) = stack
         .iter()
@@ -2262,7 +2270,7 @@ fn stack_empty_check_mem(
             ..
         } = &stack[k]
         {
-            if mem_status_limit_at(ms, *mem) {
+            if mem_status_limit_at(ms, *mem as usize) {
                 for kk in klow..k {
                     if let StackEntry::MemStart {
                         zid: kk_mem,
@@ -2308,6 +2316,7 @@ fn stack_empty_check_mem_rec(
     s: usize,
     empty_status_mem: u32,
 ) -> bool {
+    let zid = zid as u32;
     let mut level: i32 = 0;
     let mut klow = stack.len();
     loop {
@@ -2339,7 +2348,7 @@ fn stack_empty_check_mem_rec(
                             prev_start: k_prev_start,
                             ..
                         } => {
-                            if level == 0 && mem_status_limit_at(ms, *mem) {
+                            if level == 0 && mem_status_limit_at(ms, *mem as usize) {
                                 for kk in klow + 1..k {
                                     match &stack[kk] {
                                         StackEntry::MemStart {
@@ -2421,6 +2430,7 @@ fn stack_get_save_val_last(
     zid: usize,
     clear: bool,
 ) -> Option<usize> {
+    let zid = zid as u32;
     for entry in stack.iter_mut().rev() {
         if let StackEntry::SaveVal {
             zid: id,
@@ -2452,7 +2462,7 @@ fn make_capture_history_tree(
     while *k < stk_top {
         match &stack[*k] {
             StackEntry::MemStart { zid, pstr, .. } => {
-                let n = *zid;
+                let n = *zid as usize;
                 if n <= ONIG_MAX_CAPTURE_HISTORY_GROUP && mem_status_at(reg.capture_history, n) {
                     let mut child = Box::new(OnigCaptureTreeNode::new());
                     child.group = n as i32;
@@ -2477,7 +2487,7 @@ fn make_capture_history_tree(
                 }
             }
             StackEntry::MemEnd { zid, pstr, .. } => {
-                if *zid == node.group as usize {
+                if *zid as usize == node.group as usize {
                     node.end = *pstr as i32;
                     return 0;
                 }
@@ -2610,15 +2620,16 @@ fn stack_get_mem_start_for_rec(
     mem: usize,
     push_mem_start: u32,
 ) -> (MemPtr, usize) {
+    let mem_u32 = mem as u32;
     let mut level: i32 = 0;
     let mut k = stack.len();
     while k > 0 {
         k -= 1;
         match &stack[k] {
-            StackEntry::MemEnd { zid, .. } | StackEntry::MemEndMark { zid } if *zid == mem => {
+            StackEntry::MemEnd { zid, .. } | StackEntry::MemEndMark { zid } if *zid == mem_u32 => {
                 level += 1;
             }
-            StackEntry::MemStart { zid, pstr, .. } if *zid == mem => {
+            StackEntry::MemStart { zid, pstr, .. } if *zid == mem_u32 => {
                 if level == 0 {
                     // Found matching start at correct level
                     if mem_status_at(push_mem_start, mem) {
@@ -2666,7 +2677,7 @@ fn backref_match_at_nested_level(
                 level += 1;
             }
             StackEntry::MemStart { zid, pstr, .. } if level == nest => {
-                if mem_is_in_mems(*zid, mem_num, mems) {
+                if mem_is_in_mems(*zid as usize, mem_num, mems) {
                     if let Some(pe) = pend {
                         let pstart = *pstr;
                         let cap_len = pe - pstart;
@@ -2689,7 +2700,7 @@ fn backref_match_at_nested_level(
                 }
             }
             StackEntry::MemEnd { zid, pstr, .. } if level == nest => {
-                if mem_is_in_mems(*zid, mem_num, mems) {
+                if mem_is_in_mems(*zid as usize, mem_num, mems) {
                     pend = Some(*pstr);
                 }
             }
@@ -2723,7 +2734,7 @@ fn backref_check_at_nested_level(
                 level += 1;
             }
             StackEntry::MemStart { zid, .. } if level == nest => {
-                if mem_is_in_mems(*zid, mem_num, mems) {
+                if mem_is_in_mems(*zid as usize, mem_num, mems) {
                     return true;
                 }
             }
@@ -2748,6 +2759,153 @@ fn mem_is_in_mems(mem: usize, num: i32, mems: &[i32]) -> bool {
 // Helper functions
 // ============================================================================
 
+/// Internal fast dispatch for built-in encodings (`ONIG_ENCODING_UTF8` and
+/// `ONIG_ENCODING_ASCII`) to avoid `dyn Encoding` virtual calls on VM hot
+/// paths while preserving full support for arbitrary custom encodings.
+#[derive(Clone, Copy)]
+enum EncKind {
+    Utf8,
+    Ascii,
+    Custom(OnigEncoding),
+}
+
+impl EncKind {
+    #[inline(always)]
+    fn from_enc(enc: OnigEncoding) -> Self {
+        if std::ptr::addr_eq(
+            enc,
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+        ) {
+            Self::Utf8
+        } else if std::ptr::addr_eq(
+            enc,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ) {
+            Self::Ascii
+        } else {
+            Self::Custom(enc)
+        }
+    }
+
+    #[inline(always)]
+    fn enclen(self, str_data: &[u8], s: usize) -> usize {
+        if s >= str_data.len() {
+            return 1;
+        }
+        match self {
+            Self::Utf8 => {
+                let b = str_data[s];
+                if b < 0x80 {
+                    1
+                } else {
+                    crate::encodings::utf8::utf8_mbc_enc_len(b)
+                }
+            }
+            Self::Ascii => 1,
+            Self::Custom(enc) => {
+                if str_data[s] < 0x80 && onigenc_is_ascii_compatible_encoding(enc) {
+                    1
+                } else {
+                    enc.mbc_enc_len(&str_data[s..])
+                }
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn advance_char_to_end(self, str_data: &[u8], s: usize, end: usize) -> usize {
+        s.saturating_add(self.enclen(str_data, s)).min(end)
+    }
+
+    #[inline(always)]
+    fn is_mbc_newline(self, str_data: &[u8], s: usize, end: usize) -> bool {
+        match self {
+            Self::Utf8 | Self::Ascii => s < str_data.len() && end > 0 && str_data[s] == b'\n',
+            Self::Custom(enc) => enc.is_mbc_newline(&str_data[s..], end),
+        }
+    }
+
+    #[inline(always)]
+    fn mbc_to_code(self, str_data: &[u8], s: usize, end: usize) -> OnigCodePoint {
+        match self {
+            Self::Utf8 => {
+                crate::encodings::utf8::utf8_mbc_to_code(&str_data[s..], end.saturating_sub(s))
+            }
+            Self::Ascii => str_data[s] as OnigCodePoint,
+            Self::Custom(enc) => enc.mbc_to_code(&str_data[s..], end.saturating_sub(s)),
+        }
+    }
+
+    #[inline(always)]
+    fn prev_char_head(self, start: usize, s: usize, str_data: &[u8]) -> usize {
+        if s <= start {
+            return s;
+        }
+        match self {
+            Self::Ascii => s - 1,
+            Self::Utf8 => {
+                let mut p = s - 1;
+                if str_data[p] < 0x80 {
+                    return p;
+                }
+                while (str_data[p] & 0xC0) == 0x80 && p > start {
+                    p -= 1;
+                }
+                p
+            }
+            Self::Custom(enc) => {
+                if enc_is_singlebyte(enc)
+                    || (str_data[s - 1] < 0x80 && onigenc_is_ascii_compatible_encoding(enc))
+                {
+                    s - 1
+                } else {
+                    enc.left_adjust_char_head(start, s - 1, str_data)
+                }
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn is_ascii_compatible(self) -> bool {
+        match self {
+            Self::Utf8 | Self::Ascii => true,
+            Self::Custom(enc) => onigenc_is_ascii_compatible_encoding(enc),
+        }
+    }
+
+    #[inline(always)]
+    fn is_singlebyte(self) -> bool {
+        match self {
+            Self::Ascii => true,
+            Self::Utf8 => false,
+            Self::Custom(enc) => enc_is_singlebyte(enc),
+        }
+    }
+
+    #[inline(always)]
+    fn is_word_char_at(self, str_data: &[u8], s: usize, end: usize) -> bool {
+        if s >= end {
+            return false;
+        }
+        let b = str_data[s];
+        if b < 0x80 {
+            return is_word_ascii(b);
+        }
+        match self {
+            Self::Ascii => false,
+            Self::Utf8 => {
+                let code =
+                    crate::encodings::utf8::utf8_mbc_to_code(&str_data[s..], end.saturating_sub(s));
+                crate::unicode::onigenc_unicode_is_code_ctype(code, ONIGENC_CTYPE_WORD)
+            }
+            Self::Custom(enc) => {
+                let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
+                enc.is_code_ctype(code, ONIGENC_CTYPE_WORD)
+            }
+        }
+    }
+}
+
 /// Check if a byte is a word character (ASCII-only).
 #[inline]
 const fn is_word_ascii(c: u8) -> bool {
@@ -2769,15 +2927,7 @@ const WORD_ASCII_TABLE: [bool; 256] = {
 /// Uses the encoding's Unicode-aware is_code_ctype for multi-byte encodings.
 #[inline]
 fn is_word_char_at(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
-    if s >= end {
-        return false;
-    }
-    let b = str_data[s];
-    if b < 0x80 {
-        return is_word_ascii(b);
-    }
-    let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
-    enc.is_code_ctype(code, ONIGENC_CTYPE_WORD)
+    EncKind::from_enc(enc).is_word_char_at(str_data, s, end)
 }
 
 /// Check if position is a word character in ASCII-aware mode.
@@ -2869,16 +3019,7 @@ fn exact_eq_at(str_data: &[u8], s: usize, exact: &[u8], len: usize) -> bool {
 /// Get the start of the previous character (left_adjust_char_head).
 #[inline]
 fn prev_char_head(enc: OnigEncoding, start: usize, s: usize, str_data: &[u8]) -> usize {
-    if s <= start {
-        return s;
-    }
-    // Fast path for single-byte encodings and ASCII bytes in ASCII-compatible encodings.
-    if enc_is_singlebyte(enc)
-        || (str_data[s - 1] < 0x80 && onigenc_is_ascii_compatible_encoding(enc))
-    {
-        return s - 1;
-    }
-    enc.left_adjust_char_head(start, s - 1, str_data)
+    EncKind::from_enc(enc).prev_char_head(start, s, str_data)
 }
 
 /// Check word boundary at position s (encoding-aware, mode-aware).
@@ -3080,14 +3221,7 @@ fn grapheme_cluster_end(
 /// Get the character length at position s for the given encoding.
 #[inline]
 fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
-    if s >= str_data.len() {
-        return 1;
-    }
-    // Hot path: ASCII byte in ASCII-compatible encoding is always length 1.
-    if str_data[s] < 0x80 && onigenc_is_ascii_compatible_encoding(enc) {
-        return 1;
-    }
-    enc.mbc_enc_len(&str_data[s..])
+    EncKind::from_enc(enc).enclen(str_data, s)
 }
 
 /// Advance over one character without moving past the logical end of input.
@@ -3551,7 +3685,7 @@ fn push_char_run(
     }
     if single_byte {
         stack.push(StackEntry::AltLazy {
-            pcode,
+            pcode: pcode as u32,
             pstr: end - 1,
             pstr_start: start,
             ascii: true,
@@ -3560,7 +3694,7 @@ fn push_char_run(
         Ok(())
     } else if exact_heads {
         stack.push(StackEntry::AltLazy {
-            pcode,
+            pcode: pcode as u32,
             pstr: prev_char_head(enc, start, end, str_data),
             pstr_start: start,
             ascii: false,
@@ -3576,6 +3710,7 @@ fn push_char_run(
 /// matcher's loop keeps its code for the patterns without it.
 #[inline(never)]
 fn pop_star_choices(stack: &mut Vec<StackEntry>, pc: usize) {
+    let pc = pc as u32;
     while let Some(
         StackEntry::Alt {
             pcode,
@@ -3975,7 +4110,7 @@ fn greedy_ascii_repeat(
     if s > floor {
         if peek == 0 {
             stack.push(StackEntry::AltLazy {
-                pcode,
+                pcode: pcode as u32,
                 pstr: s - 1,
                 pstr_start: floor,
                 ascii: true,
@@ -3991,7 +4126,7 @@ fn greedy_ascii_repeat(
             };
             if let Some(at) = found {
                 stack.push(StackEntry::AltLazy {
-                    pcode,
+                    pcode: pcode as u32,
                     pstr: floor + at,
                     pstr_start: floor,
                     ascii: true,
@@ -4001,6 +4136,62 @@ fn greedy_ascii_repeat(
         }
     }
     Some(s)
+}
+
+/// O(1)-stack greedy dot-star run using `StackEntry::AltLazy` when no explicit
+/// `match_stack_limit` is active. Falls back to `push_char_boundaries` only for
+/// malformed multibyte sequences where stepping backward does not retrace the
+/// forward scan.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn greedy_anychar_lazy(
+    stack: &mut Vec<StackEntry>,
+    pcode: usize,
+    enc: OnigEncoding,
+    enc_kind: EncKind,
+    text: &[u8],
+    start: usize,
+    limit: usize,
+    stack_cap: usize,
+) -> Result<usize, i32> {
+    if start >= limit {
+        return Ok(start);
+    }
+    if enc_kind.is_singlebyte() || (enc_kind.is_ascii_compatible() && text[start..limit].is_ascii())
+    {
+        stack.push(StackEntry::AltLazy {
+            pcode: pcode as u32,
+            pstr: limit - 1,
+            pstr_start: start,
+            ascii: true,
+            peek_byte: 0,
+        });
+        return Ok(limit);
+    }
+    let mut at = start;
+    let mut exact_heads = true;
+    while at < limit {
+        let len = enc_kind.enclen(text, at);
+        if at + len > limit {
+            break;
+        }
+        if text[at] >= 0x80 {
+            exact_heads &= steps_back_to(enc, text, start, at, at + len);
+        }
+        at += len;
+    }
+    push_char_run(
+        stack,
+        pcode,
+        enc,
+        text,
+        start,
+        at,
+        false,
+        exact_heads,
+        stack_cap,
+    )?;
+    Ok(at)
 }
 
 /// Cache ASCII compatibility for one dot-star run while retaining every
@@ -4016,14 +4207,15 @@ fn greedy_anychar_loop(
     limit: usize,
     stack_cap: usize,
 ) -> Result<usize, i32> {
-    let ascii_compatible =
-        dot_star_ascii_cache_enabled() && onigenc_is_ascii_compatible_encoding(enc);
+    let enc_kind = EncKind::from_enc(enc);
+    let ascii_compatible = dot_star_ascii_cache_enabled() && enc_kind.is_ascii_compatible();
     let mut at = start;
+    let pcode = pcode as u32;
     while at < limit {
         let len = if ascii_compatible && text[at] < 0x80 {
             1
         } else {
-            enclen(enc, text, at)
+            enc_kind.enclen(text, at)
         };
         if at + len > limit {
             break;
@@ -4073,6 +4265,8 @@ fn push_char_boundaries(
     run_end: usize,
     stack_cap: usize,
 ) -> Result<(), i32> {
+    let enc_kind = EncKind::from_enc(enc);
+    let pcode = pcode as u32;
     let mut x = start;
     while x < run_end {
         if stack.len() >= stack_cap {
@@ -4084,7 +4278,7 @@ fn push_char_boundaries(
             zid: -1,
             is_super: false,
         });
-        x = x.saturating_add(enclen(enc, str_data, x)).min(run_end);
+        x = x.saturating_add(enc_kind.enclen(str_data, x)).min(run_end);
     }
     Ok(())
 }
@@ -4105,6 +4299,7 @@ fn match_literal_trie(
 ) -> Option<usize> {
     let (len, others) = trie.first_match(str_data, s, right_range)?;
     if others {
+        let next_pcode = next_pcode as u32;
         let matches = trie.matches_in_order(str_data, s, right_range);
         for &(_, alternative) in matches[1..].iter().rev() {
             stack.push(StackEntry::Alt {
@@ -4504,8 +4699,9 @@ pub(crate) fn first_op_fails(
             if s == 0 {
                 opton_notbol(option | reg.options)
             } else if s != end {
-                let sprev = onigenc_get_prev_char_head(enc, str_data, 0, s);
-                !enc.is_mbc_newline(&str_data[sprev..], end)
+                let enc_kind = EncKind::from_enc(enc);
+                let sprev = enc_kind.prev_char_head(0, s, str_data);
+                !enc_kind.is_mbc_newline(str_data, sprev, end)
             } else {
                 true
             }
@@ -4767,6 +4963,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
     let pop_level = reg.stack_pop_level;
     let num_mem = reg.num_mem as usize;
     let enc = reg.enc;
+    let enc_kind = EncKind::from_enc(enc);
     let options = msa.options;
 
     // Reuse stack and capture-group arrays from MatchArg (avoids heap alloc per call)
@@ -5341,13 +5538,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             p += 1;
                         }
                     } else {
-                        let mb_len = enclen(enc, str_data, s);
+                        let mb_len = enc_kind.enclen(str_data, s);
                         // C: a byte that starts no multibyte character
                         // (`ONIGENC_IS_MBC_HEAD`) fails the class.
                         if mb_len == 1 || s + mb_len > right_range {
                             goto_fail = true;
                         } else {
-                            let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
+                            let code = enc_kind.mbc_to_code(str_data, s, end);
                             if !is_in_code_range(mb, code) {
                                 goto_fail = true;
                             } else {
@@ -5374,7 +5571,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             p += 1;
                         }
                     } else {
-                        let mb_len = enclen(enc, str_data, s);
+                        let mb_len = enc_kind.enclen(str_data, s);
                         if mb_len == 1 {
                             // C: a byte that starts no multibyte character
                             // matches the negated class as one byte.
@@ -5387,7 +5584,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             s = end;
                             p += 1;
                         } else {
-                            let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
+                            let code = enc_kind.mbc_to_code(str_data, s, end);
                             if is_in_code_range(mb, code) {
                                 goto_fail = true;
                             } else {
@@ -5417,7 +5614,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             p += 1;
                         }
                     } else {
-                        let len = enclen(enc, str_data, s);
+                        let len = enc_kind.enclen(str_data, s);
                         if s + len > right_range {
                             if not {
                                 // Keep CClassMixNot consistent with CClassMbNot
@@ -5433,7 +5630,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             } else {
                                 // C: cclass_mb. A multibyte character is only
                                 // looked up in the code ranges.
-                                let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
+                                let code = enc_kind.mbc_to_code(str_data, s, end);
                                 is_in_code_range(mb, code)
                             };
                             if in_class == not {
@@ -5456,10 +5653,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if right_range.saturating_sub(s) < 1 {
                     goto_fail = true;
                 } else {
-                    let n = enclen(enc, str_data, s);
+                    let n = enc_kind.enclen(str_data, s);
                     if right_range.saturating_sub(s) < n {
                         goto_fail = true;
-                    } else if enc.is_mbc_newline(&str_data[s..], end) {
+                    } else if enc_kind.is_mbc_newline(str_data, s, end) {
                         goto_fail = true; // ANYCHAR doesn't match newline
                     } else {
                         s += n;
@@ -5472,7 +5669,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if right_range.saturating_sub(s) < 1 {
                     goto_fail = true;
                 } else {
-                    let n = enclen(enc, str_data, s);
+                    let n = enc_kind.enclen(str_data, s);
                     if right_range.saturating_sub(s) < n {
                         goto_fail = true;
                     } else {
@@ -5486,7 +5683,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // OP_ANYCHAR_STAR / OP_ANYCHAR_ML_STAR - .* optimization
             // ================================================================
             OpCode::AnyCharStar => {
-                // Use SIMD to find newline boundary, then push Alt entries up to that point.
+                // Use SIMD to find newline boundary, then record choices up to that point.
                 // In UTF-8/ASCII, 0x0a can only appear as a complete single-byte character,
                 // so memchr finds the exact newline position.
                 // An absent operator can lower right_range below s; C's loop
@@ -5496,88 +5693,50 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 } else {
                     s
                 };
-                if TRACK_CAPTURES {
-                    let mut overflow = false;
-                    while s < nl_limit {
-                        let n = enclen(enc, str_data, s);
-                        if s + n > nl_limit {
-                            break;
-                        }
-                        if stack.len() >= stack_cap {
-                            overflow = true;
-                            break;
-                        }
-                        stack.push(StackEntry::Alt {
-                            pcode: p + 1,
-                            pstr: s,
-                            zid: -1,
-                            is_super: false,
-                        });
-                        s += n;
-                    }
-                    if overflow {
-                        best_len = ONIGERR_MATCH_STACK_LIMIT_OVER;
-                        break;
-                    }
-                } else {
-                    match greedy_anychar_loop(
+                let step = if match_stack_limit == 0 && dot_star_ascii_cache_enabled() {
+                    greedy_anychar_lazy(
                         &mut stack,
                         p + 1,
                         enc,
+                        enc_kind,
                         str_data,
                         s,
                         nl_limit,
                         stack_cap,
-                    ) {
-                        Ok(next_s) => s = next_s,
-                        Err(err) => {
-                            best_len = err;
-                            break;
-                        }
+                    )
+                } else {
+                    greedy_anychar_loop(&mut stack, p + 1, enc, str_data, s, nl_limit, stack_cap)
+                };
+                match step {
+                    Ok(next_s) => s = next_s,
+                    Err(err) => {
+                        best_len = err;
+                        break;
                     }
                 }
                 p += 1;
             }
 
             OpCode::AnyCharMlStar => {
-                if TRACK_CAPTURES {
-                    let mut overflow = false;
-                    while s < right_range {
-                        let n = enclen(enc, str_data, s);
-                        if s + n > right_range {
-                            break;
-                        }
-                        if stack.len() >= stack_cap {
-                            overflow = true;
-                            break;
-                        }
-                        stack.push(StackEntry::Alt {
-                            pcode: p + 1,
-                            pstr: s,
-                            zid: -1,
-                            is_super: false,
-                        });
-                        s += n;
-                    }
-                    if overflow {
-                        best_len = ONIGERR_MATCH_STACK_LIMIT_OVER;
-                        break;
-                    }
-                } else {
-                    match greedy_anychar_loop(
+                let step = if match_stack_limit == 0 && dot_star_ascii_cache_enabled() {
+                    greedy_anychar_lazy(
                         &mut stack,
                         p + 1,
                         enc,
+                        enc_kind,
                         str_data,
                         s,
                         right_range,
                         stack_cap,
-                    ) {
-                        Ok(next_s) => s = next_s,
-                        Err(err) => {
-                            best_len = err;
-                            break;
-                        }
+                    )
+                } else {
+                    greedy_anychar_loop(&mut stack, p + 1, enc, str_data, s, right_range, stack_cap)
+                };
+                match step {
+                    Ok(next_s) => s = next_s,
+                    Err(err) => {
+                        best_len = err;
+                        break;
                     }
                 }
                 p += 1;
@@ -5594,11 +5753,31 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         s
                     };
                     let mut overflow = false;
-                    if c < 0x80 {
+                    if c < 0x80
+                        && c != 0
+                        && match_stack_limit == 0
+                        && dot_star_ascii_cache_enabled()
+                    {
+                        // O(1)-stack lazy range: find only the rightmost occurrence of `c`
+                        // and peel earlier matches on demand via memrchr in stack_pop.
+                        if s < nl_limit {
+                            if let Some(last) = memchr::memrchr(c, &str_data[s..nl_limit]) {
+                                stack.push(StackEntry::AltLazy {
+                                    pcode: (p + 1) as u32,
+                                    pstr: s + last,
+                                    pstr_start: s,
+                                    ascii: true,
+                                    peek_byte: c,
+                                });
+                            }
+                            s = nl_limit;
+                        }
+                    } else if c < 0x80 {
                         // ASCII peek byte: use SIMD to find all occurrences directly.
                         // In UTF-8, bytes < 0x80 can only be leading (single-byte) characters,
                         // so every memchr hit is a valid character start.
                         let mut iter_pos = s;
+                        let pcode = (p + 1) as u32;
                         while let Some(i) = memchr::memchr(c, &str_data[iter_pos..nl_limit]) {
                             let pos = iter_pos + i;
                             if stack.len() >= stack_cap {
@@ -5606,7 +5785,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                                 break;
                             }
                             stack.push(StackEntry::Alt {
-                                pcode: p + 1,
+                                pcode,
                                 pstr: pos,
                                 zid: -1,
                                 is_super: false,
@@ -5616,8 +5795,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         s = nl_limit;
                     } else {
                         // Non-ASCII peek: fall back to per-character loop
+                        let pcode = (p + 1) as u32;
                         while s < nl_limit {
-                            let n = enclen(enc, str_data, s);
+                            let n = enc_kind.enclen(str_data, s);
                             if s + n > nl_limit {
                                 break;
                             }
@@ -5627,7 +5807,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                                     break;
                                 }
                                 stack.push(StackEntry::Alt {
-                                    pcode: p + 1,
+                                    pcode,
                                     pstr: s,
                                     zid: -1,
                                     is_super: false,
@@ -5651,10 +5831,28 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     // See AnyCharStar: an absent operator can lower right_range below s.
                     let mut overflow = false;
                     if s < right_range {
-                        if c < 0x80 {
+                        if c < 0x80
+                            && c != 0
+                            && match_stack_limit == 0
+                            && dot_star_ascii_cache_enabled()
+                        {
+                            // O(1)-stack lazy range: find only the rightmost occurrence of `c`
+                            // and peel earlier matches on demand via memrchr in stack_pop.
+                            if let Some(last) = memchr::memrchr(c, &str_data[s..right_range]) {
+                                stack.push(StackEntry::AltLazy {
+                                    pcode: (p + 1) as u32,
+                                    pstr: s + last,
+                                    pstr_start: s,
+                                    ascii: true,
+                                    peek_byte: c,
+                                });
+                            }
+                            s = right_range;
+                        } else if c < 0x80 {
                             // ASCII peek byte: use SIMD to find all occurrences directly.
                             // No newline check needed in multiline mode.
                             let mut iter_pos = s;
+                            let pcode = (p + 1) as u32;
                             while let Some(i) = memchr::memchr(c, &str_data[iter_pos..right_range])
                             {
                                 let pos = iter_pos + i;
@@ -5663,7 +5861,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                                     break;
                                 }
                                 stack.push(StackEntry::Alt {
-                                    pcode: p + 1,
+                                    pcode,
                                     pstr: pos,
                                     zid: -1,
                                     is_super: false,
@@ -5673,8 +5871,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             s = right_range;
                         } else {
                             // Non-ASCII peek: fall back to per-character loop
+                            let pcode = (p + 1) as u32;
                             while s < right_range {
-                                let n = enclen(enc, str_data, s);
+                                let n = enc_kind.enclen(str_data, s);
                                 if s + n > right_range {
                                     break;
                                 }
@@ -5684,7 +5883,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                                         break;
                                     }
                                     stack.push(StackEntry::Alt {
-                                        pcode: p + 1,
+                                        pcode,
                                         pstr: s,
                                         zid: -1,
                                         is_super: false,
@@ -5783,7 +5982,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     }
                     if s > start {
                         stack.push(StackEntry::AltLazy {
-                            pcode: p + 1,
+                            pcode: (p + 1) as u32,
                             pstr: s - 1,
                             pstr_start: start,
                             ascii: true,
@@ -5810,7 +6009,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             continue;
                         }
 
-                        let len = enclen(enc, str_data, s);
+                        let len = enc_kind.enclen(str_data, s);
                         if s + len > right_range {
                             break;
                         }
@@ -5818,7 +6017,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         let in_class = if len == 1 {
                             bitset_at(bsp, b as usize)
                         } else {
-                            let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
+                            let code = enc_kind.mbc_to_code(str_data, s, end);
                             is_in_code_range(mb, code)
                         };
                         if !in_class {
@@ -5852,13 +6051,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     let start = s;
                     let mut exact_heads = true;
                     while s < right_range {
-                        let mb_len = enclen(enc, str_data, s);
+                        let mb_len = enc_kind.enclen(str_data, s);
                         // As `CClassMb`: a byte that starts no multibyte
                         // character ends the run.
                         if mb_len == 1 || s + mb_len > right_range {
                             break;
                         }
-                        let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
+                        let code = enc_kind.mbc_to_code(str_data, s, end);
                         if !is_in_code_range(mb, code) {
                             break;
                         }
@@ -5957,7 +6156,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         stack_cap,
                         |b| !is_in_code_range(mb, b as OnigCodePoint),
                         |x| {
-                            let mb_len = enclen(enc, str_data, x);
+                            let mb_len = enc_kind.enclen(str_data, x);
                             if mb_len == 1 {
                                 // As `CClassMbNot`: a byte that starts no
                                 // multibyte character matches as one byte.
@@ -5968,7 +6167,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                                 // class, which goes on at the end.
                                 return Some(end);
                             }
-                            let code = enc.mbc_to_code(&str_data[x..], end.saturating_sub(x));
+                            let code = enc_kind.mbc_to_code(str_data, x, end);
                             (!is_in_code_range(mb, code)).then_some(x + mb_len)
                         },
                     ) {
@@ -5999,7 +6198,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         |b| !bitset_at(bsp, b as usize),
                         |x| {
                             let b = str_data[x];
-                            let len = enclen(enc, str_data, x);
+                            let len = enc_kind.enclen(str_data, x);
                             if x + len > right_range {
                                 // A truncated character matches a negated
                                 // class, which goes on at the end.
@@ -6008,7 +6207,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             let in_class = if len == 1 {
                                 bitset_at(bsp, b as usize)
                             } else {
-                                let code = enc.mbc_to_code(&str_data[x..], end.saturating_sub(x));
+                                let code = enc_kind.mbc_to_code(str_data, x, end);
                                 is_in_code_range(mb, code)
                             };
                             (!in_class).then_some(x + len)
@@ -6033,23 +6232,23 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // ================================================================
             OpCode::WordStar => {
                 let start = s;
-                if enc_is_singlebyte(enc) {
+                if enc_kind.is_singlebyte() {
                     while s < right_range {
-                        if !is_word_char_at(enc, str_data, s, end) {
+                        if !enc_kind.is_word_char_at(str_data, s, end) {
                             break;
                         }
                         s += 1;
                     }
                     if s > start {
                         stack.push(StackEntry::AltLazy {
-                            pcode: p + 1,
+                            pcode: (p + 1) as u32,
                             pstr: s - 1,
                             pstr_start: start,
                             ascii: true,
                             peek_byte: 0,
                         });
                     }
-                } else if onigenc_is_ascii_compatible_encoding(enc) {
+                } else if enc_kind.is_ascii_compatible() {
                     let mut ascii_only = true;
                     let mut exact_heads = true;
                     while s < right_range {
@@ -6060,11 +6259,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             }
                             s += 1;
                         } else {
-                            if !is_word_char_at(enc, str_data, s, end) {
+                            if !enc_kind.is_word_char_at(str_data, s, end) {
                                 break;
                             }
                             ascii_only = false;
-                            let next = advance_char_to_end(enc, str_data, s, end);
+                            let next = enc_kind.advance_char_to_end(str_data, s, end);
                             exact_heads &= steps_back_to(enc, str_data, start, s, next);
                             s = next;
                         }
@@ -6086,10 +6285,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 } else {
                     let mut exact_heads = true;
                     while s < right_range {
-                        if !is_word_char_at(enc, str_data, s, end) {
+                        if !enc_kind.is_word_char_at(str_data, s, end) {
                             break;
                         }
-                        let next = advance_char_to_end(enc, str_data, s, end);
+                        let next = enc_kind.advance_char_to_end(str_data, s, end);
                         exact_heads &= steps_back_to(enc, str_data, start, s, next);
                         s = next;
                     }
@@ -6121,7 +6320,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 }
                 if s > start {
                     stack.push(StackEntry::AltLazy {
-                        pcode: p + 1,
+                        pcode: (p + 1) as u32,
                         pstr: s - 1,
                         pstr_start: start,
                         ascii: true,
@@ -6146,7 +6345,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     }
                     if s > start {
                         stack.push(StackEntry::AltLazy {
-                            pcode: p + 1,
+                            pcode: (p + 1) as u32,
                             pstr: s - 1,
                             pstr_start: start,
                             ascii: true,
@@ -6170,7 +6369,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     }
                     if s > start {
                         stack.push(StackEntry::AltLazy {
-                            pcode: p + 1,
+                            pcode: (p + 1) as u32,
                             pstr: s - 1,
                             pstr_start: start,
                             ascii: true,
@@ -6187,10 +6386,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Word / NoWord - \w and \W character type matching
             // ================================================================
             OpCode::Word => {
-                if s >= right_range || !is_word_char_at(enc, str_data, s, end) {
+                if s >= right_range || !enc_kind.is_word_char_at(str_data, s, end) {
                     goto_fail = true;
                 } else {
-                    s = advance_char_to_end(enc, str_data, s, end);
+                    s = enc_kind.advance_char_to_end(str_data, s, end);
                     p += 1;
                 }
             }
@@ -6205,10 +6404,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::NoWord => {
-                if s >= right_range || is_word_char_at(enc, str_data, s, end) {
+                if s >= right_range || enc_kind.is_word_char_at(str_data, s, end) {
                     goto_fail = true;
                 } else {
-                    s = advance_char_to_end(enc, str_data, s, end);
+                    s = enc_kind.advance_char_to_end(str_data, s, end);
                     p += 1;
                 }
             }
@@ -6217,7 +6416,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if s >= right_range || is_word_ascii(str_data[s]) {
                     goto_fail = true;
                 } else {
-                    s = advance_char_to_end(enc, str_data, s, end);
+                    s = enc_kind.advance_char_to_end(str_data, s, end);
                     p += 1;
                 }
             }
@@ -6340,8 +6539,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 } else if s != end {
                     // C: `else if (! ON_STR_END(s))` -- a newline at the very
                     // end of the subject does not start another line.
-                    let sprev = onigenc_get_prev_char_head(enc, str_data, 0, s);
-                    if enc.is_mbc_newline(&str_data[sprev..], end) {
+                    let sprev = enc_kind.prev_char_head(0, s, str_data);
+                    if enc_kind.is_mbc_newline(str_data, sprev, end) {
                         p += 1;
                     } else {
                         goto_fail = true;
@@ -6358,7 +6557,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     } else {
                         p += 1;
                     }
-                } else if enc.is_mbc_newline(&str_data[s..], end) {
+                } else if enc_kind.is_mbc_newline(str_data, s, end) {
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -6736,7 +6935,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         let prev_end = mem_end_stk[num];
                         let si = stack.len();
                         stack.push(StackEntry::MemStart {
-                            zid: num,
+                            zid: num as u32,
                             pstr: s,
                             prev_start,
                             prev_end,
@@ -6771,7 +6970,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         let prev_end = mem_end_stk[num];
                         let si = stack.len();
                         stack.push(StackEntry::MemEnd {
-                            zid: num,
+                            zid: num as u32,
                             pstr: s,
                             prev_start,
                             prev_end,
@@ -6793,7 +6992,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         stack_get_mem_start_for_rec(&stack, mem, reg.push_mem_start);
                     let si = stack.len();
                     stack.push(StackEntry::MemEnd {
-                        zid: mem,
+                        zid: mem as u32,
                         pstr: s,
                         prev_start: mem_start_stk[mem],
                         prev_end: mem_end_stk[mem],
@@ -6815,7 +7014,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     let (start_ptr, _) =
                         stack_get_mem_start_for_rec(&stack, mem, reg.push_mem_start);
                     mem_start_stk[mem] = start_ptr;
-                    stack.push(StackEntry::MemEndMark { zid: mem });
+                    stack.push(StackEntry::MemEndMark { zid: mem as u32 });
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -6845,7 +7044,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // ================================================================
             OpCode::Push | OpCode::PushSuper => {
                 if let OperationPayload::Push { addr } = op.payload {
-                    let alt_target = (p as i32 + addr) as usize;
+                    let alt_target = (p as i32 + addr) as u32;
                     let is_super = op.opcode == OpCode::PushSuper;
                     stack.push(StackEntry::Alt {
                         pcode: alt_target,
@@ -6882,7 +7081,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         }
                     }
                     stack.push(StackEntry::Alt {
-                        pcode: (p as i32 + addr) as usize,
+                        pcode: (p as i32 + addr) as u32,
                         pstr: s,
                         zid: -1,
                         is_super: false,
@@ -6989,7 +7188,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
                     {
                         // Character matches: push alternative and continue
-                        let alt_target = (p as i32 + addr) as usize;
+                        let alt_target = (p as i32 + addr) as u32;
                         stack.push(StackEntry::Alt {
                             pcode: alt_target,
                             pstr: s,
@@ -7052,7 +7251,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         || !guard_may_jump(skipped_retries, reg, msa, exact_guard_retries)
                     {
                         stack.push(StackEntry::Alt {
-                            pcode: (p as i32 + addr) as usize,
+                            pcode: (p as i32 + addr) as u32,
                             pstr: s,
                             zid: -1,
                             is_super: false,
@@ -7083,7 +7282,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::PushIfPeekNext => {
                 if let OperationPayload::PushIfPeekNext { addr, c } = op.payload {
                     if s < right_range && str_data[s] == c {
-                        let alt_target = (p as i32 + addr) as usize;
+                        let alt_target = (p as i32 + addr) as u32;
                         stack.push(StackEntry::Alt {
                             pcode: alt_target,
                             pstr: s,
@@ -7104,7 +7303,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if let OperationPayload::Repeat { id, addr } = op.payload {
                     let id = id as usize;
                     // Push initial repeat count = 0
-                    stack.push(StackEntry::RepeatInc { zid: id, count: 0 });
+                    stack.push(StackEntry::RepeatInc {
+                        zid: id as u32,
+                        count: 0,
+                    });
 
                     if reg.repeat_range[id].lower == 0 {
                         // Can skip the loop body entirely
@@ -7112,7 +7314,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         if opcode == OpCode::Repeat {
                             // Greedy: push skip as alternative, try body first
                             stack.push(StackEntry::Alt {
-                                pcode: alt_target,
+                                pcode: alt_target as u32,
                                 pstr: s,
                                 zid: -1,
                                 is_super: false,
@@ -7120,7 +7322,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         } else {
                             // Non-greedy: push body as alternative, try skip first
                             stack.push(StackEntry::Alt {
-                                pcode: p + 1,
+                                pcode: (p + 1) as u32,
                                 pstr: s,
                                 zid: -1,
                                 is_super: false,
@@ -7152,7 +7354,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     } else if count >= lower {
                         p += 1;
                         stack.push(StackEntry::Alt {
-                            pcode: p,
+                            pcode: p as u32,
                             pstr: s,
                             zid: -1,
                             is_super: false,
@@ -7162,7 +7364,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         p = body_start;
                     }
                     // Count pushed AFTER Alt — gets popped on backtrack (correct for greedy)
-                    stack.push(StackEntry::RepeatInc { zid: id, count });
+                    stack.push(StackEntry::RepeatInc {
+                        zid: id as u32,
+                        count,
+                    });
                 } else {
                     goto_fail = true;
                 }
@@ -7178,13 +7383,16 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
 
                     // C order for non-greedy: push count FIRST, then branch
                     // Count pushed BEFORE Alt — survives backtrack (correct for lazy)
-                    stack.push(StackEntry::RepeatInc { zid: id, count });
+                    stack.push(StackEntry::RepeatInc {
+                        zid: id as u32,
+                        count,
+                    });
 
                     if upper != INFINITE_REPEAT && count == upper {
                         p += 1;
                     } else if count >= lower {
                         stack.push(StackEntry::Alt {
-                            pcode: body_start,
+                            pcode: body_start as u32,
                             pstr: s,
                             zid: -1,
                             is_super: false,
@@ -7203,8 +7411,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // ================================================================
             OpCode::EmptyCheckStart => {
                 if let OperationPayload::EmptyCheckStart { mem } = op.payload {
-                    let mem = mem as usize;
-                    stack.push(StackEntry::EmptyCheckStart { zid: mem, pstr: s });
+                    stack.push(StackEntry::EmptyCheckStart {
+                        zid: mem as u32,
+                        pstr: s,
+                    });
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -7259,7 +7469,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     } else {
                         // C: STACK_PUSH_EMPTY_CHECK_END -- marks the iteration
                         // as complete for scans from recursive runs.
-                        stack.push(StackEntry::EmptyCheckEnd { zid: mem });
+                        stack.push(StackEntry::EmptyCheckEnd { zid: mem as u32 });
                     }
                 } else {
                     goto_fail = true;
@@ -7452,7 +7662,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         if remaining != 0 {
                             // Variable-length: push Alt with remaining count, jump to addr
                             stack.push(StackEntry::Alt {
-                                pcode: p + 1,
+                                pcode: (p + 1) as u32,
                                 pstr: s,
                                 zid: remaining,
                                 is_super: false,
@@ -7484,7 +7694,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if !goto_fail {
                     if remaining != 0 {
                         stack.push(StackEntry::Alt {
-                            pcode: p,
+                            pcode: p as u32,
                             pstr: s,
                             zid: remaining,
                             is_super: false,
@@ -7499,9 +7709,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // ================================================================
             OpCode::Mark => {
                 if let OperationPayload::Mark { id, save_pos } = op.payload {
-                    let id = id as usize;
                     let pos = if save_pos { Some(s) } else { None };
-                    stack.push(StackEntry::Mark { zid: id, pos });
+                    stack.push(StackEntry::Mark {
+                        zid: id as u32,
+                        pos,
+                    });
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -7532,14 +7744,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // ================================================================
             OpCode::SaveVal => {
                 if let OperationPayload::SaveVal { save_type, id } = op.payload {
-                    let id = id as usize;
                     let v = match save_type {
                         SaveType::Keep => s,
                         SaveType::S => s,
                         SaveType::RightRange => right_range,
                     };
                     stack.push(StackEntry::SaveVal {
-                        zid: id,
+                        zid: id as u32,
                         save_type,
                         v,
                     });
@@ -7620,7 +7831,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             }
                         }
                         let addr = addr as usize;
-                        stack.push(StackEntry::CallFrame { ret_addr: p + 1 });
+                        stack.push(StackEntry::CallFrame {
+                            ret_addr: (p + 1) as u32,
+                        });
                         p = addr;
                     }
                 } else {
@@ -7651,7 +7864,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if let Some(ra) = ret_addr {
                     stack.push(StackEntry::Return);
                     subexp_call_nest_counter = subexp_call_nest_counter.wrapping_sub(1);
-                    p = ra;
+                    p = ra as usize;
                 } else {
                     goto_fail = true;
                 }
@@ -7847,7 +8060,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if pop {
                     stack.pop();
                 }
-                p = pcode;
+                p = pcode as usize;
                 s = pstr;
                 last_alt_zid = alt_zid;
                 continue;
@@ -7874,7 +8087,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         // Hit bottom sentinel - no more alternatives
                         attempt_failed!();
                     }
-                    p = pcode;
+                    p = pcode as usize;
                     s = pstr;
                     last_alt_zid = alt_zid;
                 }
@@ -16693,5 +16906,212 @@ mod tests {
         onig_set_subexp_call_limit_in_search(old_limit);
 
         assert_eq!(result, ONIGERR_SUBEXP_CALL_LIMIT_IN_SEARCH_OVER);
+    }
+
+    #[test]
+    fn stack_entry_fits_in_32_bytes() {
+        assert!(
+            std::mem::size_of::<StackEntry>() <= 32,
+            "StackEntry grew to {} bytes",
+            std::mem::size_of::<StackEntry>()
+        );
+    }
+
+    #[test]
+    fn anychar_star_and_peek_next_use_o1_lazy_stack_without_limit() {
+        let _limits = shared_limits();
+        let long_ascii = format!("{}b{}", "a".repeat(2000), "c".repeat(2000));
+        let long_utf8 = format!("{}é{}", "α".repeat(500), "β".repeat(500));
+        let long_nul = format!("{}\0{}", "a".repeat(1000), "c".repeat(1000));
+
+        let cases: &[(&str, &[u8], bool)] = &[
+            (r"^.*(?<=b)", long_ascii.as_bytes(), true),
+            (r"^(.*)(?<=b)", long_ascii.as_bytes(), true),
+            (r"(?m)^.*(?<=b)", long_ascii.as_bytes(), true),
+            (r"^.*b", long_ascii.as_bytes(), true),
+            (r"(?m)^.*b", long_ascii.as_bytes(), true),
+            (r"^.*(?<=é)", long_utf8.as_bytes(), true),
+            (r"^.*\0", long_nul.as_bytes(), false),
+            (r"^.*(?<=b)", b"\xc2b\x80\x80a", false),
+        ];
+
+        for &(pattern, input, expect_o1_stack) in cases {
+            let reg = compile_full(pattern.as_bytes());
+            let mut msa_fast = MatchArg::new(&reg, ONIG_OPTION_NONE, Some(OnigRegion::new()), 0);
+            let res_fast = search_in_range_inner(
+                &reg,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                input.len(),
+                &mut msa_fast,
+            );
+            let fast_cap = msa_fast.stack.capacity();
+
+            DOT_STAR_ASCII_CACHE_DISABLED.with(|v| v.set(true));
+            let mut msa_ref = MatchArg::new(&reg, ONIG_OPTION_NONE, Some(OnigRegion::new()), 0);
+            let res_ref = search_in_range_inner(
+                &reg,
+                input,
+                input.len(),
+                0,
+                input.len(),
+                input.len(),
+                &mut msa_ref,
+            );
+            DOT_STAR_ASCII_CACHE_DISABLED.with(|v| v.set(false));
+
+            assert_eq!(res_fast, res_ref, "pattern={pattern:?}");
+            assert_eq!(
+                msa_fast.region.as_ref().map(|r| (&r.beg, &r.end)),
+                msa_ref.region.as_ref().map(|r| (&r.beg, &r.end)),
+                "pattern={pattern:?}"
+            );
+            assert_eq!(
+                msa_fast.retry_limit_in_search_counter, msa_ref.retry_limit_in_search_counter,
+                "pattern={pattern:?}"
+            );
+            if expect_o1_stack {
+                assert!(
+                    fast_cap <= INIT_MATCH_STACK_SIZE,
+                    "expected O(1) lazy stack for {pattern:?}, got capacity {fast_cap}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn enc_kind_matches_encoding_trait_methods() {
+        struct CustomUtf8;
+        impl Encoding for CustomUtf8 {
+            fn mbc_enc_len(&self, p: &[u8]) -> usize {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.mbc_enc_len(p)
+            }
+            fn name(&self) -> &str {
+                "CUSTOM-UTF8"
+            }
+            fn max_enc_len(&self) -> usize {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.max_enc_len()
+            }
+            fn min_enc_len(&self) -> usize {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.min_enc_len()
+            }
+            fn is_mbc_newline(&self, p: &[u8], end: usize) -> bool {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.is_mbc_newline(p, end)
+            }
+            fn mbc_to_code(&self, p: &[u8], end: usize) -> OnigCodePoint {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.mbc_to_code(p, end)
+            }
+            fn code_to_mbclen(&self, code: OnigCodePoint) -> i32 {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.code_to_mbclen(code)
+            }
+            fn code_to_mbc(&self, code: OnigCodePoint, buf: &mut [u8]) -> i32 {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.code_to_mbc(code, buf)
+            }
+            fn mbc_case_fold(
+                &self,
+                flag: OnigCaseFoldType,
+                pp: &mut usize,
+                end: usize,
+                source: &[u8],
+                fold_buf: &mut [u8],
+            ) -> i32 {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8
+                    .mbc_case_fold(flag, pp, end, source, fold_buf)
+            }
+            fn apply_all_case_fold(
+                &self,
+                flag: OnigCaseFoldType,
+                f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
+            ) -> i32 {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.apply_all_case_fold(flag, f)
+            }
+            fn get_case_fold_codes_by_str(
+                &self,
+                flag: OnigCaseFoldType,
+                p: &[u8],
+                end: usize,
+                items: &mut [OnigCaseFoldCodeItem],
+            ) -> i32 {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8
+                    .get_case_fold_codes_by_str(flag, p, end, items)
+            }
+            fn property_name_to_ctype(&self, p: &[u8]) -> i32 {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.property_name_to_ctype(p)
+            }
+            fn is_code_ctype(&self, code: OnigCodePoint, ctype: u32) -> bool {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.is_code_ctype(code, ctype)
+            }
+            fn get_ctype_code_range(
+                &self,
+                ctype: u32,
+                sb_out: &mut OnigCodePoint,
+            ) -> Option<&'static [OnigCodePoint]> {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.get_ctype_code_range(ctype, sb_out)
+            }
+            fn left_adjust_char_head(&self, start: usize, s: usize, data: &[u8]) -> usize {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.left_adjust_char_head(start, s, data)
+            }
+            fn is_allowed_reverse_match(&self, p: &[u8]) -> bool {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.is_allowed_reverse_match(p)
+            }
+            fn is_valid_mbc_string(&self, s: &[u8]) -> bool {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.is_valid_mbc_string(s)
+            }
+            fn flag(&self) -> u32 {
+                crate::encodings::utf8::ONIG_ENCODING_UTF8.flag()
+            }
+        }
+        static CUSTOM_UTF8: CustomUtf8 = CustomUtf8;
+
+        let inputs: &[&[u8]] = &[b"", b"a\nb_", "é\nK😀".as_bytes(), b"\n\x80\xc2b\xe2\x82"];
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+            &CUSTOM_UTF8 as OnigEncoding,
+        ] {
+            let kind = EncKind::from_enc(enc);
+            for &data in inputs {
+                for end in 0..=data.len() {
+                    for s in 0..=data.len() {
+                        assert_eq!(
+                            kind.enclen(data, s),
+                            if s < data.len() {
+                                enc.mbc_enc_len(&data[s..])
+                            } else {
+                                1
+                            }
+                        );
+                        assert_eq!(
+                            kind.is_mbc_newline(data, s, end),
+                            enc.is_mbc_newline(&data[s..], end)
+                        );
+                        if s < data.len() {
+                            assert_eq!(
+                                kind.mbc_to_code(data, s, end),
+                                enc.mbc_to_code(&data[s..], end.saturating_sub(s))
+                            );
+                        }
+                        if s > 0 {
+                            assert_eq!(
+                                kind.prev_char_head(0, s, data),
+                                enc.left_adjust_char_head(0, s - 1, data)
+                            );
+                        }
+                        let expected_word = s < end && {
+                            let b = data[s];
+                            if b < 0x80 {
+                                is_word_ascii(b)
+                            } else {
+                                let code = enc.mbc_to_code(&data[s..], end.saturating_sub(s));
+                                enc.is_code_ctype(code, ONIGENC_CTYPE_WORD)
+                            }
+                        };
+                        assert_eq!(kind.is_word_char_at(data, s, end), expected_word);
+                    }
+                }
+            }
+        }
     }
 }
