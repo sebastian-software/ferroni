@@ -2770,14 +2770,18 @@ enum EncKind {
 }
 
 impl EncKind {
-    #[inline(always)]
+    #[inline]
     fn from_enc(enc: OnigEncoding) -> Self {
-        if std::ptr::addr_eq(
+        // Compare full fat pointers (data + vtable), not `addr_eq`: zero-sized
+        // static encodings (`Utf8Encoding`, `AsciiEncoding`, custom ZSTs) may
+        // share the same data address on Windows MSVC, while distinct concrete
+        // encodings have distinct vtables.
+        if std::ptr::eq(
             enc,
             &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
         ) {
             Self::Utf8
-        } else if std::ptr::addr_eq(
+        } else if std::ptr::eq(
             enc,
             &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
         ) {
@@ -2787,7 +2791,7 @@ impl EncKind {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn enclen(self, str_data: &[u8], s: usize) -> usize {
         if s >= str_data.len() {
             return 1;
@@ -2812,12 +2816,12 @@ impl EncKind {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn advance_char_to_end(self, str_data: &[u8], s: usize, end: usize) -> usize {
         s.saturating_add(self.enclen(str_data, s)).min(end)
     }
 
-    #[inline(always)]
+    #[inline]
     fn is_mbc_newline(self, str_data: &[u8], s: usize, end: usize) -> bool {
         match self {
             Self::Utf8 | Self::Ascii => s < str_data.len() && end > 0 && str_data[s] == b'\n',
@@ -2825,7 +2829,7 @@ impl EncKind {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn mbc_to_code(self, str_data: &[u8], s: usize, end: usize) -> OnigCodePoint {
         match self {
             Self::Utf8 => {
@@ -2836,7 +2840,7 @@ impl EncKind {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn prev_char_head(self, start: usize, s: usize, str_data: &[u8]) -> usize {
         if s <= start {
             return s;
@@ -2865,7 +2869,7 @@ impl EncKind {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn is_ascii_compatible(self) -> bool {
         match self {
             Self::Utf8 | Self::Ascii => true,
@@ -2873,7 +2877,7 @@ impl EncKind {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn is_singlebyte(self) -> bool {
         match self {
             Self::Ascii => true,
@@ -2882,7 +2886,7 @@ impl EncKind {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn is_word_char_at(self, str_data: &[u8], s: usize, end: usize) -> bool {
         if s >= end {
             return false;
@@ -3255,8 +3259,7 @@ fn string_cmp_ic(
     // table. Preserve C's byte limits and resume its fold loop at the first
     // non-ASCII pair; a failed comparison must not advance the caller's cursor.
     if ascii_case_insensitive_backrefs_enabled()
-        && (std::ptr::addr_eq(enc, &crate::encodings::ONIG_ENCODING_UTF8 as OnigEncoding)
-            || std::ptr::addr_eq(enc, &crate::encodings::ONIG_ENCODING_ASCII as OnigEncoding))
+        && matches!(EncKind::from_enc(enc), EncKind::Utf8 | EncKind::Ascii)
     {
         while p1 < end1 {
             let c1 = data[p1];
@@ -3656,7 +3659,7 @@ fn parse_cmp_op(s: &[u8]) -> i32 {
 /// check reads the continuation bytes instead of calling into the encoding.
 #[inline(always)]
 fn steps_back_to(enc: OnigEncoding, str_data: &[u8], start: usize, x: usize, next: usize) -> bool {
-    if std::ptr::addr_eq(enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8) {
+    if matches!(EncKind::from_enc(enc), EncKind::Utf8) {
         str_data[x + 1..next].iter().all(|&b| b & 0xC0 == 0x80)
             && (x == start || str_data[x] & 0xC0 != 0x80)
     } else {
@@ -4168,6 +4171,7 @@ fn greedy_anychar_lazy(
         });
         return Ok(limit);
     }
+    let utf8_or_ascii = matches!(enc_kind, EncKind::Utf8 | EncKind::Ascii);
     let mut at = start;
     let mut exact_heads = true;
     while at < limit {
@@ -4175,7 +4179,7 @@ fn greedy_anychar_lazy(
         if at + len > limit {
             break;
         }
-        if text[at] >= 0x80 {
+        if !utf8_or_ascii || text[at] >= 0x80 {
             exact_heads &= steps_back_to(enc, text, start, at, at + len);
         }
         at += len;
@@ -4192,6 +4196,79 @@ fn greedy_anychar_lazy(
         stack_cap,
     )?;
     Ok(at)
+}
+
+/// Out-of-line handler for `AnyCharStarPeekNext` and `AnyCharMlStarPeekNext`.
+/// Uses an O(1)-stack `AltLazy` range when `match_stack_limit == 0` for
+/// non-NUL ASCII peek bytes in ASCII-compatible encodings, and retains exact
+/// `stack_cap`-checked pushes otherwise.
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn greedy_anychar_peek_next(
+    stack: &mut Vec<StackEntry>,
+    pcode: usize,
+    enc_kind: EncKind,
+    str_data: &[u8],
+    start: usize,
+    limit: usize,
+    end: usize,
+    c: u8,
+    match_stack_limit: u32,
+    stack_cap: usize,
+) -> Result<usize, i32> {
+    if start >= limit {
+        return Ok(start);
+    }
+    let pcode = pcode as u32;
+    if c < 0x80 && enc_kind.is_ascii_compatible() {
+        if c != 0 && match_stack_limit == 0 && dot_star_ascii_cache_enabled() {
+            if let Some(last) = memchr::memrchr(c, &str_data[start..limit]) {
+                stack.push(StackEntry::AltLazy {
+                    pcode,
+                    pstr: start + last,
+                    pstr_start: start,
+                    ascii: true,
+                    peek_byte: c,
+                });
+            }
+            return Ok(limit);
+        }
+        let mut iter_pos = start;
+        while let Some(i) = memchr::memchr(c, &str_data[iter_pos..limit]) {
+            let pos = iter_pos + i;
+            if stack.len() >= stack_cap {
+                return Err(ONIGERR_MATCH_STACK_LIMIT_OVER);
+            }
+            stack.push(StackEntry::Alt {
+                pcode,
+                pstr: pos,
+                zid: -1,
+                is_super: false,
+            });
+            iter_pos = pos + 1;
+        }
+        return Ok(limit);
+    }
+    let mut s = start;
+    while s < limit {
+        let n = enc_kind.enclen(str_data, s);
+        if s + n > limit {
+            break;
+        }
+        if s < end && str_data[s] == c {
+            if stack.len() >= stack_cap {
+                return Err(ONIGERR_MATCH_STACK_LIMIT_OVER);
+            }
+            stack.push(StackEntry::Alt {
+                pcode,
+                pstr: s,
+                zid: -1,
+                is_super: false,
+            });
+        }
+        s += n;
+    }
+    Ok(s)
 }
 
 /// Cache ASCII compatibility for one dot-star run while retaining every
@@ -5752,75 +5829,27 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     } else {
                         s
                     };
-                    let mut overflow = false;
-                    if c < 0x80
-                        && c != 0
-                        && match_stack_limit == 0
-                        && dot_star_ascii_cache_enabled()
-                    {
-                        // O(1)-stack lazy range: find only the rightmost occurrence of `c`
-                        // and peel earlier matches on demand via memrchr in stack_pop.
-                        if s < nl_limit {
-                            if let Some(last) = memchr::memrchr(c, &str_data[s..nl_limit]) {
-                                stack.push(StackEntry::AltLazy {
-                                    pcode: (p + 1) as u32,
-                                    pstr: s + last,
-                                    pstr_start: s,
-                                    ascii: true,
-                                    peek_byte: c,
-                                });
-                            }
-                            s = nl_limit;
+                    match greedy_anychar_peek_next(
+                        &mut stack,
+                        p + 1,
+                        enc_kind,
+                        str_data,
+                        s,
+                        nl_limit,
+                        end,
+                        c,
+                        match_stack_limit,
+                        stack_cap,
+                    ) {
+                        Ok(next_s) => {
+                            s = next_s;
+                            p += 1;
                         }
-                    } else if c < 0x80 {
-                        // ASCII peek byte: use SIMD to find all occurrences directly.
-                        // In UTF-8, bytes < 0x80 can only be leading (single-byte) characters,
-                        // so every memchr hit is a valid character start.
-                        let mut iter_pos = s;
-                        let pcode = (p + 1) as u32;
-                        while let Some(i) = memchr::memchr(c, &str_data[iter_pos..nl_limit]) {
-                            let pos = iter_pos + i;
-                            if stack.len() >= stack_cap {
-                                overflow = true;
-                                break;
-                            }
-                            stack.push(StackEntry::Alt {
-                                pcode,
-                                pstr: pos,
-                                zid: -1,
-                                is_super: false,
-                            });
-                            iter_pos = pos + 1;
-                        }
-                        s = nl_limit;
-                    } else {
-                        // Non-ASCII peek: fall back to per-character loop
-                        let pcode = (p + 1) as u32;
-                        while s < nl_limit {
-                            let n = enc_kind.enclen(str_data, s);
-                            if s + n > nl_limit {
-                                break;
-                            }
-                            if s < end && str_data[s] == c {
-                                if stack.len() >= stack_cap {
-                                    overflow = true;
-                                    break;
-                                }
-                                stack.push(StackEntry::Alt {
-                                    pcode,
-                                    pstr: s,
-                                    zid: -1,
-                                    is_super: false,
-                                });
-                            }
-                            s += n;
+                        Err(err) => {
+                            best_len = err;
+                            break;
                         }
                     }
-                    if overflow {
-                        best_len = ONIGERR_MATCH_STACK_LIMIT_OVER;
-                        break;
-                    }
-                    p += 1;
                 } else {
                     goto_fail = true;
                 }
@@ -5829,75 +5858,27 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::AnyCharMlStarPeekNext => {
                 if let OperationPayload::AnyCharStarPeekNext { c } = op.payload {
                     // See AnyCharStar: an absent operator can lower right_range below s.
-                    let mut overflow = false;
-                    if s < right_range {
-                        if c < 0x80
-                            && c != 0
-                            && match_stack_limit == 0
-                            && dot_star_ascii_cache_enabled()
-                        {
-                            // O(1)-stack lazy range: find only the rightmost occurrence of `c`
-                            // and peel earlier matches on demand via memrchr in stack_pop.
-                            if let Some(last) = memchr::memrchr(c, &str_data[s..right_range]) {
-                                stack.push(StackEntry::AltLazy {
-                                    pcode: (p + 1) as u32,
-                                    pstr: s + last,
-                                    pstr_start: s,
-                                    ascii: true,
-                                    peek_byte: c,
-                                });
-                            }
-                            s = right_range;
-                        } else if c < 0x80 {
-                            // ASCII peek byte: use SIMD to find all occurrences directly.
-                            // No newline check needed in multiline mode.
-                            let mut iter_pos = s;
-                            let pcode = (p + 1) as u32;
-                            while let Some(i) = memchr::memchr(c, &str_data[iter_pos..right_range])
-                            {
-                                let pos = iter_pos + i;
-                                if stack.len() >= stack_cap {
-                                    overflow = true;
-                                    break;
-                                }
-                                stack.push(StackEntry::Alt {
-                                    pcode,
-                                    pstr: pos,
-                                    zid: -1,
-                                    is_super: false,
-                                });
-                                iter_pos = pos + 1;
-                            }
-                            s = right_range;
-                        } else {
-                            // Non-ASCII peek: fall back to per-character loop
-                            let pcode = (p + 1) as u32;
-                            while s < right_range {
-                                let n = enc_kind.enclen(str_data, s);
-                                if s + n > right_range {
-                                    break;
-                                }
-                                if s < end && str_data[s] == c {
-                                    if stack.len() >= stack_cap {
-                                        overflow = true;
-                                        break;
-                                    }
-                                    stack.push(StackEntry::Alt {
-                                        pcode,
-                                        pstr: s,
-                                        zid: -1,
-                                        is_super: false,
-                                    });
-                                }
-                                s += n;
-                            }
+                    match greedy_anychar_peek_next(
+                        &mut stack,
+                        p + 1,
+                        enc_kind,
+                        str_data,
+                        s,
+                        right_range,
+                        end,
+                        c,
+                        match_stack_limit,
+                        stack_cap,
+                    ) {
+                        Ok(next_s) => {
+                            s = next_s;
+                            p += 1;
+                        }
+                        Err(err) => {
+                            best_len = err;
+                            break;
                         }
                     }
-                    if overflow {
-                        best_len = ONIGERR_MATCH_STACK_LIMIT_OVER;
-                        break;
-                    }
-                    p += 1;
                 } else {
                     goto_fail = true;
                 }
@@ -17112,6 +17093,125 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn lazy_dot_star_does_not_backtrack_into_custom_non_ascii_multibyte_char() {
+        let _limits = shared_limits();
+
+        // Non-ASCII-compatible custom encoding where 0x01 starts a 2-byte char
+        // and `left_adjust_char_head` leaves `b` untouched (invalid trail).
+        struct CustomLead01;
+        impl Encoding for CustomLead01 {
+            fn mbc_enc_len(&self, p: &[u8]) -> usize {
+                if !p.is_empty() && p[0] == 0x01 { 2 } else { 1 }
+            }
+            fn name(&self) -> &str {
+                "CUSTOM-LEAD01"
+            }
+            fn max_enc_len(&self) -> usize {
+                2
+            }
+            fn min_enc_len(&self) -> usize {
+                1
+            }
+            fn is_mbc_newline(&self, p: &[u8], end: usize) -> bool {
+                onigenc_is_mbc_newline_0x0a(p, end)
+            }
+            fn mbc_to_code(&self, p: &[u8], end: usize) -> OnigCodePoint {
+                let len = self.mbc_enc_len(p).min(end).min(p.len());
+                if len == 2 {
+                    ((p[0] as u32) << 8) | (p[1] as u32)
+                } else {
+                    p[0] as u32
+                }
+            }
+            fn code_to_mbclen(&self, code: OnigCodePoint) -> i32 {
+                if code <= 0xFF { 1 } else { 2 }
+            }
+            fn code_to_mbc(&self, code: OnigCodePoint, buf: &mut [u8]) -> i32 {
+                if code <= 0xFF {
+                    buf[0] = code as u8;
+                    1
+                } else {
+                    buf[0] = (code >> 8) as u8;
+                    buf[1] = (code & 0xFF) as u8;
+                    2
+                }
+            }
+            fn mbc_case_fold(
+                &self,
+                flag: OnigCaseFoldType,
+                pp: &mut usize,
+                end: usize,
+                source: &[u8],
+                fold_buf: &mut [u8],
+            ) -> i32 {
+                onigenc_ascii_mbc_case_fold(flag, pp, end, source, fold_buf)
+            }
+            fn apply_all_case_fold(
+                &self,
+                flag: OnigCaseFoldType,
+                f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
+            ) -> i32 {
+                onigenc_ascii_apply_all_case_fold(flag, f)
+            }
+            fn get_case_fold_codes_by_str(
+                &self,
+                flag: OnigCaseFoldType,
+                p: &[u8],
+                end: usize,
+                items: &mut [OnigCaseFoldCodeItem],
+            ) -> i32 {
+                onigenc_ascii_get_case_fold_codes_by_str(flag, p, end, items)
+            }
+            fn property_name_to_ctype(&self, p: &[u8]) -> i32 {
+                onigenc_minimum_property_name_to_ctype(p)
+            }
+            fn is_code_ctype(&self, code: OnigCodePoint, ctype: u32) -> bool {
+                code < 128 && onigenc_is_ascii_code_ctype(code, ctype)
+            }
+            fn get_ctype_code_range(
+                &self,
+                ctype: u32,
+                sb_out: &mut OnigCodePoint,
+            ) -> Option<&'static [OnigCodePoint]> {
+                onigenc_not_support_get_ctype_code_range(ctype, sb_out)
+            }
+            fn left_adjust_char_head(&self, _start: usize, s: usize, _data: &[u8]) -> usize {
+                s
+            }
+            fn is_allowed_reverse_match(&self, _p: &[u8]) -> bool {
+                true
+            }
+            fn is_valid_mbc_string(&self, _s: &[u8]) -> bool {
+                true
+            }
+            fn flag(&self) -> u32 {
+                0
+            }
+        }
+        static CUSTOM_LEAD01: CustomLead01 = CustomLead01;
+
+        for pattern in [b"^(.*)[bc]".as_slice(), b"^.*b".as_slice()] {
+            let reg = regcomp::onig_new(
+                pattern,
+                ONIG_OPTION_NONE,
+                &CUSTOM_LEAD01,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            let input = b"\x01b";
+            let (default_res, _) = onig_match(&reg, input, input.len(), 0, None, ONIG_OPTION_NONE);
+            let mp = OnigMatchParam {
+                match_stack_limit: 400,
+                ..onig_new_match_param()
+            };
+            let (limited_res, _) =
+                onig_match_with_param(&reg, input, input.len(), 0, None, ONIG_OPTION_NONE, &mp);
+            assert_eq!(default_res, ONIG_MISMATCH, "pattern={pattern:?}");
+            assert_eq!(limited_res, ONIG_MISMATCH, "pattern={pattern:?}");
         }
     }
 }

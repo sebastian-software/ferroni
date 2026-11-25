@@ -149,9 +149,10 @@ pub(crate) fn onigenc_is_unicode_encoding(enc: OnigEncoding) -> bool {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub(crate) fn onigenc_is_ascii_compatible_encoding(enc: OnigEncoding) -> bool {
     // Rust-only (ADR-008): UTF-8, the usual encoding, is recognized by its
-    // address, which skips the virtual `flag` call of every ASCII byte step.
+    // fat pointer (data + vtable), skipping the virtual `flag` call without
+    // colliding with other zero-sized encoding statics.
     let utf8: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
-    std::ptr::addr_eq(enc, utf8) || (enc.flag() & ENC_FLAG_ASCII_COMPATIBLE) != 0
+    std::ptr::eq(enc, utf8) || (enc.flag() & ENC_FLAG_ASCII_COMPATIBLE) != 0
 }
 
 #[inline]
