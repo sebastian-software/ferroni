@@ -643,7 +643,7 @@ pub(super) fn write_reg(reg: &RegexType, out: &mut Vec<u8>) -> Result<()> {
     reg.anc_dist_max.write(out)?;
     reg.sub_anchor.write(out)?;
     reg.exact.write(out)?;
-    write_map(&reg.map, out)?;
+    write_map(reg.map_slice(), out)?;
     reg.map_offset.write(out)?;
     reg.map_bytes.write(out)?;
     reg.map_byte_count.write(out)?;
@@ -651,8 +651,8 @@ pub(super) fn write_reg(reg: &RegexType, out: &mut Vec<u8>) -> Result<()> {
     reg.dist_max.write(out)?;
     reg.needs_capture_tracking.write(out)?;
     reg.keep_moves_match_start.write(out)?;
-    write_map(&reg.first_byte_map, out)?;
-    reg.has_first_byte_map.write(out)?;
+    write_map(reg.first_byte_map.as_deref().unwrap_or(&ZERO_CHAR_MAP), out)?;
+    reg.first_byte_map.is_some().write(out)?;
     reg.start_dispatch.write(out)?;
     reg.called_addrs.write(out)?;
     reg.unset_call_addrs.write(out)?;
@@ -678,7 +678,6 @@ pub(super) fn read_reg(
         backtrack_warnings: Wire::read(input)?,
         backtrack_rewrites: Wire::read(input)?,
         ops: Wire::read(input)?,
-        string_pool: Vec::new(),
         num_mem: Wire::read(input)?,
         num_repeat: Wire::read(input)?,
         num_empty_check: Wire::read(input)?,
@@ -702,7 +701,10 @@ pub(super) fn read_reg(
         exact_finder: None,
         pure_literal: false,
         skip_repeated_empty_search: false,
-        map: read_map(input)?,
+        map: {
+            let map = read_map(input)?;
+            (map != ZERO_CHAR_MAP).then(|| Box::new(map))
+        },
         map_offset: Wire::read(input)?,
         map_bytes: Wire::read(input)?,
         map_byte_count: Wire::read(input)?,
@@ -711,8 +713,10 @@ pub(super) fn read_reg(
         dist_max: Wire::read(input)?,
         needs_capture_tracking: Wire::read(input)?,
         keep_moves_match_start: Wire::read(input)?,
-        first_byte_map: read_map(input)?,
-        has_first_byte_map: Wire::read(input)?,
+        first_byte_map: {
+            let map = read_map(input)?;
+            bool::read(input)?.then(|| Box::new(map))
+        },
         start_dispatch: Wire::read(input)?,
         called_addrs: Wire::read(input)?,
         unset_call_addrs: Wire::read(input)?,

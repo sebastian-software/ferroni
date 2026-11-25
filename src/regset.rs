@@ -86,6 +86,127 @@ enum SkipNeedle {
     Three(u8, u8, u8),
 }
 
+/// Compact CSR (compressed sparse row) dispatch table mapping each first byte
+/// `0..=255` to the sorted list of candidate entry indices.
+///
+/// Storing all 256 buckets in one contiguous `Box<[u16]>` with a 257-element
+/// offset array replaces 256 separate `Vec<u16>` heap allocations with a
+/// single allocation.
+struct FirstByteTable {
+    offsets: [u32; CHAR_MAP_SIZE + 1],
+    entries: Box<[u16]>,
+}
+
+impl FirstByteTable {
+    fn empty() -> Self {
+        Self {
+            offsets: [0; CHAR_MAP_SIZE + 1],
+            entries: Box::new([]),
+        }
+    }
+
+    /// Build a compact CSR table from per-entry 256-bit masks in two passes
+    /// with a single allocation for `entries`.
+    fn from_entry_masks(entry_masks: &[(u16, [u64; 4])]) -> Self {
+        let mut counts = [0u32; CHAR_MAP_SIZE];
+        for &(_, mask) in entry_masks {
+            for (word_idx, &word) in mask.iter().enumerate() {
+                let mut w = word;
+                let base = word_idx * 64;
+                while w != 0 {
+                    let bit = w.trailing_zeros() as usize;
+                    counts[base + bit] += 1;
+                    w &= w - 1;
+                }
+            }
+        }
+        let mut offsets = [0u32; CHAR_MAP_SIZE + 1];
+        let mut total = 0u32;
+        for b in 0..CHAR_MAP_SIZE {
+            offsets[b] = total;
+            total += counts[b];
+        }
+        offsets[CHAR_MAP_SIZE] = total;
+
+        if total == 0 {
+            return Self {
+                offsets,
+                entries: Box::new([]),
+            };
+        }
+
+        let mut flat = vec![0u16; total as usize].into_boxed_slice();
+        let mut cursors = [0u32; CHAR_MAP_SIZE];
+        cursors.copy_from_slice(&offsets[..CHAR_MAP_SIZE]);
+        for &(idx, mask) in entry_masks {
+            for (word_idx, &word) in mask.iter().enumerate() {
+                let mut w = word;
+                let base = word_idx * 64;
+                while w != 0 {
+                    let bit = w.trailing_zeros() as usize;
+                    let byte = base + bit;
+                    let pos = cursors[byte] as usize;
+                    flat[pos] = idx;
+                    cursors[byte] += 1;
+                    w &= w - 1;
+                }
+            }
+        }
+
+        Self {
+            offsets,
+            entries: flat,
+        }
+    }
+
+    #[inline]
+    fn get(&self, byte: usize) -> &[u16] {
+        let start = self.offsets[byte] as usize;
+        let end = self.offsets[byte + 1] as usize;
+        &self.entries[start..end]
+    }
+
+    #[inline]
+    fn is_empty_byte(&self, byte: usize) -> bool {
+        self.offsets[byte] == self.offsets[byte + 1]
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &[u16]> {
+        (0..CHAR_MAP_SIZE).map(|b| self.get(b))
+    }
+
+    /// Incrementally append one entry index to the buckets selected by `mask`.
+    fn append_entry(&mut self, mask: &[u64; 4], idx: u16) {
+        let added: u32 = mask.iter().map(|w| w.count_ones()).sum();
+        if added == 0 {
+            return;
+        }
+        let old_total = self.offsets[CHAR_MAP_SIZE];
+        let new_total = old_total + added;
+        let mut new_entries = Vec::with_capacity(new_total as usize);
+        let mut new_offsets = [0u32; CHAR_MAP_SIZE + 1];
+        for b in 0..CHAR_MAP_SIZE {
+            new_offsets[b] = new_entries.len() as u32;
+            new_entries.extend_from_slice(self.get(b));
+            if (mask[b / 64] >> (b % 64)) & 1 != 0 {
+                new_entries.push(idx);
+            }
+        }
+        new_offsets[CHAR_MAP_SIZE] = new_entries.len() as u32;
+        self.offsets = new_offsets;
+        self.entries = new_entries.into_boxed_slice();
+    }
+}
+
+impl std::ops::Index<usize> for FirstByteTable {
+    type Output = [u16];
+
+    #[inline]
+    fn index(&self, byte: usize) -> &[u16] {
+        self.get(byte)
+    }
+}
+
 /// A set of compiled regexes that can be searched simultaneously.
 pub struct OnigRegSet {
     entries: Vec<RegSetEntry>,
@@ -97,7 +218,7 @@ pub struct OnigRegSet {
     anychar_inf: bool,
     /// For each byte value 0..255, the list of entry indices whose first-byte
     /// pre-filter does not exclude that byte. Built at construction time.
-    first_byte_candidates: Box<[Vec<u16>; 256]>,
+    first_byte_candidates: FirstByteTable,
     /// Number of entries routed through `first_byte_candidates`. A pure
     /// fallback set has no table work at any position.
     table_entry_count: usize,
@@ -410,9 +531,11 @@ fn has_variable_optimizer(reg: &RegexType) -> bool {
 /// bytes the Rust-only maps give.
 fn table_start_map(reg: &RegexType) -> Option<[u8; CHAR_MAP_SIZE]> {
     let mut start_map = derive_start_byte_map(reg)?;
-    if reg.start_dispatch && reg.has_first_byte_map {
-        for (byte, dispatch) in start_map.iter_mut().zip(&reg.first_byte_map) {
-            *byte &= *dispatch;
+    if reg.start_dispatch {
+        if let Some(first_byte_map) = reg.first_byte_map.as_deref() {
+            for (byte, dispatch) in start_map.iter_mut().zip(first_byte_map) {
+                *byte &= *dispatch;
+            }
         }
     }
     Some(start_map)
@@ -473,7 +596,7 @@ fn refresh_look_behind_entries(set: &mut OnigRegSet) {
         } else if reg.dist_min == 0 && !reg.exact.is_empty() {
             false
         } else {
-            reg.has_first_byte_map
+            reg.first_byte_map.is_some()
         }
     };
     set.look_behind_entries = set
@@ -496,58 +619,51 @@ fn refresh_look_behind_entries(set: &mut OnigRegSet) {
         .unwrap_or(0);
 }
 
-fn add_entry_by_start_map(
-    table: &mut [Vec<u16>; CHAR_MAP_SIZE],
-    start_map: &[u8; CHAR_MAP_SIZE],
-    idx: u16,
-) {
-    for (byte, entries) in table.iter_mut().enumerate() {
-        if start_map[byte] != 0 {
-            entries.push(idx);
+#[inline]
+fn map_to_bitmask(map: &[u8; CHAR_MAP_SIZE]) -> [u64; 4] {
+    let mut mask = [0u64; 4];
+    for (b, &flag) in map.iter().enumerate() {
+        if flag != 0 {
+            mask[b / 64] |= 1u64 << (b % 64);
         }
     }
+    mask
 }
 
-/// Add a single non-variable entry to the appropriate first-byte slots.
-fn add_entry_to_first_byte_table(table: &mut [Vec<u16>; 256], reg: &RegexType, idx: u16) {
+/// Compute the 256-bit first-byte mask for a single non-variable entry.
+fn non_variable_entry_mask(reg: &RegexType) -> [u64; 4] {
     if reg.optimize == OptimizeType::Map && reg.dist_min == 0 {
         // Map-filterable: only bytes where map[b] != 0
-        for (b, slot) in table.iter_mut().enumerate() {
-            if reg.map[b] != 0 {
-                slot.push(idx);
-            }
-        }
+        map_to_bitmask(reg.map_slice())
     } else if reg.dist_min == 0 && !reg.exact.is_empty() {
         // Exact-filterable: only the first byte of the exact string
-        table[reg.exact[0] as usize].push(idx);
-    } else if reg.has_first_byte_map {
+        let b = reg.exact[0] as usize;
+        let mut mask = [0u64; 4];
+        mask[b / 64] |= 1u64 << (b % 64);
+        mask
+    } else if let Some(first_byte_map) = reg.first_byte_map.as_deref() {
         // Fallback: use the first-byte prefilter map.
-        for (b, slot) in table.iter_mut().enumerate() {
-            if reg.first_byte_map[b] != 0 {
-                slot.push(idx);
-            }
-        }
+        map_to_bitmask(first_byte_map)
     } else {
         // Always-candidate: appears in all 256 slots.
-        for slot in table.iter_mut() {
-            slot.push(idx);
-        }
+        [u64::MAX; 4]
     }
 }
 
 /// Derive the skip needle from a completed dispatch table.
-fn compute_skip_needle(table: &[Vec<u16>; 256]) -> SkipNeedle {
-    let mut bytes: Vec<u8> = Vec::new();
-    for (b, slot) in table.iter().enumerate() {
-        if !slot.is_empty() {
-            bytes.push(b as u8);
-            if bytes.len() > 3 {
+fn compute_skip_needle(table: &FirstByteTable) -> SkipNeedle {
+    let mut bytes = [0u8; 3];
+    let mut count = 0usize;
+    for b in 0..CHAR_MAP_SIZE {
+        if !table.is_empty_byte(b) {
+            if count == 3 {
                 return SkipNeedle::None;
             }
+            bytes[count] = b as u8;
+            count += 1;
         }
     }
-    match bytes.len() {
-        0 => SkipNeedle::None,
+    match count {
         1 => SkipNeedle::One(bytes[0]),
         2 => SkipNeedle::Two(bytes[0], bytes[1]),
         3 => SkipNeedle::Three(bytes[0], bytes[1], bytes[2]),
@@ -557,7 +673,7 @@ fn compute_skip_needle(table: &[Vec<u16>; 256]) -> SkipNeedle {
 
 /// Build the first-byte dispatch table from scratch for all entries.
 fn build_first_byte_table(set: &mut OnigRegSet) {
-    let mut table: Box<[Vec<u16>; 256]> = Box::new(std::array::from_fn(|_| Vec::new()));
+    let mut entry_masks: Vec<(u16, [u64; 4])> = Vec::with_capacity(set.entries.len());
     let mut fallback_search_candidates = Vec::new();
     let mut table_entries = Vec::new();
     for (i, entry) in set.entries.iter_mut().enumerate() {
@@ -571,7 +687,7 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
             // (`start_dispatch`), has a bounded table-dispatch cost.
             if table_routes_by_start_map(&entry.reg) {
                 if let Some(start_map) = table_start_map(&entry.reg) {
-                    add_entry_by_start_map(&mut table, &start_map, i as u16);
+                    entry_masks.push((i as u16, map_to_bitmask(&start_map)));
                     table_entries.push(i as u16);
                     entry.gated = true;
                     continue;
@@ -580,10 +696,11 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
             entry.fallback = true;
             fallback_search_candidates.push(FallbackCandidate::new(i, entry));
         } else {
-            add_entry_to_first_byte_table(&mut table, &entry.reg, i as u16);
+            entry_masks.push((i as u16, non_variable_entry_mask(&entry.reg)));
             table_entries.push(i as u16);
         }
     }
+    let table = FirstByteTable::from_entry_masks(&entry_masks);
     set.skip_needle = compute_skip_needle(&table);
     set.first_byte_candidates = table;
     set.table_entry_count = table_entries.len();
@@ -777,7 +894,7 @@ fn regset_alloc() -> Box<OnigRegSet> {
         anc_dmax: 0,
         all_low_high: false,
         anychar_inf: false,
-        first_byte_candidates: Box::new(std::array::from_fn(|_| Vec::new())),
+        first_byte_candidates: FirstByteTable::empty(),
         table_entry_count: 0,
         table_entries: Vec::new(),
         fallback_search_candidates: Vec::new(),
@@ -907,7 +1024,8 @@ fn onig_regset_add_shared_impl(
                 .then(|| table_start_map(&set.entries[new_idx as usize].reg))
                 .flatten();
             if let Some(start_map) = start_map {
-                add_entry_by_start_map(&mut set.first_byte_candidates, &start_map, new_idx);
+                let mask = map_to_bitmask(&start_map);
+                set.first_byte_candidates.append_entry(&mask, new_idx);
                 set.table_entry_count += 1;
                 set.table_entries.push(new_idx);
                 set.entries[new_idx as usize].gated = true;
@@ -923,11 +1041,8 @@ fn onig_regset_add_shared_impl(
                 set.fallback_search_candidates.push(candidate);
             }
         } else {
-            add_entry_to_first_byte_table(
-                &mut set.first_byte_candidates,
-                &set.entries[new_idx as usize].reg,
-                new_idx,
-            );
+            let mask = non_variable_entry_mask(&set.entries[new_idx as usize].reg);
+            set.first_byte_candidates.append_entry(&mask, new_idx);
             set.table_entry_count += 1;
             set.table_entries.push(new_idx);
             set.skip_needle = compute_skip_needle(&set.first_byte_candidates);
@@ -4494,7 +4609,7 @@ mod tests {
         assert_eq!(status, ONIG_NORMAL);
         let mut set = set.unwrap();
         assert_eq!(set.entries.len(), MAX_REGSET_ENTRIES);
-        assert_eq!(set.first_byte_candidates[b'b' as usize], vec![u16::MAX]);
+        assert_eq!(&set.first_byte_candidates[b'b' as usize], &[u16::MAX]);
 
         let input = b"b";
         assert_eq!(
@@ -4511,7 +4626,7 @@ mod tests {
         );
 
         let entries_before = set.entries.len();
-        let candidates_before = set.first_byte_candidates[b'b' as usize].clone();
+        let candidates_before = set.first_byte_candidates[b'b' as usize].to_vec();
         assert_eq!(
             onig_regset_add_shared(&mut set, first.clone()),
             ONIGERR_INVALID_ARGUMENT
@@ -4521,7 +4636,10 @@ mod tests {
             ONIGERR_INVALID_ARGUMENT
         );
         assert_eq!(set.entries.len(), entries_before);
-        assert_eq!(set.first_byte_candidates[b'b' as usize], candidates_before);
+        assert_eq!(
+            &set.first_byte_candidates[b'b' as usize],
+            candidates_before.as_slice()
+        );
         assert_eq!(
             onig_regset_search(
                 &mut set,
@@ -7805,5 +7923,38 @@ mod tests {
                 assert_ne!(position, found_region.beg[0], "{where_}");
             }
         }
+    }
+
+    #[test]
+    fn first_byte_table_csr_build_and_append_match() {
+        let mut mask_a = [0u64; 4];
+        mask_a[b'a' as usize / 64] |= 1 << (b'a' as usize % 64);
+        mask_a[b'c' as usize / 64] |= 1 << (b'c' as usize % 64);
+
+        let mut mask_b = [0u64; 4];
+        mask_b[b'b' as usize / 64] |= 1 << (b'b' as usize % 64);
+        mask_b[b'c' as usize / 64] |= 1 << (b'c' as usize % 64);
+
+        let mask_all = [u64::MAX; 4];
+
+        let built = FirstByteTable::from_entry_masks(&[(0, mask_a), (1, mask_b), (2, mask_all)]);
+        let mut appended = FirstByteTable::empty();
+        appended.append_entry(&mask_a, 0);
+        appended.append_entry(&mask_b, 1);
+        appended.append_entry(&mask_all, 2);
+
+        assert_eq!(built.offsets, appended.offsets);
+        assert_eq!(built.entries, appended.entries);
+        assert_eq!(&built[b'a' as usize], &[0, 2]);
+        assert_eq!(&built[b'b' as usize], &[1, 2]);
+        assert_eq!(&built[b'c' as usize], &[0, 1, 2]);
+        assert_eq!(&built[b'z' as usize], &[2]);
+
+        let sparse = FirstByteTable::from_entry_masks(&[(0, mask_a)]);
+        assert!(matches!(
+            compute_skip_needle(&sparse),
+            SkipNeedle::Two(b'a', b'c')
+        ));
+        assert!(matches!(compute_skip_needle(&built), SkipNeedle::None));
     }
 }

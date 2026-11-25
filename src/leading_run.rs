@@ -1688,7 +1688,7 @@ mod tests {
             );
             reg.search_start_map = None;
             reg.search_jump = None;
-            reg.has_first_byte_map = false;
+            reg.first_byte_map = None;
             let reference = reference(pattern, UTF8);
             for text in [
                 &b"9abc :x"[..],

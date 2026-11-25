@@ -10938,15 +10938,17 @@ fn set_optimize_exact(reg: &mut RegexType, e: &OptStr) -> i32 {
 
     if e.len >= 2 || (e.len >= 1 && allow_reverse) {
         let exact_copy = reg.exact.clone();
+        let mut map = Box::new([0u8; CHAR_MAP_SIZE]);
         let r = set_sunday_quick_search_or_bmh_skip_table(
             reg.enc,
             &exact_copy,
-            &mut reg.map,
+            &mut map,
             &mut reg.map_offset,
         );
         if r != 0 {
             return r;
         }
+        reg.map = Some(map);
         reg.optimize = if allow_reverse {
             OptimizeType::StrFast
         } else {
@@ -10969,7 +10971,7 @@ fn set_optimize_exact(reg: &mut RegexType, e: &OptStr) -> i32 {
 }
 
 fn set_optimize_map(reg: &mut RegexType, m: &OptMap) {
-    reg.map = m.map;
+    reg.map = Some(Box::new(m.map));
     reg.optimize = OptimizeType::Map;
     reg.dist_min = m.mm.min;
     reg.dist_max = m.mm.max;
@@ -11157,14 +11159,12 @@ fn set_optimize_info_from_tree(root: &Node, reg: &mut RegexType, scan_env: &Pars
     // choice potentially overwrites reg.map with BMH skip table data.
     // Only a map at distance 0 holds every byte a match can start with.
     if opt.map.value > 0 && opt.map.mm.max == 0 {
-        reg.first_byte_map = opt.map.map;
-        reg.has_first_byte_map = true;
+        reg.first_byte_map = Some(Box::new(opt.map.map));
     }
     // A `start_dispatch` entry is dispatched by these bytes, and so is an
     // entry whose extra start map was too weak to search.
     if let Some(start_bytes) = start_bytes {
-        reg.first_byte_map = start_bytes;
-        reg.has_first_byte_map = true;
+        reg.first_byte_map = Some(Box::new(start_bytes));
     }
 
     if opt.sb.len > 0 || opt.sm.len > 0 {
@@ -11541,7 +11541,7 @@ fn compile_parsed(
             .ascii_case_insensitive(trie.is_case_insensitive())
             .build(trie.literals());
         if let Ok(ac) = ac {
-            reg.ac_alt = Some(ac);
+            reg.ac_alt = Some(Box::new(ac));
             reg.ac_alt_has_capture = has_capture;
         }
     }
@@ -12040,14 +12040,14 @@ fn detect_skip_repeated_empty_search(reg: &RegexType) -> bool {
 pub(crate) fn rebuild_precompiled_search(reg: &mut RegexType) {
     reg.exact_finder = (reg.optimize == OptimizeType::StrFast && reg.exact.len() > 1)
         .then(|| Box::new(memchr::memmem::Finder::new(&reg.exact).into_owned()));
-    reg.map_ascii_ranges = MapAsciiRanges::of(&reg.map);
+    reg.map_ascii_ranges = MapAsciiRanges::of(reg.map_slice());
     if let Some((trie_idx, has_capture)) = detect_ac_eligible(reg) {
         let trie = &reg.literal_tries[trie_idx];
         if let Ok(ac) = aho_corasick::AhoCorasick::builder()
             .match_kind(aho_corasick::MatchKind::LeftmostFirst)
             .build(trie.literals())
         {
-            reg.ac_alt = Some(ac);
+            reg.ac_alt = Some(Box::new(ac));
             reg.ac_alt_has_capture = has_capture;
         }
     }
@@ -12160,7 +12160,6 @@ fn onig_new_with_choices(
         backtrack_warnings: Vec::new(),
         backtrack_rewrites: Vec::new(),
         ops: Vec::new(),
-        string_pool: Vec::new(),
         num_mem: 0,
         num_repeat: 0,
         num_empty_check: 0,
@@ -12185,7 +12184,7 @@ fn onig_new_with_choices(
         exact_finder: None,
         pure_literal: false,
         skip_repeated_empty_search: false,
-        map: [0u8; CHAR_MAP_SIZE],
+        map: None,
         map_offset: 0,
         map_bytes: [0u8; 3],
         map_byte_count: 0,
@@ -12194,8 +12193,7 @@ fn onig_new_with_choices(
         dist_max: 0,
         needs_capture_tracking: false,
         keep_moves_match_start: false,
-        first_byte_map: [0u8; CHAR_MAP_SIZE],
-        has_first_byte_map: false,
+        first_byte_map: None,
         start_dispatch: false,
         called_addrs: vec![],
         unset_call_addrs: vec![],
@@ -12284,7 +12282,7 @@ mod tests {
             )
             .unwrap();
             let map: Vec<u8> = (0..=255u8)
-                .filter(|&b| reg.optimize == OptimizeType::Map && reg.map[b as usize] != 0)
+                .filter(|&b| reg.optimize == OptimizeType::Map && reg.map_slice()[b as usize] != 0)
                 .collect();
             (reg.optimize, reg.dist_min, reg.dist_max, map)
         };
@@ -12379,9 +12377,12 @@ mod tests {
         ] {
             let reg = compile(pattern);
             assert_eq!(reg.optimize, OptimizeType::None, "{pattern:?}");
-            assert!(reg.has_first_byte_map, "{pattern:?}");
+            let first_byte_map = reg
+                .first_byte_map
+                .as_deref()
+                .unwrap_or_else(|| panic!("{pattern:?}: expected first_byte_map"));
             let excluded: Vec<u8> = (0..=255u8)
-                .filter(|&b| reg.first_byte_map[b as usize] == 0)
+                .filter(|&b| first_byte_map[b as usize] == 0)
                 .collect();
             assert_eq!(excluded, left_out, "{pattern:?}");
         }
@@ -12693,7 +12694,6 @@ mod tests {
             backtrack_warnings: Vec::new(),
             backtrack_rewrites: Vec::new(),
             ops: Vec::new(),
-            string_pool: Vec::new(),
             num_mem: 0,
             num_repeat: 0,
             num_empty_check: 0,
@@ -12718,7 +12718,7 @@ mod tests {
             exact_finder: None,
             pure_literal: false,
             skip_repeated_empty_search: false,
-            map: [0u8; CHAR_MAP_SIZE],
+            map: None,
             map_offset: 0,
             map_bytes: [0u8; 3],
             map_byte_count: 0,
@@ -12727,8 +12727,7 @@ mod tests {
             dist_max: 0,
             needs_capture_tracking: false,
             keep_moves_match_start: false,
-            first_byte_map: [0u8; CHAR_MAP_SIZE],
-            has_first_byte_map: false,
+            first_byte_map: None,
             start_dispatch: false,
             called_addrs: vec![],
             unset_call_addrs: vec![],
@@ -14578,7 +14577,9 @@ mod tests {
         // U+FF03 is reached from EF and, as the overlong `F0 8F BC 83`, from F0.
         let narrowed = compile("(?<=a)[\u{ff03}]", true);
         assert_eq!(narrowed.optimize, OptimizeType::Map);
-        let leads: Vec<usize> = (0x80..0x100).filter(|&b| narrowed.map[b] != 0).collect();
+        let leads: Vec<usize> = (0x80..0x100)
+            .filter(|&b| narrowed.map_slice()[b] != 0)
+            .collect();
         assert_eq!(leads, [0xEF, 0xF0]);
 
         let patterns = [
