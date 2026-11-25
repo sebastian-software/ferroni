@@ -1341,8 +1341,51 @@ fn egcb_is_break_position_general(
 // Port of onigenc_wb_is_break_position from unicode.c:675
 // ============================================================================
 
-/// Binary search WB_RANGES for the WB type of a codepoint.
+/// Const ASCII lookup table for Word Break (`\y`) properties.
+const WB_ASCII_TABLE: [WbType; 128] = {
+    let mut table = [WbType::Any; 128];
+    table[0x0A] = WbType::LF;
+    table[0x0B] = WbType::Newline;
+    table[0x0C] = WbType::Newline;
+    table[0x0D] = WbType::CR;
+    table[0x20] = WbType::WSegSpace;
+    table[0x22] = WbType::DoubleQuote;
+    table[0x27] = WbType::SingleQuote;
+    table[0x2C] = WbType::MidNum;
+    table[0x2E] = WbType::MidNumLet;
+    let mut c = 0x30;
+    while c <= 0x39 {
+        table[c] = WbType::Numeric;
+        c += 1;
+    }
+    table[0x3A] = WbType::MidLetter;
+    table[0x3B] = WbType::MidNum;
+    let mut c = 0x41;
+    while c <= 0x5A {
+        table[c] = WbType::ALetter;
+        c += 1;
+    }
+    table[0x5F] = WbType::ExtendNumLet;
+    let mut c = 0x61;
+    while c <= 0x7A {
+        table[c] = WbType::ALetter;
+        c += 1;
+    }
+    table
+};
+
+/// Look up the WB type of a codepoint, using a constant LUT for ASCII
+/// and binary search over `WB_RANGES` for non-ASCII.
+#[inline]
 fn wb_get_type(code: u32) -> WbType {
+    if code < 128 {
+        return WB_ASCII_TABLE[code as usize];
+    }
+    wb_get_type_search(code)
+}
+
+/// Binary search WB_RANGES for the WB type of a codepoint.
+fn wb_get_type_search(code: u32) -> WbType {
     let mut low: usize = 0;
     let mut high: usize = WB_RANGES.len();
     while low < high {
@@ -1954,5 +1997,16 @@ mod egcb_table_tests {
         assert!(onigenc_unicode_is_code_ctype(0xE020, ctype));
         assert!(onigenc_unicode_is_code_ctype(0xE025, ctype));
         assert!(!onigenc_unicode_is_code_ctype(0xE026, ctype));
+    }
+
+    #[test]
+    fn wb_ascii_table_matches_binary_search() {
+        for code in 0..128u32 {
+            assert_eq!(
+                wb_get_type(code),
+                wb_get_type_search(code),
+                "ASCII WB mismatch at {code:#x}"
+            );
+        }
     }
 }

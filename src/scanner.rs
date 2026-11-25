@@ -751,24 +751,30 @@ impl OnigString {
             "OnigString: non-ASCII text longer than u32::MAX bytes is not supported"
         );
         let utf8_len = content.len();
-        let utf16_len: usize = content.chars().map(|c| c.len_utf16()).sum();
+        let bytes = content.as_bytes();
+        let ascii_prefix = bytes.iter().position(|&b| b >= 0x80).unwrap_or(utf8_len);
 
-        let mut utf16_to_utf8: Vec<u32> = Vec::with_capacity(utf16_len + 1);
+        // UTF-16 length is always at most UTF-8 byte length, so pre-sizing to
+        // `utf8_len + 1` avoids a separate UTF-8 decode pass to count code units.
+        let mut utf16_to_utf8: Vec<u32> = Vec::with_capacity(utf8_len + 1);
         let mut utf8_to_utf16 = vec![0u32; utf8_len + 1];
 
-        let mut utf8_pos = 0;
-        for ch in content.chars() {
+        for (i, slot) in utf8_to_utf16[..ascii_prefix].iter_mut().enumerate() {
+            let pos = i as u32;
+            utf16_to_utf8.push(pos);
+            *slot = pos;
+        }
+
+        let mut utf8_pos = ascii_prefix;
+        for ch in content[ascii_prefix..].chars() {
             let u8_len = ch.len_utf8();
             let u16_len = ch.len_utf16();
 
+            let utf16_pos = utf16_to_utf8.len() as u32;
             // First UTF-16 code unit maps to the start of the UTF-8 sequence
             utf16_to_utf8.push(utf8_pos as u32);
-
-            let utf16_pos = (utf16_to_utf8.len() - 1) as u32;
             // All UTF-8 bytes of this char map to the same UTF-16 position
-            for b in 0..u8_len {
-                utf8_to_utf16[utf8_pos + b] = utf16_pos;
-            }
+            utf8_to_utf16[utf8_pos..utf8_pos + u8_len].fill(utf16_pos);
 
             if u16_len == 2 {
                 // Surrogate pair: low surrogate maps to byte AFTER this char
@@ -778,9 +784,13 @@ impl OnigString {
             utf8_pos += u8_len;
         }
 
+        let utf16_len = utf16_to_utf8.len();
         // Sentinels for end-of-string positions
         utf16_to_utf8.push(utf8_pos as u32);
         utf8_to_utf16[utf8_pos] = utf16_len as u32;
+        if utf16_to_utf8.capacity() > utf16_to_utf8.len().saturating_mul(2) {
+            utf16_to_utf8.shrink_to_fit();
+        }
 
         OnigString {
             cache_id,
@@ -1025,7 +1035,8 @@ const SCANNER_STATS_ENABLED: bool = cfg!(any(test, debug_assertions));
 /// assert_eq!(m.captures()[0].end, 5);
 /// ```
 pub struct Scanner {
-    caches: Vec<CacheEntry>,
+    /// Lazily initialized only when per-regex cached search runs.
+    caches: Option<Vec<CacheEntry>>,
     regset: Box<OnigRegSet>,
     stats: ScannerStats,
     cache_route: CacheRouteState,
@@ -1056,7 +1067,10 @@ const _: () = {
 impl fmt::Debug for Scanner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Scanner")
-            .field("patterns", &self.caches.len())
+            .field(
+                "patterns",
+                &(onig_regset_number_of_regex(&self.regset) as usize),
+            )
             .field("options", &self.settings.options)
             .field("syntax", &self.settings.syntax)
             .field(
@@ -1218,7 +1232,6 @@ impl Scanner {
         let _phase = crate::scanner::load_profile::scope(
             crate::scanner::load_profile::Phase::ScannerAssembly,
         );
-        let mut caches = Vec::with_capacity(patterns.len());
         let mut regset_regs = Vec::with_capacity(patterns.len());
         let mut seeks = Vec::with_capacity(patterns.len());
 
@@ -1235,7 +1248,6 @@ impl Scanner {
             }
             rewrites.push(reg.backtrack_rewrites.clone());
             warnings.push(reg.backtrack_warnings.clone());
-            caches.push(CacheEntry::new(&reg));
             regset_regs.push(reg);
             seeks.push(seek);
         }
@@ -1261,7 +1273,7 @@ impl Scanner {
         );
 
         Ok(Scanner {
-            caches,
+            caches: None,
             regset,
             stats: ScannerStats::default(),
             cache_route: CacheRouteState::default(),
@@ -1749,8 +1761,15 @@ impl Scanner {
         let mid_line = start > 0 && str_data[start - 1] != b'\n';
 
         let regset = &mut self.regset;
-        let caches = &mut self.caches;
         let n = onig_regset_number_of_regex(regset) as usize;
+        let caches = self.caches.get_or_insert_with(|| {
+            (0..n)
+                .map(|i| {
+                    let reg = onig_regset_get_regex(regset, i).expect("regset entry exists");
+                    CacheEntry::new(reg)
+                })
+                .collect()
+        });
 
         for (i, cache) in caches.iter_mut().enumerate().take(n) {
             // Regexes run in index order: a later one cannot beat an event at
@@ -1817,7 +1836,7 @@ impl Scanner {
         }
 
         let out = match best {
-            Some((_, index, true)) => self.caches[index]
+            Some((_, index, true)) => caches[index]
                 .last_region
                 .as_ref()
                 .map(|region| build_scanner_match(index, region)),
@@ -4427,11 +4446,51 @@ mod tests {
     }
 
     #[test]
-    fn cache_entry_detects_g_anchor_from_bytecode() {
-        let scanner = Scanner::new(&[r"\Gfoo", r"\\Gfoo", r"[\G]", r"(?<=a|ab)c"]).unwrap();
-        assert!(scanner.caches[0].has_g_anchor);
-        assert!(!scanner.caches[1].has_g_anchor);
-        assert!(!scanner.caches[2].has_g_anchor);
-        assert!(!scanner.caches[3].has_g_anchor);
+    fn cache_entry_detects_g_anchor_from_bytecode_and_allocates_lazily() {
+        let mut scanner = Scanner::new(&[r"\Gfoo", r"\\Gfoo", r"[\G]", r"(?<=a|ab)c"]).unwrap();
+        // Per-regex caches are not allocated until `search_per_regex` runs.
+        assert!(scanner.caches.is_none());
+        let _ = scanner.find_next_match("abc", 0, ScannerFindOptions::NONE);
+        assert!(scanner.caches.is_none());
+
+        let _ = scanner.search_per_regex(b"abc", 3, 0, 1, 0, ONIG_OPTION_NONE, false, 0);
+        let caches = scanner
+            .caches
+            .as_ref()
+            .expect("caches initialized on per-regex search");
+        assert!(caches[0].has_g_anchor);
+        assert!(!caches[1].has_g_anchor);
+        assert!(!caches[2].has_g_anchor);
+        assert!(!caches[3].has_g_anchor);
+    }
+
+    #[test]
+    fn onig_string_single_pass_builds_exact_utf16_tables() {
+        for sample in [
+            "prefix_é_😀_suffix",
+            "日本語のテキスト",
+            "😀😁😂",
+            "a\u{00E9}b\u{20AC}c\u{1F600}d",
+        ] {
+            let s = OnigString::new(sample);
+            let expected_u16_len: usize = sample.chars().map(char::len_utf16).sum();
+            assert_eq!(s.utf16_len(), expected_u16_len);
+
+            let mut u8_pos = 0usize;
+            let mut u16_pos = 0usize;
+            for ch in sample.chars() {
+                assert_eq!(s.utf16_offset_to_utf8(u16_pos), u8_pos);
+                for b in 0..ch.len_utf8() {
+                    assert_eq!(s.utf8_offset_to_utf16(u8_pos + b), u16_pos);
+                }
+                if ch.len_utf16() == 2 {
+                    assert_eq!(s.utf16_offset_to_utf8(u16_pos + 1), u8_pos + ch.len_utf8());
+                }
+                u8_pos += ch.len_utf8();
+                u16_pos += ch.len_utf16();
+            }
+            assert_eq!(s.utf16_offset_to_utf8(expected_u16_len), sample.len());
+            assert_eq!(s.utf8_offset_to_utf16(sample.len()), expected_u16_len);
+        }
     }
 }

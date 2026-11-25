@@ -543,7 +543,7 @@ impl Regex {
     }
 
     /// The compiled program, shared by every clone of this regex.
-    fn program(&self) -> &RegexType {
+    pub(crate) fn program(&self) -> &RegexType {
         &self.inner.program
     }
 
@@ -1072,8 +1072,22 @@ impl Regex {
         if let Some(answer) = self.seek_answer(text, start, utf8, true) {
             return answer;
         }
+        let reg = self.program();
+        // Rust-only (ADR-008): a pure literal pattern skips the search state.
+        // It runs no attempt that could fail, so no limit can be reached.
+        if let Some(found) = pure_literal_first(
+            reg,
+            text,
+            text.len(),
+            start,
+            text.len(),
+            text.len(),
+            reg.options,
+        ) {
+            return found.is_some();
+        }
         let (result, _) = onig_search(
-            self.program(),
+            reg,
             text,
             text.len(),
             start,
@@ -1158,8 +1172,14 @@ impl Regex {
         options: SearchOptions,
     ) -> Result<bool, RegexError> {
         let len = text.len();
+        let reg = self.program();
+        // Rust-only (ADR-008): a pure literal pattern skips the search state
+        // and cannot hit any search limit.
+        if let Some(found) = pure_literal_first(reg, text, len, start, len, len, reg.options) {
+            return Ok(found.is_some());
+        }
         let (result, _) = search_in_range(
-            self.program(),
+            reg,
             text,
             len,
             start,

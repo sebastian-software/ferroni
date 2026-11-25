@@ -4803,8 +4803,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
     // Subexpression call limits (C: `subexp_call_nest_counter`,
     // `SubexpCallMaxNestLevel` and `SubexpCallLimitInSearch`). Like C, the
     // int nest level is compared as an unsigned long, so a negative level
-    // never trips. Like C, OP_CALL reads both limits where it checks them.
+    // never trips. Loaded lazily on the first `OpCode::Call`.
     let mut subexp_call_nest_counter: u64 = 0;
+    let mut subexp_call_limits: Option<(u64, u64)> = None;
 
     // Callout data: per-callout mutable slots (indexed by callout num - 1).
     // This is still attempt-local; C keeps these slots in MatchParam across
@@ -5104,7 +5105,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if right_range.saturating_sub(s) < 2 {
                     goto_fail = true;
                 } else if let OperationPayload::Exact { s: ref exact } = op.payload {
-                    if exact[0] != str_data[s] || exact[1] != str_data[s + 1] {
+                    if str_data[s..s + 2] != exact[..2] {
                         goto_fail = true;
                     } else {
                         s += 2;
@@ -5119,10 +5120,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if right_range.saturating_sub(s) < 3 {
                     goto_fail = true;
                 } else if let OperationPayload::Exact { s: ref exact } = op.payload {
-                    if exact[0] != str_data[s]
-                        || exact[1] != str_data[s + 1]
-                        || exact[2] != str_data[s + 2]
-                    {
+                    if str_data[s..s + 3] != exact[..3] {
                         goto_fail = true;
                     } else {
                         s += 3;
@@ -5137,11 +5135,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if right_range.saturating_sub(s) < 4 {
                     goto_fail = true;
                 } else if let OperationPayload::Exact { s: ref exact } = op.payload {
-                    if exact[0] != str_data[s]
-                        || exact[1] != str_data[s + 1]
-                        || exact[2] != str_data[s + 2]
-                        || exact[3] != str_data[s + 3]
-                    {
+                    if str_data[s..s + 4] != exact[..4] {
                         goto_fail = true;
                     } else {
                         s += 4;
@@ -5156,12 +5150,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if right_range.saturating_sub(s) < 5 {
                     goto_fail = true;
                 } else if let OperationPayload::Exact { s: ref exact } = op.payload {
-                    if exact[0] != str_data[s]
-                        || exact[1] != str_data[s + 1]
-                        || exact[2] != str_data[s + 2]
-                        || exact[3] != str_data[s + 3]
-                        || exact[4] != str_data[s + 4]
-                    {
+                    if str_data[s..s + 5] != exact[..5] {
                         goto_fail = true;
                     } else {
                         s += 5;
@@ -7607,13 +7596,17 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // ================================================================
             OpCode::Call => {
                 if let OperationPayload::Call { addr } = op.payload {
-                    if subexp_call_nest_counter
-                        == onig_get_subexp_call_max_nest_level() as i64 as u64
-                    {
+                    let (subexp_call_max_nest_level, subexp_call_limit_in_search) =
+                        *subexp_call_limits.get_or_insert_with(|| {
+                            (
+                                onig_get_subexp_call_max_nest_level() as i64 as u64,
+                                onig_get_subexp_call_limit_in_search(),
+                            )
+                        });
+                    if subexp_call_nest_counter == subexp_call_max_nest_level {
                         goto_fail = true;
                     } else {
                         subexp_call_nest_counter += 1;
-                        let subexp_call_limit_in_search = onig_get_subexp_call_limit_in_search();
                         if subexp_call_limit_in_search != 0 {
                             msa.subexp_call_in_search_counter += 1;
                             if msa.subexp_call_in_search_counter > subexp_call_limit_in_search {
