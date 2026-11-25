@@ -1459,7 +1459,7 @@ mod tests {
         // `root_pool` grows close to the cache limit.
         for i in 0..20u32 {
             machine.roots.clear();
-            machine.roots.extend(i..i + 8000);
+            machine.roots.extend(i..i + 8192);
             machine.matches.clear();
             let _ = machine.intern_scratch(0).unwrap();
         }

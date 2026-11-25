@@ -1,6 +1,7 @@
 import { useState } from "ardo/react";
 import { MonoCaption, MonoFacing, MonoSheet, MonoWide } from "ferramenta-family/monografie";
 
+import { version } from "../data/site.json";
 import { dateText, dateTokens, type PatternToken, specimens } from "./home-specimen-data";
 import "./capture-specimen.css";
 
@@ -98,8 +99,8 @@ export function CaptureSpecimen() {
         <Found active={active} />
       </MonoFacing>
       <MonoCaption>
-        Real output of ferroni {specimens.ferroni}. Point at a group in the pattern to see what it
-        found. The lookbehind requires the label without including it in the match.
+        Real output of ferroni {version}. Point at a group in the pattern to see what it found. The
+        lookbehind requires the label without including it in the match.
       </MonoCaption>
     </MonoWide>
   );

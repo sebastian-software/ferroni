@@ -109,7 +109,6 @@ fn main() -> Result<(), RegexError> {
     let ascii = scan(&mut scanner, ASCII_LINE);
     let wide = scan(&mut scanner, WIDE_LINE);
     let specimens = json!({
-        "ferroni": env!("CARGO_PKG_VERSION"),
         "features": features()?,
         "date": date()?,
         "scanner": { "patterns": SCANNER_PATTERNS, "ascii": ascii, "wide": wide },
