@@ -8,8 +8,8 @@ import {
   MonoWide,
 } from "ferramenta-family/monografie";
 
+import { version } from "../data/site.json";
 import { GuardrailCards } from "./guardrail-cards";
-import { specimens } from "./home-specimen-data";
 import { PortMap } from "./port-map";
 
 /** Upstream test files and the cases Ferroni passes, from the compatibility guide's parity table. */
@@ -130,8 +130,8 @@ export function Guardrails() {
       </MonoPassage>
       <GuardrailCards />
       <MonoCredit>
-        Real output of ferroni {specimens.ferroni}. In browser WebAssembly there is no clock: use a
-        retry limit there. <a href="/guide/untrusted-input">Untrusted input</a>
+        Real output of ferroni {version}. In browser WebAssembly there is no clock: use a retry
+        limit there. <a href="/guide/untrusted-input">Untrusted input</a>
       </MonoCredit>
     </MonoSection>
   );

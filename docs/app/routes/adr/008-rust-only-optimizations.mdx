@@ -54,7 +54,7 @@ Detects alternations consisting entirely of literal strings and replaces them at
 Pre-computes a 256-entry lookup table mapping each possible input byte to the subset of regexes that could match starting with that byte. Combined with a SIMD skip needle (via `memchr`) to advance past positions where no regex can match.
 
 - **Trigger**: Always active for RegSet (Scanner) workloads
-- **Data structure**: `first_byte_candidates: Box<[Vec<u16>; 256]>`, `SkipNeedle` (1-3 byte memchr)
+- **Data structure**: `FirstByteTable` (compact CSR `offsets: Box<[u32; 257]>` + flat `entries: Box<[u16]>` for bulk construction, promoted once to `Box<[Vec<u16>; 256]>` on incremental `onig_regset_add`), `SkipNeedle` (1-3 byte memchr)
 - **Impact**: 44% reduction in RegSet position-lead search overhead
 - **Extends**: ADR-007 (SIMD via memchr)
 - **C's optimizer still decides**: the table only narrows the positions an entry is attempted at. An entry whose optimizer has a distance is dispatched by its bytecode start bytes but attempted only where C's optimizer admits the position (`sr[i]`); the check runs after an attempt with a match or an error, or before every attempt where callouts or a search retry budget can observe it. The extra class and type byte maps (`optimize_nodes` with `start_maps`) serve only where C has no optimizer and they filter (see _Selective extra start maps_ below), and as a routing hint (`start_dispatch`).
@@ -641,6 +641,30 @@ C compiles a stop-backtrack bag whose body is a greedy `*` or `+` over one stric
 - **Validation**: `tests/stack_limit_parity.rs` (feature `ffi`) finds, for repeated groups around automatic and source-written possessive repeats with and without star instructions, captures included, the least match stack limit from 320 at which C completes on 1, 10 and 1,000 repetitions, and requires Ferroni's result at that limit, one above and twice it to equal C's. Without the change it fails at the first such case. The existing differential tests of the possessive stars, the literal tries and the class prefix filter pass, the filter's against the program with the filter turned off. The grammar census counts 50 more guarded pushes: the `PUSH` of C's loop gets a byte-set guard.
 - **Impact** (Criterion steady lane of `production_regex_bench`, Ferroni engine, wall clock on an Apple Silicon Mac, 1 s warm-up and 3 s measurement, two rounds alternating baseline and change; baseline `main` at `a243f18`; a local diagnostic, not a publication run): the bytecode changes for five of the 27 catalog cases, `jinja_float_token` (-3.1%, -4.7%), `django_url_regex` (+0.0%, -0.2%), `fluent_bit_apache` (-1.3%, -1.5%), `fluent_bit_nginx` (-3.0%, -2.3%) and `wordpress_shortcode_captures` (-1.9%, -4.7%). Cases with unchanged bytecode moved by -3.2% to +3.6% in the same runs (`uuid_v4` -0.6% and +0.1%, `ipv6_validation` +1.3% and +0.5%), so the change shows no regression and no speed-up beyond that noise. Its aim is the stack bound, not speed.
 - **Bounds**: no new instruction or analysis; one check of the bag's shape per stop-backtrack bag at compile time.
+
+#### Compact compiled layouts and flat-pool portable DFA (`src/regint.rs`, `src/regset.rs`, `src/dfa_prefilter/portable.rs`)
+
+Reduces per-regex, per-scanner, and portable DFA memory footprint and allocation count without changing compiled semantics or match outcomes.
+
+- **Trigger**: always active for compiled `RegexType`, `RegSet` first-byte dispatch, and the portable (non-regex-automata) DFA prefilter.
+- **Data structures**:
+  - `RegexType` packs small fields and boxes cold optional byte maps (`map`, `start_map`, `start_dispatch`) so patterns that do not use them pay one pointer instead of inline 256-byte arrays.
+  - `RegSet` stores its 256-bucket first-byte dispatch in `FirstByteTable::Compact` (a 257-entry `u32` offset array plus one flat `Box<[u16]>`) for bulk construction, promoting once to `FirstByteTable::Buckets` on incremental `onig_regset_add` so incremental appends stay amortized instead of copying the full table.
+  - The portable DFA stores per-state NFA root and match lists in flat `root_pool` and `match_pool` vectors indexed by `(start, len)` spans on each state rather than per-state heap `Vec`s. On cache clear, all cache vectors release retained capacity so workload shifts stay within the configured byte budget.
+- **Observability**: none. Compiled bytecode, optimizer decisions, prefilter acceptance/rejection, and match results are unchanged.
+- **Bounds**: strict memory accounting in the portable DFA (`cache_capacity_bytes() <= limit`) and precompiled decoder (`input.claim` before allocating boxed maps); no new dependency or unsafe code.
+
+#### 32-byte VM stack entries, `EncKind` dispatch, and O(1)-stack `AnyCharStar` (`src/regexec.rs`)
+
+Reduces backtracking stack memory traffic, removes per-character encoding virtual dispatch for built-in encodings, and avoids O(N) stack growth on `.*` loops.
+
+- **Trigger**: all VM executions (`StackEntry`, `EncKind`); `AnyCharStar`, `AnyCharMlStar`, `AnyCharStarPeekNext`, and `AnyCharMlStarPeekNext` instructions (`AltLazy`).
+- **Execution**:
+  - `StackEntry` is packed to 32 bytes (`size_of::<StackEntry>() == 32`), halving per-entry cache footprint during backtracking.
+  - `EncKind` (`Utf8`, `Ascii`, `Custom`) is resolved once per search via full fat-pointer `std::ptr::eq` (avoiding zero-sized static data-address collisions across encodings). Built-in UTF-8 and ASCII paths execute directly without trait-object indirection, while custom encodings keep their trait callbacks with logical-end slice bounds.
+  - Greedy `AnyChar*Star*` instructions scan forward and push a single `AltLazy` entry instead of one entry per character. Newline and peek-next byte scans verify character boundaries; when malformed UTF-8 or a custom encoding cannot retrace the forward scan via reverse stepping, the loop falls back to eager per-character entries.
+- **Observability**: under [ADR-017](/adr/017-limit-outcomes-relative-to-c). Match results, captures, and retry counts are unchanged; lazy `AnyChar*Star*` uses O(1) stack entries instead of O(N), so stack-limited searches that fit in `AltLazy` can complete where eager pushing stopped at the stack limit.
+- **Validation**: unit tests cover 32-byte `StackEntry` layout, `EncKind` dispatch under ASCII/UTF-8/custom encodings (including mid-buffer CRLF boundaries), character-boundary checks on Shift-JIS-style and malformed UTF-8 inputs, and stack-limit parity across lazy and eager fallback paths.
 
 ## Rationale
 
