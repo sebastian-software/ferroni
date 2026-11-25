@@ -2825,8 +2825,8 @@ impl EncKind {
     #[inline]
     fn is_mbc_newline(self, str_data: &[u8], s: usize, end: usize) -> bool {
         match self {
-            Self::Utf8 | Self::Ascii => s < str_data.len() && end > 0 && str_data[s] == b'\n',
-            Self::Custom(enc) => enc.is_mbc_newline(&str_data[s..], end),
+            Self::Utf8 | Self::Ascii => s < end && s < str_data.len() && str_data[s] == b'\n',
+            Self::Custom(enc) => enc.is_mbc_newline(&str_data[s..], end.saturating_sub(s)),
         }
     }
 
@@ -17121,7 +17121,7 @@ mod tests {
                         );
                         assert_eq!(
                             kind.is_mbc_newline(data, s, end),
-                            enc.is_mbc_newline(&data[s..], end)
+                            enc.is_mbc_newline(&data[s..], end.saturating_sub(s))
                         );
                         if s < data.len() {
                             assert_eq!(
@@ -17417,5 +17417,108 @@ mod tests {
                 "UTF-8 {pattern:?} (limited) must not match inside malformed 0xC2 0x62"
             );
         }
+
+        // Custom CRLF-aware encoding: `is_mbc_newline` receives remaining
+        // length `end - s`, so a match ending mid-buffer at `end = 2` on
+        // `b"a\r\n"` must not observe the `\n` beyond `end`.
+        struct CustomCrlf;
+        impl Encoding for CustomCrlf {
+            fn mbc_enc_len(&self, _p: &[u8]) -> usize {
+                1
+            }
+            fn name(&self) -> &str {
+                "CUSTOM-CRLF"
+            }
+            fn max_enc_len(&self) -> usize {
+                1
+            }
+            fn min_enc_len(&self) -> usize {
+                1
+            }
+            fn is_mbc_newline(&self, p: &[u8], end: usize) -> bool {
+                let avail = end.min(p.len());
+                (avail >= 1 && p[0] == b'\n') || (avail >= 2 && p[0] == b'\r' && p[1] == b'\n')
+            }
+            fn mbc_to_code(&self, p: &[u8], end: usize) -> OnigCodePoint {
+                onigenc_single_byte_mbc_to_code(p, end)
+            }
+            fn code_to_mbclen(&self, code: OnigCodePoint) -> i32 {
+                onigenc_single_byte_code_to_mbclen(code)
+            }
+            fn code_to_mbc(&self, code: OnigCodePoint, buf: &mut [u8]) -> i32 {
+                onigenc_single_byte_code_to_mbc(code, buf)
+            }
+            fn mbc_case_fold(
+                &self,
+                flag: OnigCaseFoldType,
+                pp: &mut usize,
+                end: usize,
+                source: &[u8],
+                fold_buf: &mut [u8],
+            ) -> i32 {
+                onigenc_ascii_mbc_case_fold(flag, pp, end, source, fold_buf)
+            }
+            fn apply_all_case_fold(
+                &self,
+                flag: OnigCaseFoldType,
+                f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
+            ) -> i32 {
+                onigenc_ascii_apply_all_case_fold(flag, f)
+            }
+            fn get_case_fold_codes_by_str(
+                &self,
+                flag: OnigCaseFoldType,
+                p: &[u8],
+                end: usize,
+                items: &mut [OnigCaseFoldCodeItem],
+            ) -> i32 {
+                onigenc_ascii_get_case_fold_codes_by_str(flag, p, end, items)
+            }
+            fn property_name_to_ctype(&self, p: &[u8]) -> i32 {
+                onigenc_minimum_property_name_to_ctype(p)
+            }
+            fn is_code_ctype(&self, code: OnigCodePoint, ctype: u32) -> bool {
+                code < 128 && onigenc_is_ascii_code_ctype(code, ctype)
+            }
+            fn get_ctype_code_range(
+                &self,
+                ctype: u32,
+                sb_out: &mut OnigCodePoint,
+            ) -> Option<&'static [OnigCodePoint]> {
+                onigenc_not_support_get_ctype_code_range(ctype, sb_out)
+            }
+            fn left_adjust_char_head(&self, start: usize, s: usize, data: &[u8]) -> usize {
+                onigenc_single_byte_left_adjust_char_head(start, s, data)
+            }
+            fn is_allowed_reverse_match(&self, _p: &[u8]) -> bool {
+                true
+            }
+            fn is_valid_mbc_string(&self, _s: &[u8]) -> bool {
+                true
+            }
+            fn flag(&self) -> u32 {
+                ENC_FLAG_ASCII_COMPATIBLE
+            }
+        }
+        static CUSTOM_CRLF: CustomCrlf = CustomCrlf;
+
+        let crlf_reg = regcomp::onig_new(
+            b"^.*",
+            ONIG_OPTION_NONE,
+            &CUSTOM_CRLF,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        // With `end = 2` on `b"a\r\n"`, `\n` is outside the logical end, so `\r`
+        // is not a CRLF newline and `^.*` must consume both bytes.
+        assert_eq!(
+            onig_match(&crlf_reg, b"a\r\n", 2, 0, None, ONIG_OPTION_NONE).0,
+            2
+        );
+        // With `end = 3`, `\r\n` is within the logical end so `^.*` stops before `\r`.
+        assert_eq!(
+            onig_match(&crlf_reg, b"a\r\n", 3, 0, None, ONIG_OPTION_NONE).0,
+            1
+        );
     }
 }
