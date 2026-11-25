@@ -509,8 +509,8 @@ enum CompiledPiece<'a> {
     Literal(&'a [u8]),
     /// A single group index (numbered reference or unique named group).
     Group(usize),
-    /// Multiple groups sharing a name; the last participating one wins.
-    NamedGroup(SmallVec<[usize; 2]>),
+    /// Multiple groups sharing a name; resolved with `select_backref_number`.
+    NamedGroup(SmallVec<[i32; 2]>),
 }
 
 struct CompiledTemplate<'a> {
@@ -530,9 +530,7 @@ impl<'a> CompiledTemplate<'a> {
                         match nums {
                             [] => {}
                             &[single] => out.push(CompiledPiece::Group(single as usize)),
-                            many => out.push(CompiledPiece::NamedGroup(
-                                many.iter().map(|&n| n as usize).collect(),
-                            )),
+                            many => out.push(CompiledPiece::NamedGroup(SmallVec::from_slice(many))),
                         }
                     }
                 }
@@ -553,7 +551,7 @@ impl<'a> CompiledTemplate<'a> {
                     }
                 }
                 CompiledPiece::NamedGroup(indices) => {
-                    if let Some(group) = indices.iter().rev().find_map(|&idx| caps.get(idx)) {
+                    if let Some(group) = caps.select_named_group(indices) {
                         dst.push_str(group.as_str());
                     }
                 }
@@ -571,7 +569,7 @@ impl<'a> CompiledTemplate<'a> {
                     }
                 }
                 CompiledPiece::NamedGroup(indices) => {
-                    if let Some(group) = indices.iter().rev().find_map(|&idx| caps.get(idx)) {
+                    if let Some(group) = caps.select_named_group(indices) {
                         dst.extend_from_slice(group.as_bytes());
                     }
                 }
@@ -1189,6 +1187,46 @@ mod tests {
             caps.expand_bytes(template.as_bytes(), &mut b);
             b
         });
+        assert_eq!(
+            re.replace_all_bytes(text.as_bytes(), template.as_bytes()),
+            expected_bytes
+        );
+        assert_eq!(
+            re.replace_all_bytes_with(text.as_bytes(), template.as_bytes(), SearchOptions::new())
+                .unwrap(),
+            expected_bytes
+        );
+    }
+
+    #[test]
+    fn preparsed_templates_match_expand_when_duplicate_named_group_has_inverted_range() {
+        // Group 1 (`v`) matches "b"; group 2 (`v`) matches once, then starts
+        // again and fails before closing, leaving an inverted range (start > end).
+        // `select_backref_number` still picks group 2, whose inverted range
+        // yields None -> empty string, NOT a fallback to group 1 ("b").
+        let re = Regex::new(r"(?<v>b)(?<v>(?=(a|ab))a?){2}").unwrap();
+        let text = "ba";
+        let template = "[$v]";
+
+        let expected = re.replace_all(text, |caps: &Captures<'_>| {
+            let mut s = String::new();
+            caps.expand(template, &mut s);
+            s
+        });
+        assert_eq!(expected, "[]a");
+        assert_eq!(re.replace_all(text, template), expected);
+        assert_eq!(
+            re.replace_all_with(text, template, SearchOptions::new())
+                .unwrap(),
+            expected
+        );
+
+        let expected_bytes = re.replace_all_bytes(text.as_bytes(), |caps: &Captures<'_>| {
+            let mut b = Vec::new();
+            caps.expand_bytes(template.as_bytes(), &mut b);
+            b
+        });
+        assert_eq!(expected_bytes.as_ref(), b"[]a");
         assert_eq!(
             re.replace_all_bytes(text.as_bytes(), template.as_bytes()),
             expected_bytes
