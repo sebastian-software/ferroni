@@ -504,11 +504,14 @@ impl Machine {
             {
                 return None;
             }
-            self.states.clear();
-            self.root_pool.clear();
-            self.match_pool.clear();
-            self.index_table.fill(0);
-            self.transitions.clear();
+            // Release retained capacities on clear so a prior phase with large
+            // root/match pools cannot hold memory beyond `self.limit` while a
+            // subsequent phase grows states and transitions.
+            self.states = Vec::new();
+            self.root_pool = Vec::new();
+            self.match_pool = Vec::new();
+            self.index_table = Vec::new();
+            self.transitions = Vec::new();
             self.starts = [[UNKNOWN; 5]; 2];
             self.bytes = 0;
             self.clears += 1;
@@ -708,13 +711,17 @@ impl Machine {
         }
         found
     }
-    fn memory_usage(&self) -> usize {
+    fn cache_capacity_bytes(&self) -> usize {
         self.states.capacity() * std::mem::size_of::<StateMeta>()
             + (self.root_pool.capacity()
                 + self.match_pool.capacity()
                 + self.index_table.capacity()
-                + self.transitions.capacity()
-                + self.seen.capacity()
+                + self.transitions.capacity())
+                * 4
+    }
+    fn memory_usage(&self) -> usize {
+        self.cache_capacity_bytes()
+            + (self.seen.capacity()
                 + self.stack.capacity()
                 + self.roots.capacity()
                 + self.matches.capacity())
@@ -1441,5 +1448,37 @@ mod tests {
         assert_eq!(machine.root_pool.len(), root_len);
         assert_eq!(machine.match_pool.len(), match_len);
         assert!(machine.memory_usage() > 0);
+    }
+
+    #[test]
+    fn clear_releases_retained_pool_capacity_across_workload_shifts() {
+        let program = small_program();
+        let limit = 1024 * 1024;
+        let mut machine = Machine::new(&program, false, limit, 0);
+        // Phase 1: intern a few states with very large root vectors so
+        // `root_pool` grows close to the cache limit.
+        for i in 0..20u32 {
+            machine.roots.clear();
+            machine.roots.extend(i..i + 8000);
+            machine.matches.clear();
+            let _ = machine.intern_scratch(0).unwrap();
+        }
+        assert!(machine.clears >= 1);
+        // Phase 2: switch to many small states that grow `states`,
+        // `transitions`, and `index_table`. Releasing retained capacities on
+        // clear must keep allocated cache vectors within `limit`.
+        for i in 0..400u32 {
+            machine.roots.clear();
+            machine.roots.push(i);
+            machine.matches.clear();
+            let _ = machine.intern_scratch(0).unwrap();
+            assert!(
+                machine.cache_capacity_bytes() <= limit,
+                "cache capacity {} exceeded limit {} after clear={}",
+                machine.cache_capacity_bytes(),
+                limit,
+                machine.clears
+            );
+        }
     }
 }

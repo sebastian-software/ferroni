@@ -703,7 +703,12 @@ pub(super) fn read_reg(
         skip_repeated_empty_search: false,
         map: {
             let map = read_map(input)?;
-            (map != ZERO_CHAR_MAP).then(|| Box::new(map))
+            if map != ZERO_CHAR_MAP {
+                input.claim(std::mem::size_of::<[u8; CHAR_MAP_SIZE]>())?;
+                Some(Box::new(map))
+            } else {
+                None
+            }
         },
         map_offset: Wire::read(input)?,
         map_bytes: Wire::read(input)?,
@@ -715,7 +720,12 @@ pub(super) fn read_reg(
         keep_moves_match_start: Wire::read(input)?,
         first_byte_map: {
             let map = read_map(input)?;
-            bool::read(input)?.then(|| Box::new(map))
+            if bool::read(input)? {
+                input.claim(std::mem::size_of::<[u8; CHAR_MAP_SIZE]>())?;
+                Some(Box::new(map))
+            } else {
+                None
+            }
         },
         start_dispatch: Wire::read(input)?,
         called_addrs: Wire::read(input)?,

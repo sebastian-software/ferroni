@@ -86,23 +86,28 @@ enum SkipNeedle {
     Three(u8, u8, u8),
 }
 
-/// Compact CSR (compressed sparse row) dispatch table mapping each first byte
-/// `0..=255` to the sorted list of candidate entry indices.
-///
-/// Storing all 256 buckets in one contiguous `Box<[u16]>` with a 257-element
-/// offset array replaces 256 separate `Vec<u16>` heap allocations with a
-/// single allocation.
-struct FirstByteTable {
+struct CompactFirstByteTable {
     offsets: [u32; CHAR_MAP_SIZE + 1],
     entries: Box<[u16]>,
 }
 
+/// First-byte dispatch table mapping each byte `0..=255` to the sorted list of
+/// candidate entry indices.
+///
+/// Bulk construction (`onig_regset_new`, `onig_regset_new_shared`) builds the
+/// compact CSR variant rather than 256 separate `Vec<u16>` heap allocations.
+/// Incremental additions (`onig_regset_add`) promote once to per-byte growable
+/// buckets so repeated appends stay amortized O(1) instead of copying all 256
+/// buckets on every call.
+enum FirstByteTable {
+    Empty,
+    Compact(Box<CompactFirstByteTable>),
+    Buckets(Box<[Vec<u16>; CHAR_MAP_SIZE]>),
+}
+
 impl FirstByteTable {
     fn empty() -> Self {
-        Self {
-            offsets: [0; CHAR_MAP_SIZE + 1],
-            entries: Box::new([]),
-        }
+        Self::Empty
     }
 
     /// Build a compact CSR table from per-entry 256-bit masks in two passes
@@ -129,10 +134,7 @@ impl FirstByteTable {
         offsets[CHAR_MAP_SIZE] = total;
 
         if total == 0 {
-            return Self {
-                offsets,
-                entries: Box::new([]),
-            };
+            return Self::Empty;
         }
 
         let mut flat = vec![0u16; total as usize].into_boxed_slice();
@@ -153,48 +155,75 @@ impl FirstByteTable {
             }
         }
 
-        Self {
+        Self::Compact(Box::new(CompactFirstByteTable {
             offsets,
             entries: flat,
-        }
+        }))
     }
 
     #[inline]
     fn get(&self, byte: usize) -> &[u16] {
-        let start = self.offsets[byte] as usize;
-        let end = self.offsets[byte + 1] as usize;
-        &self.entries[start..end]
+        match self {
+            Self::Empty => &[],
+            Self::Compact(compact) => {
+                let start = compact.offsets[byte] as usize;
+                let end = compact.offsets[byte + 1] as usize;
+                &compact.entries[start..end]
+            }
+            Self::Buckets(buckets) => &buckets[byte],
+        }
     }
 
     #[inline]
     fn is_empty_byte(&self, byte: usize) -> bool {
-        self.offsets[byte] == self.offsets[byte + 1]
+        match self {
+            Self::Empty => true,
+            Self::Compact(compact) => compact.offsets[byte] == compact.offsets[byte + 1],
+            Self::Buckets(buckets) => buckets[byte].is_empty(),
+        }
     }
 
     fn iter(&self) -> impl Iterator<Item = &[u16]> {
         (0..CHAR_MAP_SIZE).map(|b| self.get(b))
     }
 
-    /// Incrementally append one entry index to the buckets selected by `mask`.
+    /// Incrementally append one entry index to the buckets selected by `mask`
+    /// in amortized O(popcount(mask)) time.
     fn append_entry(&mut self, mask: &[u64; 4], idx: u16) {
-        let added: u32 = mask.iter().map(|w| w.count_ones()).sum();
-        if added == 0 {
+        if *mask == [0u64; 4] {
             return;
         }
-        let old_total = self.offsets[CHAR_MAP_SIZE];
-        let new_total = old_total + added;
-        let mut new_entries = Vec::with_capacity(new_total as usize);
-        let mut new_offsets = [0u32; CHAR_MAP_SIZE + 1];
-        for b in 0..CHAR_MAP_SIZE {
-            new_offsets[b] = new_entries.len() as u32;
-            new_entries.extend_from_slice(self.get(b));
-            if (mask[b / 64] >> (b % 64)) & 1 != 0 {
-                new_entries.push(idx);
+        let buckets = match self {
+            Self::Buckets(buckets) => buckets,
+            Self::Empty => {
+                *self = Self::Buckets(Box::new(std::array::from_fn(|_| Vec::new())));
+                match self {
+                    Self::Buckets(buckets) => buckets,
+                    _ => unreachable!(),
+                }
+            }
+            Self::Compact(compact) => {
+                let promoted: Box<[Vec<u16>; CHAR_MAP_SIZE]> = Box::new(std::array::from_fn(|b| {
+                    let start = compact.offsets[b] as usize;
+                    let end = compact.offsets[b + 1] as usize;
+                    compact.entries[start..end].to_vec()
+                }));
+                *self = Self::Buckets(promoted);
+                match self {
+                    Self::Buckets(buckets) => buckets,
+                    _ => unreachable!(),
+                }
+            }
+        };
+        for (word_idx, &word) in mask.iter().enumerate() {
+            let mut w = word;
+            let base = word_idx * 64;
+            while w != 0 {
+                let bit = w.trailing_zeros() as usize;
+                buckets[base + bit].push(idx);
+                w &= w - 1;
             }
         }
-        new_offsets[CHAR_MAP_SIZE] = new_entries.len() as u32;
-        self.offsets = new_offsets;
-        self.entries = new_entries.into_boxed_slice();
     }
 }
 
@@ -7943,8 +7972,17 @@ mod tests {
         appended.append_entry(&mask_b, 1);
         appended.append_entry(&mask_all, 2);
 
-        assert_eq!(built.offsets, appended.offsets);
-        assert_eq!(built.entries, appended.entries);
+        let mut promoted = FirstByteTable::from_entry_masks(&[(0, mask_a)]);
+        promoted.append_entry(&mask_b, 1);
+        promoted.append_entry(&mask_all, 2);
+
+        assert!(matches!(built, FirstByteTable::Compact(_)));
+        assert!(matches!(appended, FirstByteTable::Buckets(_)));
+        assert!(matches!(promoted, FirstByteTable::Buckets(_)));
+        for b in 0..CHAR_MAP_SIZE {
+            assert_eq!(&built[b], &appended[b]);
+            assert_eq!(&built[b], &promoted[b]);
+        }
         assert_eq!(&built[b'a' as usize], &[0, 2]);
         assert_eq!(&built[b'b' as usize], &[1, 2]);
         assert_eq!(&built[b'c' as usize], &[0, 1, 2]);
@@ -7956,5 +7994,6 @@ mod tests {
             SkipNeedle::Two(b'a', b'c')
         ));
         assert!(matches!(compute_skip_needle(&built), SkipNeedle::None));
+        assert!(matches!(compute_skip_needle(&appended), SkipNeedle::None));
     }
 }
