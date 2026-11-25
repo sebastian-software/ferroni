@@ -2622,9 +2622,9 @@ struct SingleAdaptive {
 /// Only existence is needed, so match states are terminal and NFA priority
 /// cannot change the answer. No captures or match positions are computed.
 struct SingleTable {
-    transitions: Vec<u32>,
+    transitions: Vec<u16>,
     classes: [u8; 256],
-    starts: [u32; 2],
+    starts: [u16; 2],
     eoi: usize,
 }
 
@@ -2687,6 +2687,7 @@ impl SingleTable {
 
     fn build(nfa: &thompson::NFA, limits: SingleDenseLimits) -> Option<Self> {
         use regex_automata::nfa::thompson::State;
+        use std::collections::HashMap;
         if !Self::supports(nfa) {
             return None;
         }
@@ -2696,12 +2697,14 @@ impl SingleTable {
         // table; the original and replacement together stay within the cap.
         let max_rows = limits.dfa_bytes.checked_sub(std::mem::size_of::<Self>())?
             / 2
-            / (stride * std::mem::size_of::<u32>());
+            / (stride * std::mem::size_of::<u16>());
+        let state_entry_bytes =
+            std::mem::size_of::<(u64, bool)>() + std::mem::size_of::<((u64, bool), usize)>() * 2;
         let max_rows = max_rows.min(
             limits
                 .determinize_bytes
                 .checked_sub(64 * std::mem::size_of::<u64>())?
-                / std::mem::size_of::<(u64, bool)>(),
+                / state_entry_bytes,
         );
         if max_rows == 0 {
             return None;
@@ -2714,16 +2717,20 @@ impl SingleTable {
                 matches |= 1u64 << i;
             }
         }
-        let mut states = Vec::with_capacity(max_rows);
-        let mut transitions = Vec::with_capacity(max_rows * stride);
+        let initial_rows = max_rows.min(64);
+        let mut states = Vec::with_capacity(initial_rows);
+        let mut state_ids = HashMap::with_capacity(initial_rows);
+        let mut transitions = Vec::with_capacity(initial_rows * stride);
+        #[allow(clippy::too_many_arguments)]
         fn intern(
             mask: u64,
             at_start: bool,
             matches: u64,
             states: &mut Vec<(u64, bool)>,
+            state_ids: &mut HashMap<(u64, bool), usize>,
             stride: usize,
             max_rows: usize,
-        ) -> Option<u32> {
+        ) -> Option<u16> {
             if mask & matches != 0 {
                 return Some(1);
             }
@@ -2731,24 +2738,27 @@ impl SingleTable {
                 return Some(0);
             }
             let node = (mask, at_start);
-            let index = match states.iter().position(|&known| known == node) {
-                Some(index) => index,
+            let index = match state_ids.get(&node) {
+                Some(&index) => index,
                 None if states.len() < max_rows => {
+                    let index = states.len();
                     states.push(node);
-                    states.len() - 1
+                    state_ids.insert(node, index);
+                    index
                 }
                 None => return None,
             };
-            u32::try_from(index * stride + 2).ok()
+            u16::try_from(index * stride + 2).ok()
         }
         let root = 1u64 << nfa.start_unanchored().as_usize();
-        let mut starts = [0; 2];
+        let mut starts = [0u16; 2];
         for (i, slot) in starts.iter_mut().enumerate() {
             *slot = intern(
                 Self::closure(nfa, root, i == 1, false),
                 i == 1,
                 matches,
                 &mut states,
+                &mut state_ids,
                 stride,
                 max_rows,
             )?;
@@ -2775,9 +2785,17 @@ impl SingleTable {
                             next |= closures[target.as_usize()];
                         }
                     }
-                    intern(next, false, matches, &mut states, stride, max_rows)?
+                    intern(
+                        next,
+                        false,
+                        matches,
+                        &mut states,
+                        &mut state_ids,
+                        stride,
+                        max_rows,
+                    )?
                 } else {
-                    u32::from(Self::closure(nfa, mask, at_start, true) & matches != 0)
+                    u16::from(Self::closure(nfa, mask, at_start, true) & matches != 0)
                 };
                 transitions.push(next);
             }
@@ -2797,22 +2815,23 @@ impl SingleTable {
     }
 
     fn search(&self, text: &[u8], start: usize) -> bool {
+        let classes = &self.classes;
+        let transitions = &self.transitions;
         let mut state = self.starts[usize::from(start == 0)];
         for &byte in &text[start..] {
             if state <= 1 {
                 return state == 1;
             }
-            state =
-                self.transitions[state as usize - 2 + usize::from(self.classes[usize::from(byte)])];
+            state = transitions[usize::from(state) - 2 + usize::from(classes[usize::from(byte)])];
         }
         if state <= 1 {
             return state == 1;
         }
-        self.transitions[state as usize - 2 + self.eoi] == 1
+        transitions[usize::from(state) - 2 + self.eoi] == 1
     }
 
     fn memory_usage(&self) -> usize {
-        self.transitions.capacity() * std::mem::size_of::<u32>()
+        self.transitions.capacity() * std::mem::size_of::<u16>()
     }
 }
 

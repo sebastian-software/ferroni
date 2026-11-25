@@ -7,12 +7,15 @@
 // Each method includes the empty match that Ferroni reports right after a
 // non-empty one, so every method here agrees with those iterators.
 
+use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::fmt;
 use std::ops::Range;
 
 use crate::api::{Captures, FindIter, Match, Regex, SearchOptions};
 use crate::error::RegexError;
+use crate::regexec::onig_name_to_group_numbers;
+use crate::regint::RegexType;
 
 // === Replacer ===
 
@@ -62,11 +65,18 @@ pub trait Replacer {
     {
         self
     }
+
+    #[doc(hidden)]
+    fn __ferroni_template(&self) -> Option<&str> {
+        None
+    }
 }
 
 /// The replacement for a template with no `$`, or `None` if it may expand.
 fn literal_template(template: &str) -> Option<Cow<'_, str>> {
-    (!template.contains('$')).then_some(Cow::Borrowed(template))
+    memchr::memchr(b'$', template.as_bytes())
+        .is_none()
+        .then_some(Cow::Borrowed(template))
 }
 
 impl Replacer for &str {
@@ -76,6 +86,10 @@ impl Replacer for &str {
 
     fn no_expansion(&mut self) -> Option<Cow<'_, str>> {
         literal_template(self)
+    }
+
+    fn __ferroni_template(&self) -> Option<&str> {
+        Some(self)
     }
 }
 
@@ -87,6 +101,10 @@ impl Replacer for String {
     fn no_expansion(&mut self) -> Option<Cow<'_, str>> {
         literal_template(self)
     }
+
+    fn __ferroni_template(&self) -> Option<&str> {
+        Some(self)
+    }
 }
 
 impl Replacer for &String {
@@ -97,6 +115,10 @@ impl Replacer for &String {
     fn no_expansion(&mut self) -> Option<Cow<'_, str>> {
         literal_template(self)
     }
+
+    fn __ferroni_template(&self) -> Option<&str> {
+        Some(self)
+    }
 }
 
 impl Replacer for Cow<'_, str> {
@@ -106,6 +128,10 @@ impl Replacer for Cow<'_, str> {
 
     fn no_expansion(&mut self) -> Option<Cow<'_, str>> {
         literal_template(self)
+    }
+
+    fn __ferroni_template(&self) -> Option<&str> {
+        Some(self)
     }
 }
 
@@ -173,11 +199,18 @@ pub trait ReplacerBytes {
     fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         None
     }
+
+    #[doc(hidden)]
+    fn __ferroni_template_bytes(&self) -> Option<&[u8]> {
+        None
+    }
 }
 
 /// The replacement for a template with no `$`, or `None` if it may expand.
 fn literal_bytes_template(template: &[u8]) -> Option<Cow<'_, [u8]>> {
-    (!template.contains(&b'$')).then_some(Cow::Borrowed(template))
+    memchr::memchr(b'$', template)
+        .is_none()
+        .then_some(Cow::Borrowed(template))
 }
 
 impl ReplacerBytes for &[u8] {
@@ -187,6 +220,10 @@ impl ReplacerBytes for &[u8] {
 
     fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         literal_bytes_template(self)
+    }
+
+    fn __ferroni_template_bytes(&self) -> Option<&[u8]> {
+        Some(self)
     }
 }
 
@@ -198,6 +235,10 @@ impl ReplacerBytes for Vec<u8> {
     fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         literal_bytes_template(self)
     }
+
+    fn __ferroni_template_bytes(&self) -> Option<&[u8]> {
+        Some(self)
+    }
 }
 
 impl ReplacerBytes for &Vec<u8> {
@@ -208,6 +249,10 @@ impl ReplacerBytes for &Vec<u8> {
     fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         literal_bytes_template(self)
     }
+
+    fn __ferroni_template_bytes(&self) -> Option<&[u8]> {
+        Some(self)
+    }
 }
 
 impl ReplacerBytes for Cow<'_, [u8]> {
@@ -217,6 +262,10 @@ impl ReplacerBytes for Cow<'_, [u8]> {
 
     fn no_expansion(&mut self) -> Option<Cow<'_, [u8]>> {
         literal_bytes_template(self)
+    }
+
+    fn __ferroni_template_bytes(&self) -> Option<&[u8]> {
+        Some(self)
     }
 }
 
@@ -274,7 +323,7 @@ impl<'a> Iterator for Pieces<'a> {
         if self.rest.is_empty() {
             return None;
         }
-        let Some(dollar) = self.rest.iter().position(|&byte| byte == b'$') else {
+        let Some(dollar) = memchr::memchr(b'$', self.rest) else {
             let text = self.rest;
             self.rest = &[];
             return Some(Piece::Literal(text));
@@ -454,6 +503,83 @@ impl Captures<'_> {
 
 // === Replace ===
 
+/// A pre-parsed replacement piece, resolving group numbers and names once
+/// before a multi-match replacement loop.
+enum CompiledPiece<'a> {
+    Literal(&'a [u8]),
+    /// A single group index (numbered reference or unique named group).
+    Group(usize),
+    /// Multiple groups sharing a name; the last participating one wins.
+    NamedGroup(SmallVec<[usize; 2]>),
+}
+
+struct CompiledTemplate<'a> {
+    pieces: SmallVec<[CompiledPiece<'a>; 8]>,
+}
+
+impl<'a> CompiledTemplate<'a> {
+    fn compile(template: &'a [u8], reg: &RegexType) -> Self {
+        let mut out = SmallVec::new();
+        for piece in pieces(template) {
+            match piece {
+                Piece::Literal(text) => out.push(CompiledPiece::Literal(text)),
+                Piece::Group(name) => {
+                    if let Ok(index) = name.parse::<usize>() {
+                        out.push(CompiledPiece::Group(index));
+                    } else if let Ok(nums) = onig_name_to_group_numbers(reg, name.as_bytes()) {
+                        match nums {
+                            [] => {}
+                            &[single] => out.push(CompiledPiece::Group(single as usize)),
+                            many => out.push(CompiledPiece::NamedGroup(
+                                many.iter().map(|&n| n as usize).collect(),
+                            )),
+                        }
+                    }
+                }
+            }
+        }
+        CompiledTemplate { pieces: out }
+    }
+
+    fn expand_str(&self, caps: &Captures<'_>, dst: &mut String) {
+        for piece in &self.pieces {
+            match piece {
+                CompiledPiece::Literal(text) => dst.push_str(
+                    std::str::from_utf8(text).expect("a str template splits at ASCII bytes"),
+                ),
+                CompiledPiece::Group(index) => {
+                    if let Some(group) = caps.get(*index) {
+                        dst.push_str(group.as_str());
+                    }
+                }
+                CompiledPiece::NamedGroup(indices) => {
+                    if let Some(group) = indices.iter().rev().find_map(|&idx| caps.get(idx)) {
+                        dst.push_str(group.as_str());
+                    }
+                }
+            }
+        }
+    }
+
+    fn expand_bytes(&self, caps: &Captures<'_>, dst: &mut Vec<u8>) {
+        for piece in &self.pieces {
+            match piece {
+                CompiledPiece::Literal(text) => dst.extend_from_slice(text),
+                CompiledPiece::Group(index) => {
+                    if let Some(group) = caps.get(*index) {
+                        dst.extend_from_slice(group.as_bytes());
+                    }
+                }
+                CompiledPiece::NamedGroup(indices) => {
+                    if let Some(group) = indices.iter().rev().find_map(|&idx| caps.get(idx)) {
+                        dst.extend_from_slice(group.as_bytes());
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// The number of matches to replace for a `limit`, where 0 means all of them.
 fn replacement_limit(limit: usize) -> usize {
     if limit == 0 { usize::MAX } else { limit }
@@ -558,6 +684,16 @@ impl Regex {
                 out.push_str(&literal);
                 last = m.end();
             }
+        } else if let Some(template) = rep.__ferroni_template() {
+            let compiled = CompiledTemplate::compile(template.as_bytes(), self.program());
+            for result in self.captures_iter_with(text, options) {
+                let caps = result?;
+                let whole = caps.get(0).expect("group 0 is the match");
+                let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
+                out.push_str(&text[last..whole.start()]);
+                compiled.expand_str(&caps, out);
+                last = whole.end();
+            }
         } else {
             for result in self.captures_iter_with(text, options) {
                 let caps = result?;
@@ -608,13 +744,25 @@ impl Regex {
 
         let mut out: Option<String> = None;
         let mut last = 0;
-        for caps in self.captures_iter(text).take(replacement_limit(limit)) {
-            // Captures only come from successful searches, so group 0 is set.
-            let whole = caps.get(0).expect("group 0 is the match");
-            let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
-            out.push_str(&text[last..whole.start()]);
-            rep.replace_append(&caps, out);
-            last = whole.end();
+        if let Some(template) = rep.__ferroni_template() {
+            let compiled = CompiledTemplate::compile(template.as_bytes(), self.program());
+            for caps in self.captures_iter(text).take(replacement_limit(limit)) {
+                // Captures only come from successful searches, so group 0 is set.
+                let whole = caps.get(0).expect("group 0 is the match");
+                let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
+                out.push_str(&text[last..whole.start()]);
+                compiled.expand_str(&caps, out);
+                last = whole.end();
+            }
+        } else {
+            for caps in self.captures_iter(text).take(replacement_limit(limit)) {
+                // Captures only come from successful searches, so group 0 is set.
+                let whole = caps.get(0).expect("group 0 is the match");
+                let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
+                out.push_str(&text[last..whole.start()]);
+                rep.replace_append(&caps, out);
+                last = whole.end();
+            }
         }
         finish(text, out, last)
     }
@@ -661,6 +809,16 @@ impl Regex {
                 out.extend_from_slice(&literal);
                 last = m.end();
             }
+        } else if let Some(template) = rep.__ferroni_template_bytes() {
+            let compiled = CompiledTemplate::compile(template, self.program());
+            for result in self.captures_iter_bytes_with(text, options) {
+                let caps = result?;
+                let whole = caps.get(0).expect("group 0 is the match");
+                let out = out.get_or_insert_with(|| Vec::with_capacity(text.len()));
+                out.extend_from_slice(&text[last..whole.start()]);
+                compiled.expand_bytes(&caps, out);
+                last = whole.end();
+            }
         } else {
             for result in self.captures_iter_bytes_with(text, options) {
                 let caps = result?;
@@ -706,15 +864,29 @@ impl Regex {
 
         let mut out: Option<Vec<u8>> = None;
         let mut last = 0;
-        for caps in self
-            .captures_iter_bytes(text)
-            .take(replacement_limit(limit))
-        {
-            let whole = caps.get(0).expect("group 0 is the match");
-            let out = out.get_or_insert_with(|| Vec::with_capacity(text.len()));
-            out.extend_from_slice(&text[last..whole.start()]);
-            rep.replace_append(&caps, out);
-            last = whole.end();
+        if let Some(template) = rep.__ferroni_template_bytes() {
+            let compiled = CompiledTemplate::compile(template, self.program());
+            for caps in self
+                .captures_iter_bytes(text)
+                .take(replacement_limit(limit))
+            {
+                let whole = caps.get(0).expect("group 0 is the match");
+                let out = out.get_or_insert_with(|| Vec::with_capacity(text.len()));
+                out.extend_from_slice(&text[last..whole.start()]);
+                compiled.expand_bytes(&caps, out);
+                last = whole.end();
+            }
+        } else {
+            for caps in self
+                .captures_iter_bytes(text)
+                .take(replacement_limit(limit))
+            {
+                let whole = caps.get(0).expect("group 0 is the match");
+                let out = out.get_or_insert_with(|| Vec::with_capacity(text.len()));
+                out.extend_from_slice(&text[last..whole.start()]);
+                rep.replace_append(&caps, out);
+                last = whole.end();
+            }
         }
         finish_bytes(text, out, last)
     }
@@ -987,5 +1159,63 @@ impl std::iter::FusedIterator for SplitNBytes<'_, '_> {}
 impl fmt::Debug for SplitNBytes<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SplitNBytes").finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preparsed_templates_match_expand_for_numbered_named_and_duplicate_groups() {
+        let re = Regex::new(r"(?<v>\d+)|(?<v>[a-z]+)").unwrap();
+        let text = "a 12 bb 345";
+        let template = "[$v|${v}|$0|$$|$missing|$]";
+
+        let expected = re.replace_all(text, |caps: &Captures<'_>| {
+            let mut s = String::new();
+            caps.expand(template, &mut s);
+            s
+        });
+        assert_eq!(re.replace_all(text, template), expected);
+        assert_eq!(
+            re.replace_all_with(text, template, SearchOptions::new())
+                .unwrap(),
+            expected
+        );
+
+        let expected_bytes = re.replace_all_bytes(text.as_bytes(), |caps: &Captures<'_>| {
+            let mut b = Vec::new();
+            caps.expand_bytes(template.as_bytes(), &mut b);
+            b
+        });
+        assert_eq!(
+            re.replace_all_bytes(text.as_bytes(), template.as_bytes()),
+            expected_bytes
+        );
+        assert_eq!(
+            re.replace_all_bytes_with(text.as_bytes(), template.as_bytes(), SearchOptions::new())
+                .unwrap(),
+            expected_bytes
+        );
+    }
+
+    #[test]
+    fn is_match_pure_literal_fast_path_agrees_with_find() {
+        let re = Regex::new("needle").unwrap();
+        for (text, start, expected) in [
+            ("find needle here", 0, true),
+            ("find needle here", 5, true),
+            ("find needle here", 6, false),
+            ("no match at all", 0, false),
+        ] {
+            assert_eq!(re.is_match_at(text, start), expected);
+            assert_eq!(
+                re.is_match_at_with(text, start, SearchOptions::new())
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(re.find_at(text, start).is_some(), expected);
+        }
     }
 }
