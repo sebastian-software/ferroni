@@ -5325,11 +5325,13 @@ fn multi_char_fold_node(codes: &[OnigCodePoint], enc: OnigEncoding) -> Option<Bo
 
 /// Allocate a new CalloutListEntry on the regex's ext, return its 1-based num.
 fn reg_callout_list_entry(env: &mut ParseEnv) -> Result<i32, i32> {
-    let ext = env.reg_state.extp.get_or_insert_with(|| RegexExt {
-        pattern: Vec::new(),
-        tag_table: None,
-        callout_num: 0,
-        callout_list: Vec::new(),
+    let ext = env.reg_state.extp.get_or_insert_with(|| {
+        Box::new(RegexExt {
+            pattern: Vec::new(),
+            tag_table: None,
+            callout_num: 0,
+            callout_list: Vec::new(),
+        })
     });
     ext.callout_num += 1;
     let num = ext.callout_num;
@@ -8541,7 +8543,6 @@ mod tests {
             backtrack_warnings: Vec::new(),
             backtrack_rewrites: Vec::new(),
             ops: Vec::new(),
-            string_pool: Vec::new(),
             num_mem: 0,
             num_repeat: 0,
             num_empty_check: 0,
@@ -8566,7 +8567,7 @@ mod tests {
             exact_finder: None,
             pure_literal: false,
             skip_repeated_empty_search: false,
-            map: [0u8; CHAR_MAP_SIZE],
+            map: None,
             map_offset: 0,
             map_bytes: [0u8; 3],
             map_byte_count: 0,
@@ -8575,8 +8576,7 @@ mod tests {
             dist_max: 0,
             needs_capture_tracking: false,
             keep_moves_match_start: false,
-            first_byte_map: [0u8; CHAR_MAP_SIZE],
-            has_first_byte_map: false,
+            first_byte_map: None,
             start_dispatch: false,
             called_addrs: vec![],
             unset_call_addrs: vec![],

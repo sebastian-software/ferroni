@@ -40,22 +40,41 @@ pub(super) struct Caches {
     reverse: Machine,
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct Key {
-    roots: Vec<u32>,
-    matches: Vec<u32>,
+#[derive(Clone, Copy)]
+struct StateMeta {
+    id: u32,
+    roots_start: u32,
+    roots_len: u32,
+    matches_start: u32,
+    matches_len: u32,
     previous: u8,
+    hash: u64,
 }
 
-struct Cached {
-    key: Key,
+#[inline]
+fn hash_state(roots: &[u32], matches: &[u32], previous: u8) -> u64 {
+    const K: u64 = 0x517c_c1b7_2722_0a95;
+    let mut h = u64::from(previous).wrapping_mul(K);
+    h = (h ^ (roots.len() as u64)).wrapping_mul(K);
+    for &r in roots {
+        h = (h ^ u64::from(r)).wrapping_mul(K);
+    }
+    h = (h ^ (matches.len() as u64)).wrapping_mul(K);
+    for &m in matches {
+        h = (h ^ u64::from(m)).wrapping_mul(K);
+    }
+    h ^ (h >> 32)
 }
 
 struct Machine {
-    states: Vec<Cached>,
+    states: Vec<StateMeta>,
+    root_pool: Vec<u32>,
+    match_pool: Vec<u32>,
+    /// Open-addressed linear-probing index mapping state keys to `state_idx + 1`
+    /// (`0` = empty). Length is either 0 or a power of two.
+    index_table: Vec<u32>,
     transitions: Vec<u32>,
     stride2: u32,
-    ids: HashMap<Key, u32>,
     seen: Vec<u32>,
     generation: u32,
     stack: Vec<u32>,
@@ -413,11 +432,13 @@ impl Machine {
     fn new(program: &Program, first: bool, limit: usize, minimum_bytes_per_state: usize) -> Self {
         Self {
             states: Vec::new(),
+            root_pool: Vec::new(),
+            match_pool: Vec::new(),
+            index_table: Vec::new(),
             transitions: Vec::new(),
             stride2: (program.representatives.len() + 1)
                 .next_power_of_two()
                 .trailing_zeros(),
-            ids: HashMap::new(),
             seen: vec![0; program.code.len()],
             generation: 0,
             stack: Vec::new(),
@@ -433,12 +454,44 @@ impl Machine {
         }
     }
 
-    fn intern(&mut self, key: Key) -> Option<u32> {
-        if let Some(&id) = self.ids.get(&key) {
-            return Some(id);
+    /// Intern the state currently staged in `self.roots` and `self.matches`
+    /// with assertion context `previous`, avoiding allocations on cache hits
+    /// and storing all state vectors in flat pools on misses.
+    fn intern_scratch(&mut self, previous: u8) -> Option<u32> {
+        let hash = hash_state(&self.roots, &self.matches, previous);
+        if !self.index_table.is_empty() {
+            let mask = self.index_table.len() - 1;
+            let mut slot = (hash as usize) & mask;
+            loop {
+                let entry = self.index_table[slot];
+                if entry == 0 {
+                    break;
+                }
+                let meta = &self.states[(entry - 1) as usize];
+                if meta.hash == hash
+                    && meta.previous == previous
+                    && meta.roots_len as usize == self.roots.len()
+                    && meta.matches_len as usize == self.matches.len()
+                    && &self.root_pool[meta.roots_start as usize
+                        ..meta.roots_start as usize + meta.roots_len as usize]
+                        == self.roots.as_slice()
+                    && &self.match_pool[meta.matches_start as usize
+                        ..meta.matches_start as usize + meta.matches_len as usize]
+                        == self.matches.as_slice()
+                {
+                    return Some(meta.id);
+                }
+                slot = (slot + 1) & mask;
+            }
         }
-        let bytes =
-            2 * (key.roots.len() + key.matches.len()) * 4 + (1usize << self.stride2) * 4 + 128;
+        // Account for the 2x geometric growth headroom of the flat pools,
+        // transition table, state table, and open-addressed index so allocated
+        // cache memory stays within `self.limit`.
+        let bytes = 2
+            * ((self.roots.len() + self.matches.len()) * 4
+                + (1usize << self.stride2) * 4
+                + std::mem::size_of::<StateMeta>()
+                + 8);
         if self.bytes + bytes > self.limit && !self.states.is_empty() {
             // Match the hybrid DFA's efficiency policy: allow initial cache
             // growth, then give up only when the states are not reused enough.
@@ -451,23 +504,63 @@ impl Machine {
             {
                 return None;
             }
-            self.states.clear();
-            self.transitions.clear();
-            self.ids.clear();
+            // Release retained capacities on clear so a prior phase with large
+            // root/match pools cannot hold memory beyond `self.limit` while a
+            // subsequent phase grows states and transitions.
+            self.states = Vec::new();
+            self.root_pool = Vec::new();
+            self.match_pool = Vec::new();
+            self.index_table = Vec::new();
+            self.transitions = Vec::new();
             self.starts = [[UNKNOWN; 5]; 2];
             self.bytes = 0;
             self.clears += 1;
             self.searched = 0;
         }
         let mut id = self.transitions.len() as u32;
-        if !key.matches.is_empty() {
+        if !self.matches.is_empty() {
             id |= MATCH;
         }
-        if key.matches.is_empty() && key.roots.is_empty() {
+        if self.matches.is_empty() && self.roots.is_empty() {
             id |= DEAD;
         }
-        self.ids.insert(key.clone(), id);
-        self.states.push(Cached { key });
+        let roots_start = self.root_pool.len() as u32;
+        let roots_len = self.roots.len() as u32;
+        self.root_pool.extend_from_slice(&self.roots);
+        let matches_start = self.match_pool.len() as u32;
+        let matches_len = self.matches.len() as u32;
+        self.match_pool.extend_from_slice(&self.matches);
+
+        let state_idx = self.states.len();
+        self.states.push(StateMeta {
+            id,
+            roots_start,
+            roots_len,
+            matches_start,
+            matches_len,
+            previous,
+            hash,
+        });
+        if self.states.len() * 2 > self.index_table.len() {
+            let new_cap = (self.index_table.len() * 2).max(16);
+            self.index_table.clear();
+            self.index_table.resize(new_cap, 0);
+            let mask = new_cap - 1;
+            for (i, meta) in self.states.iter().enumerate() {
+                let mut slot = (meta.hash as usize) & mask;
+                while self.index_table[slot] != 0 {
+                    slot = (slot + 1) & mask;
+                }
+                self.index_table[slot] = (i + 1) as u32;
+            }
+        } else {
+            let mask = self.index_table.len() - 1;
+            let mut slot = (hash as usize) & mask;
+            while self.index_table[slot] != 0 {
+                slot = (slot + 1) & mask;
+            }
+            self.index_table[slot] = (state_idx + 1) as u32;
+        }
         self.transitions
             .resize(self.transitions.len() + (1 << self.stride2), UNKNOWN);
         self.bytes += bytes;
@@ -482,15 +575,14 @@ impl Machine {
         if cached != UNKNOWN {
             return Some(cached);
         }
-        let sid = self.intern(Key {
-            roots: vec![if anchored {
-                program.anchored
-            } else {
-                program.unanchored
-            }],
-            matches: Vec::new(),
-            previous,
-        })?;
+        self.roots.clear();
+        self.roots.push(if anchored {
+            program.anchored
+        } else {
+            program.unanchored
+        });
+        self.matches.clear();
+        let sid = self.intern_scratch(previous)?;
         self.starts[slot][previous as usize] = sid;
         Some(sid)
     }
@@ -521,21 +613,15 @@ impl Machine {
             self.seen.fill(0);
             self.generation = 1;
         }
-        let have = assertions(
-            self.states[index(sid) >> self.stride2].key.previous,
-            context(byte),
-            program.reverse,
-        );
+        let state_meta = self.states[index(sid) >> self.stride2];
+        let have = assertions(state_meta.previous, context(byte), program.reverse);
         self.stack.clear();
         self.roots.clear();
         self.matches.clear();
-        self.stack.extend(
-            self.states[index(sid) >> self.stride2]
-                .key
-                .roots
-                .iter()
-                .rev(),
-        );
+        let roots_start = state_meta.roots_start as usize;
+        let roots_end = roots_start + state_meta.roots_len as usize;
+        self.stack
+            .extend(self.root_pool[roots_start..roots_end].iter().copied().rev());
         while let Some(id) = self.stack.pop() {
             if self.seen[id as usize] == self.generation {
                 continue;
@@ -576,17 +662,13 @@ impl Machine {
                 _ => unreachable!(),
             }
         }
-        let key = Key {
-            roots: self.roots.clone(),
-            matches: self.matches.clone(),
-            previous: if program.looks && !self.roots.is_empty() {
-                context(byte)
-            } else {
-                0
-            },
+        let previous = if program.looks && !self.roots.is_empty() {
+            context(byte)
+        } else {
+            0
         };
         let clears = self.clears;
-        let next = self.intern(key)?;
+        let next = self.intern_scratch(previous)?;
         if clears == self.clears {
             self.transitions[index(sid) + class] = next;
         }
@@ -601,7 +683,10 @@ impl Machine {
     }
     #[inline(never)]
     fn record(&self, sid: u32, patset: &mut PatternBits) {
-        for &pid in &self.states[index(sid) >> self.stride2].key.matches {
+        let meta = self.states[index(sid) >> self.stride2];
+        let start = meta.matches_start as usize;
+        let end = start + meta.matches_len as usize;
+        for &pid in &self.match_pool[start..end] {
             patset.insert(PatternID::new_unchecked(pid as usize));
         }
     }
@@ -614,7 +699,10 @@ impl Machine {
         stamp: u32,
     ) -> usize {
         let mut found = 0;
-        for &pid in &self.states[index(sid) >> self.stride2].key.matches {
+        let meta = self.states[index(sid) >> self.stride2];
+        let start = meta.matches_start as usize;
+        let end = start + meta.matches_len as usize;
+        for &pid in &self.match_pool[start..end] {
             if patset.insert(PatternID::new_unchecked(pid as usize))
                 && stamps[pid as usize] == stamp
             {
@@ -623,8 +711,16 @@ impl Machine {
         }
         found
     }
+    fn cache_capacity_bytes(&self) -> usize {
+        self.states.capacity() * std::mem::size_of::<StateMeta>()
+            + (self.root_pool.capacity()
+                + self.match_pool.capacity()
+                + self.index_table.capacity()
+                + self.transitions.capacity())
+                * 4
+    }
     fn memory_usage(&self) -> usize {
-        self.bytes
+        self.cache_capacity_bytes()
             + (self.seen.capacity()
                 + self.stack.capacity()
                 + self.roots.capacity()
@@ -696,18 +792,33 @@ impl Portable {
             .ok_or(())?;
         let mut end = None;
         let mut p = from;
+        let fwd_classes = &self.forward.classes;
+        let mut scanned = 0usize;
         while p < until {
-            sid = machine
-                .step(&self.forward, sid, Some(haystack[p]))
-                .ok_or(())?;
-            if machine.matched(sid) {
-                end = Some(p);
+            let b = haystack[p];
+            let class = fwd_classes[b as usize] as usize;
+            let next = machine.transitions[index(sid) + class];
+            if next != UNKNOWN {
+                sid = next;
+                scanned += 1;
+            } else {
+                machine.searched = machine.searched.saturating_add(scanned + 1);
+                scanned = 0;
+                sid = machine
+                    .transition(&self.forward, sid, Some(b), class)
+                    .ok_or(())?;
             }
-            if machine.dead(sid) {
-                break;
+            if sid & (MATCH | DEAD) != 0 {
+                if machine.matched(sid) {
+                    end = Some(p);
+                }
+                if machine.dead(sid) {
+                    break;
+                }
             }
             p += 1;
         }
+        machine.searched = machine.searched.saturating_add(scanned);
         if p == until {
             sid = machine
                 .step(&self.forward, sid, haystack.get(p).copied())
@@ -725,18 +836,33 @@ impl Portable {
             .ok_or(())?;
         let mut start = None;
         let mut p = end;
+        let rev_classes = &self.reverse.classes;
+        let mut scanned = 0usize;
         while p > from {
-            sid = machine
-                .step(&self.reverse, sid, Some(haystack[p - 1]))
-                .ok_or(())?;
-            if machine.matched(sid) {
-                start = Some(p);
+            let b = haystack[p - 1];
+            let class = rev_classes[b as usize] as usize;
+            let next = machine.transitions[index(sid) + class];
+            if next != UNKNOWN {
+                sid = next;
+                scanned += 1;
+            } else {
+                machine.searched = machine.searched.saturating_add(scanned + 1);
+                scanned = 0;
+                sid = machine
+                    .transition(&self.reverse, sid, Some(b), class)
+                    .ok_or(())?;
             }
-            if machine.dead(sid) {
-                break;
+            if sid & (MATCH | DEAD) != 0 {
+                if machine.matched(sid) {
+                    start = Some(p);
+                }
+                if machine.dead(sid) {
+                    break;
+                }
             }
             p -= 1;
         }
+        machine.searched = machine.searched.saturating_add(scanned);
         if p == from {
             sid = machine
                 .step(&self.reverse, sid, p.checked_sub(1).map(|p| haystack[p]))
@@ -777,19 +903,35 @@ impl Portable {
         } else {
             settle.max(LONG_WALK_BYTES)
         });
+        let classes = &self.forward.classes;
         let mut i = at;
         let mut recorded = None;
-        macro_rules! step {
-            ($byte:expr, $asked:expr) => {
-                match cache.step(&self.forward, sid, $byte) {
-                    Some(next) => sid = next,
-                    None => return (ScanEnd::GaveUp, $asked),
+        let mut scanned = 0usize;
+        macro_rules! step_byte {
+            ($byte:expr, $asked:expr) => {{
+                let b = $byte;
+                let class = classes[b as usize] as usize;
+                let next = cache.transitions[index(sid) + class];
+                if next != UNKNOWN {
+                    sid = next;
+                    scanned += 1;
+                } else {
+                    cache.searched = cache.searched.saturating_add(scanned + 1);
+                    scanned = 0;
+                    match cache.transition(&self.forward, sid, Some(b), class) {
+                        Some(next) => sid = next,
+                        None => return (ScanEnd::GaveUp, $asked),
+                    }
                 }
-            };
+            }};
         }
         macro_rules! finish {
             ($asked:expr) => {{
-                step!(None, $asked);
+                cache.searched = cache.searched.saturating_add(scanned);
+                match cache.step(&self.forward, sid, None) {
+                    Some(next) => sid = next,
+                    None => return (ScanEnd::GaveUp, $asked),
+                }
                 cache.record(sid, patset);
                 return (ScanEnd::Finished, $asked);
             }};
@@ -798,14 +940,18 @@ impl Portable {
         // Recording out of line also keeps its scratch out of the byte loop.
         let plain_end = cut.min(ask);
         loop {
-            if cache.dead(sid) {
-                return (ScanEnd::Finished, false);
-            }
-            if cache.matched(sid) && recorded != Some((sid, cache.clears)) {
-                recorded = Some((sid, cache.clears));
-                cache.record(sid, patset);
-                if patset.is_full() {
-                    return (ScanEnd::Settled, false);
+            if sid & (MATCH | DEAD) != 0 {
+                if cache.dead(sid) {
+                    cache.searched = cache.searched.saturating_add(scanned);
+                    return (ScanEnd::Finished, false);
+                }
+                if cache.matched(sid) && recorded != Some((sid, cache.clears)) {
+                    recorded = Some((sid, cache.clears));
+                    cache.record(sid, patset);
+                    if patset.is_full() {
+                        cache.searched = cache.searched.saturating_add(scanned);
+                        return (ScanEnd::Settled, false);
+                    }
                 }
             }
             if i >= plain_end {
@@ -813,13 +959,16 @@ impl Portable {
                     finish!(false);
                 }
                 if i == cut {
+                    cache.searched = cache.searched.saturating_add(scanned);
                     return (ScanEnd::Bound, false);
                 }
                 break;
             }
-            step!(Some(haystack[i]), false);
+            step_byte!(haystack[i], false);
             i += 1;
         }
+        cache.searched = cache.searched.saturating_add(scanned);
+        scanned = 0;
         *stamp = stamp.wrapping_add(1);
         if *stamp == 0 {
             stamps.fill(0);
@@ -840,22 +989,27 @@ impl Portable {
             return (ScanEnd::Settled, true);
         }
         loop {
-            step!(Some(haystack[i]), true);
+            step_byte!(haystack[i], true);
             i += 1;
-            if cache.dead(sid) {
-                return (ScanEnd::Finished, true);
-            }
-            if cache.matched(sid) && recorded != Some((sid, cache.clears)) {
-                recorded = Some((sid, cache.clears));
-                needed -= cache.record_needed(sid, patset, stamps, *stamp);
-                if needed == 0 || patset.is_full() {
-                    return (ScanEnd::Settled, true);
+            if sid & (MATCH | DEAD) != 0 {
+                if cache.dead(sid) {
+                    cache.searched = cache.searched.saturating_add(scanned);
+                    return (ScanEnd::Finished, true);
+                }
+                if cache.matched(sid) && recorded != Some((sid, cache.clears)) {
+                    recorded = Some((sid, cache.clears));
+                    needed -= cache.record_needed(sid, patset, stamps, *stamp);
+                    if needed == 0 || patset.is_full() {
+                        cache.searched = cache.searched.saturating_add(scanned);
+                        return (ScanEnd::Settled, true);
+                    }
                 }
             }
             if i == cut {
                 if i == end {
                     finish!(true);
                 }
+                cache.searched = cache.searched.saturating_add(scanned);
                 return (ScanEnd::Bound, true);
             }
         }
@@ -1253,6 +1407,78 @@ mod tests {
                     Portable::read(&mut Reader::new(&bytes[..end]), patterns.len(), true).is_err()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn flat_pool_deduplicates_states_and_reuses_index_across_clears() {
+        let program = small_program();
+        let mut machine = Machine::new(&program, false, 1024 * 1024, 0);
+        let mut ids = Vec::new();
+        // Intern 32 distinct states to exercise index_table growth and rehashing.
+        for i in 0..32u32 {
+            machine.roots.clear();
+            machine.roots.push(i);
+            machine.roots.push(i + 100);
+            machine.matches.clear();
+            if i.is_multiple_of(3) {
+                machine.matches.push(i);
+            }
+            let id = machine.intern_scratch((i % 5) as u8).unwrap();
+            ids.push(id);
+        }
+        let state_count = machine.states.len();
+        let root_len = machine.root_pool.len();
+        let match_len = machine.match_pool.len();
+        assert_eq!(state_count, 32);
+        // Re-interning the exact same states must hit the open-addressed index
+        // without growing pools or allocating new state entries.
+        for (i, &expected) in ids.iter().enumerate() {
+            let i = i as u32;
+            machine.roots.clear();
+            machine.roots.push(i);
+            machine.roots.push(i + 100);
+            machine.matches.clear();
+            if i.is_multiple_of(3) {
+                machine.matches.push(i);
+            }
+            assert_eq!(machine.intern_scratch((i % 5) as u8), Some(expected));
+        }
+        assert_eq!(machine.states.len(), state_count);
+        assert_eq!(machine.root_pool.len(), root_len);
+        assert_eq!(machine.match_pool.len(), match_len);
+        assert!(machine.memory_usage() > 0);
+    }
+
+    #[test]
+    fn clear_releases_retained_pool_capacity_across_workload_shifts() {
+        let program = small_program();
+        let limit = 1024 * 1024;
+        let mut machine = Machine::new(&program, false, limit, 0);
+        // Phase 1: intern a few states with very large root vectors so
+        // `root_pool` grows close to the cache limit.
+        for i in 0..20u32 {
+            machine.roots.clear();
+            machine.roots.extend(i..i + 8000);
+            machine.matches.clear();
+            let _ = machine.intern_scratch(0).unwrap();
+        }
+        assert!(machine.clears >= 1);
+        // Phase 2: switch to many small states that grow `states`,
+        // `transitions`, and `index_table`. Releasing retained capacities on
+        // clear must keep allocated cache vectors within `limit`.
+        for i in 0..400u32 {
+            machine.roots.clear();
+            machine.roots.push(i);
+            machine.matches.clear();
+            let _ = machine.intern_scratch(0).unwrap();
+            assert!(
+                machine.cache_capacity_bytes() <= limit,
+                "cache capacity {} exceeded limit {} after clear={}",
+                machine.cache_capacity_bytes(),
+                limit,
+                machine.clears
+            );
         }
     }
 }

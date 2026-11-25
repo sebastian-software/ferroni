@@ -8184,7 +8184,7 @@ fn sunday_quick_search_step_forward(
         if se + map_offset >= text_end {
             break;
         }
-        let skip = reg.map[text[se + map_offset] as usize] as usize;
+        let skip = reg.map_slice()[text[se + map_offset] as usize] as usize;
         let next = s + skip;
         if next < end {
             s = onigenc_get_right_adjust_char_head(enc, text, s, next);
@@ -8243,7 +8243,7 @@ fn map_search_chars(
     text_start: usize,
     text_range: usize,
 ) -> Option<usize> {
-    let map = &reg.map;
+    let map = reg.map_slice();
     let mut s = text_start;
     // Rust-only (ADR-008): after 16 bytes without a candidate the
     // search goes on eight bytes at a time.
@@ -8278,7 +8278,7 @@ fn map_search_ascii_chunks(
     text_range: usize,
 ) -> Option<usize> {
     const HIGH: u64 = 0x8080_8080_8080_8080;
-    let map = &reg.map;
+    let map = reg.map_slice();
     let ranges = &reg.map_ascii_ranges;
     let mut s = text_start;
     while s < text_range {
@@ -8398,7 +8398,7 @@ fn map_search_backward(
                 // C's loop, one character at a time.
                 let mut s = right;
                 loop {
-                    if reg.map[text[s] as usize] != 0 {
+                    if reg.map_slice()[text[s] as usize] != 0 {
                         return Some(s);
                     }
                     if s <= adjust_text {
@@ -9323,7 +9323,7 @@ fn map_candidate_at(reg: &RegexType, str_data: &[u8], start: usize, range: usize
         && reg.sub_anchor == 0
         && start < range
         && start < str_data.len()
-        && reg.map[str_data[start] as usize] != 0
+        && reg.map_slice()[str_data[start] as usize] != 0
 }
 
 /// `map_search_bypassed` for a subject that is (`subject_utf8`) or may not
@@ -9759,7 +9759,7 @@ fn anchored_start_run(
         OptimizeType::Map
             if reg.dist_min == 0
                 && reg.sub_anchor == 0
-                && reg.map[str_data[start] as usize] != 0 =>
+                && reg.map_slice()[str_data[start] as usize] != 0 =>
         {
             true
         }
@@ -10419,7 +10419,7 @@ fn onig_search_inner_core_impl<const WINDOW_SCAN: bool>(
     // the match start; the loop leaves a start to the look-behind where its
     // characters do not line up.
     if map_search_bypassed(reg) && reg.dist_max == 0 && !find_longest && may_skip_attempts(msa) {
-        start_filter = start_filter.or(Some(&reg.map));
+        start_filter = start_filter.or(Some(reg.map_slice()));
     }
 
     if reg.leading_run.is_some() && best_start == ONIG_MISMATCH {
@@ -10768,11 +10768,11 @@ fn skip_nonmatching_class_prefix(
 /// caller checks.
 #[inline]
 fn unbounded_optimizer_start_bytes(reg: &RegexType) -> Option<&[u8; CHAR_MAP_SIZE]> {
-    (reg.has_first_byte_map
-        && reg.dist_max == INFINITE_LEN
+    let map = reg.first_byte_map.as_deref()?;
+    (reg.dist_max == INFINITE_LEN
         && reg.optimize != OptimizeType::None
         && reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0))
-    .then_some(&reg.first_byte_map)
+    .then_some(map)
 }
 
 /// Whether the forward search may leave out attempts that cannot match
@@ -12393,7 +12393,7 @@ mod tests {
                         let mut expected = None;
                         let mut s = start;
                         while s < range {
-                            if reg.map[text[s] as usize] != 0 {
+                            if reg.map_slice()[text[s] as usize] != 0 {
                                 expected = Some(s);
                                 break;
                             }
@@ -12987,7 +12987,6 @@ mod tests {
             backtrack_warnings: Vec::new(),
             backtrack_rewrites: Vec::new(),
             ops: Vec::new(),
-            string_pool: Vec::new(),
             num_mem: 0,
             num_repeat: 0,
             num_empty_check: 0,
@@ -13012,7 +13011,7 @@ mod tests {
             exact_finder: None,
             pure_literal: false,
             skip_repeated_empty_search: false,
-            map: [0u8; CHAR_MAP_SIZE],
+            map: None,
             map_offset: 0,
             map_bytes: [0u8; 3],
             map_byte_count: 0,
@@ -13021,8 +13020,7 @@ mod tests {
             dist_max: 0,
             needs_capture_tracking: false,
             keep_moves_match_start: false,
-            first_byte_map: [0u8; CHAR_MAP_SIZE],
-            has_first_byte_map: false,
+            first_byte_map: None,
             start_dispatch: false,
             called_addrs: vec![],
             unset_call_addrs: vec![],

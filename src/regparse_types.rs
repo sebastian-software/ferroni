@@ -845,7 +845,7 @@ pub(crate) struct RegexParseState {
     pub options: OnigOptionType,
     pub case_fold_flag: OnigCaseFoldType,
     pub name_table: Option<NameTable>,
-    pub extp: Option<RegexExt>,
+    pub extp: Option<Box<RegexExt>>,
 }
 
 impl Default for RegexParseState {

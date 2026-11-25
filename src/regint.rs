@@ -750,7 +750,6 @@ pub struct RegexType {
     pub(crate) backtrack_rewrites: Vec<crate::backtrack_rewrite::BacktrackingRewrite>,
     // bytecode
     pub(crate) ops: Vec<Operation>,
-    pub(crate) string_pool: Vec<u8>,
 
     // capture info
     pub(crate) num_mem: i32,
@@ -793,7 +792,7 @@ pub struct RegexType {
     /// that search (`MatchCursor::accept`). Set by
     /// `detect_skip_repeated_empty_search` when compilation ends.
     pub(crate) skip_repeated_empty_search: bool,
-    pub(crate) map: [u8; CHAR_MAP_SIZE],
+    pub(crate) map: Option<Box<[u8; CHAR_MAP_SIZE]>>,
     pub(crate) map_offset: i32,
     pub(crate) map_bytes: [u8; 3],
     pub(crate) map_byte_count: u8,
@@ -815,9 +814,7 @@ pub struct RegexType {
     /// First-byte prefilter map for regset dispatch.
     /// Unlike `map` (which may be repurposed as BMH skip table when optimize=StrFast),
     /// this always contains the character membership map for possible first bytes.
-    /// Only valid when `has_first_byte_map` is true.
-    pub(crate) first_byte_map: [u8; CHAR_MAP_SIZE],
-    pub(crate) has_first_byte_map: bool,
+    pub(crate) first_byte_map: Option<Box<[u8; CHAR_MAP_SIZE]>>,
     /// Rust-only RegSet routing hint: the optimizer (C's) has an unbounded
     /// distance, but the extra class and type maps would give one within a
     /// bounded distance of the match start. Such an entry is dispatched by
@@ -831,7 +828,7 @@ pub struct RegexType {
     pub(crate) unset_call_addrs: Vec<(usize, i32)>, // (op_index, group_num) for patching
 
     // extension (callouts)
-    pub(crate) extp: Option<RegexExt>,
+    pub(crate) extp: Option<Box<RegexExt>>,
 
     // literal alternation tries (for AltLiterals opcode)
     pub(crate) literal_tries: Vec<crate::literal_trie::LiteralTrie>,
@@ -847,7 +844,7 @@ pub struct RegexType {
     // Aho-Corasick automaton for pure literal alternation fast path.
     // `ac_alt_has_capture` is true when the alternation is wrapped in a single
     // capture group, so the fast path must also populate region[1].
-    pub(crate) ac_alt: Option<aho_corasick::AhoCorasick>,
+    pub(crate) ac_alt: Option<Box<aho_corasick::AhoCorasick>>,
     pub(crate) ac_alt_has_capture: bool,
 
     /// Rust-only (ADR-008): skips for a leading class run
@@ -881,6 +878,17 @@ pub struct RegexType {
     /// Rust-only (ADR-008): literals one of which every match contains,
     /// for RegSet fallback searches (`crate::required_literals`).
     pub(crate) required_literals: Option<Box<crate::required_literals::RequiredLiterals>>,
+}
+
+/// Shared zero byte map returned when a compiled regex does not allocate `map`.
+pub(crate) static ZERO_CHAR_MAP: [u8; CHAR_MAP_SIZE] = [0u8; CHAR_MAP_SIZE];
+
+impl RegexType {
+    /// Optimizer byte map (or all zeros when no map was allocated).
+    #[inline]
+    pub(crate) fn map_slice(&self) -> &[u8; CHAR_MAP_SIZE] {
+        self.map.as_deref().unwrap_or(&ZERO_CHAR_MAP)
+    }
 }
 
 /// The ASCII bytes of an optimizer map as at most [`MapAsciiRanges::MAX`]
@@ -1287,4 +1295,21 @@ pub(crate) fn is_code_word_ascii(code: OnigCodePoint) -> bool {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub(crate) fn is_code_digit_ascii(code: OnigCodePoint) -> bool {
     code < 128 && (code >= b'0' as u32 && code <= b'9' as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn regex_type_inline_footprint_stays_compact() {
+        // Large cold or optional fields (map, first_byte_map, extp, ac_alt)
+        // live behind Option<Box<_>> so every compiled regex stays well under
+        // the ~1.2 KiB pre-boxing footprint.
+        assert!(
+            std::mem::size_of::<RegexType>() <= 640,
+            "RegexType grew to {} bytes",
+            std::mem::size_of::<RegexType>()
+        );
+    }
 }
