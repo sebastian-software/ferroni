@@ -2235,6 +2235,14 @@ impl<'t> Captures<'t> {
         self.get(num as usize)
     }
 
+    /// Select a capture group from pre-resolved candidate group numbers using
+    /// the exact same rule as [`Captures::name`] (`select_backref_number`).
+    #[inline]
+    pub(crate) fn select_named_group(&self, nums: &[i32]) -> Option<Match<'t>> {
+        let num = crate::regexec::select_backref_number(nums, Some(&self.region)).ok()?;
+        self.get(num as usize)
+    }
+
     /// Number of capture groups (including group 0).
     pub fn len(&self) -> usize {
         self.region.num_regs as usize

@@ -354,15 +354,12 @@ pub fn onig_name_to_group_numbers<'a>(reg: &'a RegexType, name: &[u8]) -> Result
     }
 }
 
-/// Resolve an ambiguous named backref to a single group number using region state.
-/// If multiple groups share a name, returns the last one that participated in the match.
-#[cfg_attr(coverage_nightly, coverage(off))]
-pub fn onig_name_to_backref_number(
-    reg: &RegexType,
-    name: &[u8],
-    region: Option<&OnigRegion>,
-) -> Result<i32, i32> {
-    let nums = onig_name_to_group_numbers(reg, name)?;
+/// Select the backref group number from `nums` using `region` state.
+/// If multiple groups share a name, returns the last one whose start position
+/// was recorded in `region` (even if its range is inverted), falling back to
+/// the last group number in `nums`.
+#[inline]
+pub(crate) fn select_backref_number(nums: &[i32], region: Option<&OnigRegion>) -> Result<i32, i32> {
     if nums.is_empty() {
         return Err(ONIGERR_PARSER_BUG);
     }
@@ -379,6 +376,18 @@ pub fn onig_name_to_backref_number(
         }
     }
     Ok(nums[nums.len() - 1])
+}
+
+/// Resolve an ambiguous named backref to a single group number using region state.
+/// If multiple groups share a name, returns the last one that participated in the match.
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn onig_name_to_backref_number(
+    reg: &RegexType,
+    name: &[u8],
+    region: Option<&OnigRegion>,
+) -> Result<i32, i32> {
+    let nums = onig_name_to_group_numbers(reg, name)?;
+    select_backref_number(nums, region)
 }
 
 /// Iterate over all name entries. Callback receives (name, back_refs).
@@ -4803,9 +4812,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
     // Subexpression call limits (C: `subexp_call_nest_counter`,
     // `SubexpCallMaxNestLevel` and `SubexpCallLimitInSearch`). Like C, the
     // int nest level is compared as an unsigned long, so a negative level
-    // never trips. Loaded lazily on the first `OpCode::Call`.
+    // never trips. Like C, OP_CALL reads both limits where it checks them so
+    // mid-match callouts can tighten or raise limits dynamically.
     let mut subexp_call_nest_counter: u64 = 0;
-    let mut subexp_call_limits: Option<(u64, u64)> = None;
 
     // Callout data: per-callout mutable slots (indexed by callout num - 1).
     // This is still attempt-local; C keeps these slots in MatchParam across
@@ -7596,17 +7605,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // ================================================================
             OpCode::Call => {
                 if let OperationPayload::Call { addr } = op.payload {
-                    let (subexp_call_max_nest_level, subexp_call_limit_in_search) =
-                        *subexp_call_limits.get_or_insert_with(|| {
-                            (
-                                onig_get_subexp_call_max_nest_level() as i64 as u64,
-                                onig_get_subexp_call_limit_in_search(),
-                            )
-                        });
-                    if subexp_call_nest_counter == subexp_call_max_nest_level {
+                    if subexp_call_nest_counter
+                        == onig_get_subexp_call_max_nest_level() as i64 as u64
+                    {
                         goto_fail = true;
                     } else {
                         subexp_call_nest_counter += 1;
+                        let subexp_call_limit_in_search = onig_get_subexp_call_limit_in_search();
                         if subexp_call_limit_in_search != 0 {
                             msa.subexp_call_in_search_counter += 1;
                             if msa.subexp_call_in_search_counter > subexp_call_limit_in_search {
@@ -16661,5 +16666,32 @@ mod tests {
             let (r_eol, _) = onig_search(&reg_eol, b"xxfooX", 6, 6, 2, None, ONIG_OPTION_NONE);
             assert_eq!(r_eol, ONIG_MISMATCH);
         }
+    }
+
+    #[test]
+    fn progress_callout_lowering_subexp_call_limit_applies_to_next_call() {
+        let _limits = exclusive_limits();
+        let old_limit = onig_get_subexp_call_limit_in_search();
+
+        fn tighten_call_limit(_args: &OnigCalloutArgs, _user_data: *mut std::ffi::c_void) -> i32 {
+            onig_set_subexp_call_limit_in_search(1);
+            ONIG_NORMAL
+        }
+
+        // First call enters `(?<a>...)` with a generous call limit; the
+        // progress callout lowers the limit to 1 so the second call must trip
+        // `ONIGERR_SUBEXP_CALL_LIMIT_IN_SEARCH_OVER`.
+        let reg = compile_full(br"(?<a>a)(?{tighten})\g<a>");
+        let mut mp = onig_new_match_param();
+        assert_eq!(
+            onig_set_progress_callout_of_match_param(&mut mp, Some(tighten_call_limit)),
+            ONIG_NORMAL
+        );
+
+        onig_set_subexp_call_limit_in_search(10);
+        let (result, _) = onig_search_with_param(&reg, b"aa", 2, 0, 2, None, ONIG_OPTION_NONE, &mp);
+        onig_set_subexp_call_limit_in_search(old_limit);
+
+        assert_eq!(result, ONIGERR_SUBEXP_CALL_LIMIT_IN_SEARCH_OVER);
     }
 }
