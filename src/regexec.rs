@@ -8475,10 +8475,10 @@ fn backward_search(
             if !retry && (reg.sub_anchor & ANCR_END_LINE) != 0 {
                 if p >= end {
                     // at end, check previous
-                    let prev = onigenc_get_prev_char_head(reg.enc, str_data, adjrange, p);
-                    if prev < adjrange {
+                    if p <= adjrange {
                         return None;
                     }
+                    let prev = onigenc_get_prev_char_head(reg.enc, str_data, adjrange, p);
                     if is_mbc_newline(reg.enc, str_data, prev, end) {
                         p = prev;
                         continue;
@@ -8488,13 +8488,10 @@ fn backward_search(
                 }
             }
             if retry {
-                if p == 0 {
+                if p <= adjrange {
                     return None;
                 }
                 p = onigenc_get_prev_char_head(reg.enc, str_data, adjrange, p);
-                if p < adjrange {
-                    return None;
-                }
                 continue;
             }
         }
@@ -16633,5 +16630,43 @@ mod tests {
         let saved = onig_get_subexp_call_max_nest_level();
         onig_set_subexp_call_max_nest_level(saved);
         assert!(onig_get_global_limit_revision() > before);
+    }
+
+    #[test]
+    fn backward_search_retry_terminates_at_nonzero_lower_bound() {
+        let _limits = shared_limits();
+        for enc in [
+            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
+            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
+        ] {
+            // `^foo` has sub_anchor ANCR_BEGIN_LINE; backward search from 5 down to
+            // nonzero lower bound 2 finds "foo" at p == adjrange == 2, rejects it
+            // because str_data[1] == b'x' is not a newline, and must stop cleanly.
+            let reg_bol = regcomp::onig_new(
+                b"^foo",
+                ONIG_OPTION_NONE,
+                enc,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            assert_ne!(reg_bol.sub_anchor & ANCR_BEGIN_LINE, 0);
+            let (r, _) = onig_search(&reg_bol, b"xxfoo", 5, 5, 2, None, ONIG_OPTION_NONE);
+            assert_eq!(r, ONIG_MISMATCH);
+
+            // When a newline precedes the nonzero lower bound, it still matches.
+            let (r_hit, _) = onig_search(&reg_bol, b"x\nfoo", 5, 5, 2, None, ONIG_OPTION_NONE);
+            assert_eq!(r_hit, 2);
+
+            // `foo$` / `(?m)foo$` with ANCR_END_LINE rejected at nonzero lower bound.
+            let reg_eol = regcomp::onig_new(
+                b"foo$",
+                ONIG_OPTION_NONE,
+                enc,
+                &crate::regsyntax::OnigSyntaxOniguruma,
+            )
+            .unwrap();
+            let (r_eol, _) = onig_search(&reg_eol, b"xxfooX", 6, 6, 2, None, ONIG_OPTION_NONE);
+            assert_eq!(r_eol, ONIG_MISMATCH);
+        }
     }
 }

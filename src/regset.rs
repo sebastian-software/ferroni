@@ -13,8 +13,9 @@ use crate::regexec::{
     FirstOpTest, MatchArg, OnigMatchParam, SearchLimits, first_op_fails, first_op_test,
     forward_search, map_search_bypassed_for, may_skip_first_op_failures,
     onig_get_global_limit_revision, onig_get_match_stack_limit, onig_get_retry_limit_in_match,
-    onig_get_retry_limit_in_search, onig_get_subexp_call_limit_in_search, onig_get_time_limit,
-    onig_match, onig_match_with_msa_start, search_in_range, two_pass_capture_fill_pays,
+    onig_get_retry_limit_in_search, onig_get_subexp_call_limit_in_search,
+    onig_get_subexp_call_max_nest_level, onig_get_time_limit, onig_match,
+    onig_match_with_msa_start, search_in_range, two_pass_capture_fill_pays,
 };
 use crate::regint::*;
 use std::sync::Arc;
@@ -291,6 +292,7 @@ struct FallbackMemoKey {
     match_stack_limit: u32,
     time_limit: u64,
     subexp_call_limit_in_search: u64,
+    subexp_call_max_nest_level: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -300,6 +302,7 @@ struct FallbackMemoLimits {
     match_stack_limit: u32,
     time_limit: u64,
     subexp_call_limit_in_search: u64,
+    subexp_call_max_nest_level: i32,
 }
 
 impl FallbackMemoLimits {
@@ -310,6 +313,7 @@ impl FallbackMemoLimits {
             match_stack_limit: onig_get_match_stack_limit(),
             time_limit: onig_get_time_limit(),
             subexp_call_limit_in_search: onig_get_subexp_call_limit_in_search(),
+            subexp_call_max_nest_level: onig_get_subexp_call_max_nest_level(),
         }
     }
 }
@@ -3420,6 +3424,7 @@ fn regset_search_body_position_lead(
             match_stack_limit: limits.match_stack_limit,
             time_limit: limits.time_limit,
             subexp_call_limit_in_search: limits.subexp_call_limit_in_search,
+            subexp_call_max_nest_level: limits.subexp_call_max_nest_level,
         });
 
     // Rust-only (ADR-008): the DFA pre-filter decides which entries attempt
@@ -4251,7 +4256,7 @@ mod tests {
         exclusive_limits, onig_get_global_limit_revision, onig_get_match_stack_limit,
         onig_get_retry_limit_in_match, onig_get_retry_limit_in_search, onig_get_time_limit,
         onig_set_match_stack_limit, onig_set_retry_limit_in_match, onig_set_retry_limit_in_search,
-        onig_set_time_limit, shared_limits,
+        onig_set_subexp_call_max_nest_level, onig_set_time_limit, shared_limits,
     };
     use crate::regsyntax::OnigSyntaxOniguruma;
 
@@ -6390,6 +6395,64 @@ mod tests {
 
         assert_eq!(reused_result, fresh_result);
         assert_eq!(reused_result, (ONIGERR_RETRY_LIMIT_IN_MATCH_OVER, 0));
+    }
+
+    #[test]
+    fn fallback_memo_invalidates_when_subexp_call_max_nest_level_changes() {
+        let _limits = exclusive_limits();
+        let old_nest = onig_get_subexp_call_max_nest_level();
+        // Top-level occurrence of a called group is itself a call, so "xcz"
+        // fails at nest limit 0 and matches at nest limit 1.
+        let input = b"xcz";
+        let identity = FallbackMemoIdentity::OnigString(11);
+        let make = || {
+            let (set, result) = onig_regset_new(vec![compile(br".*x(?<r>a\g<r>b|c)z")]);
+            assert_eq!(result, ONIG_NORMAL);
+            set.expect("regset")
+        };
+        let mut reused = make();
+        assert!(!reused.fallback_search_candidates.is_empty());
+
+        onig_set_subexp_call_max_nest_level(0);
+        let first = onig_regset_search_fast_with_id(
+            &mut reused,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
+            identity,
+        );
+        assert_eq!(first, (ONIG_MISMATCH, 0));
+        assert_eq!(reused.fallback_search_candidates[0].no_match_from, 0);
+
+        onig_set_subexp_call_max_nest_level(1);
+        let reused_after = onig_regset_search_fast_with_id(
+            &mut reused,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
+            identity,
+        );
+        let mut fresh = make();
+        let fresh_after = onig_regset_search_fast_with_id(
+            &mut fresh,
+            input,
+            input.len(),
+            0,
+            input.len(),
+            OnigRegSetLead::PositionLead,
+            ONIG_OPTION_NONE,
+            identity,
+        );
+        onig_set_subexp_call_max_nest_level(old_nest);
+
+        assert_eq!(reused_after, fresh_after);
+        assert_eq!(reused_after, (0, 0));
     }
 
     #[test]
