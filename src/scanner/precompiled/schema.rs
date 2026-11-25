@@ -674,7 +674,7 @@ pub(super) fn read_reg(
     let _phase =
         crate::scanner::load_profile::scope(crate::scanner::load_profile::Phase::ProgramDecode);
     let mut reg = RegexType {
-        enc: super::super::SCANNER_ENCODING,
+        enc: &crate::encodings::utf8::CANONICAL_ENCODING_UTF8,
         backtrack_warnings: Wire::read(input)?,
         backtrack_rewrites: Wire::read(input)?,
         ops: Wire::read(input)?,

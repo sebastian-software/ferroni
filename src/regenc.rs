@@ -131,6 +131,66 @@ pub trait Encoding: Send + Sync {
     fn index(&self) -> i32 {
         0
     }
+
+    /// Internal fast-path discriminator for Ferroni's built-in encodings.
+    /// Returns `1` for UTF-8, `2` for US-ASCII, and `0` for custom encodings.
+    #[doc(hidden)]
+    fn __builtin_encoding_kind(&self) -> u8 {
+        0
+    }
+}
+
+/// Canonicalize built-in encodings to non-zero-sized internal statics so
+/// `std::ptr::addr_eq` uniquely identifies them on every target (avoiding
+/// Windows MSVC ZST data-address collisions and ThinLTO cross-CGU vtable
+/// mismatches) without changing the public `ONIG_ENCODING_*` types.
+#[inline]
+pub(crate) fn canonicalize_encoding(enc: OnigEncoding) -> OnigEncoding {
+    if is_canonical_utf8(enc) || is_canonical_ascii(enc) {
+        return enc;
+    }
+    match enc.__builtin_encoding_kind() {
+        1 => &crate::encodings::utf8::CANONICAL_ENCODING_UTF8,
+        2 => &crate::encodings::ascii::CANONICAL_ENCODING_ASCII,
+        _ => enc,
+    }
+}
+
+#[inline(always)]
+pub(crate) fn is_canonical_utf8(enc: OnigEncoding) -> bool {
+    std::ptr::addr_eq(enc, &crate::encodings::utf8::CANONICAL_ENCODING_UTF8)
+}
+
+#[inline(always)]
+pub(crate) fn is_canonical_ascii(enc: OnigEncoding) -> bool {
+    std::ptr::addr_eq(enc, &crate::encodings::ascii::CANONICAL_ENCODING_ASCII)
+}
+
+#[inline]
+pub(crate) fn is_utf8_encoding(enc: OnigEncoding) -> bool {
+    is_canonical_utf8(enc) || (!is_canonical_ascii(enc) && enc.__builtin_encoding_kind() == 1)
+}
+
+#[inline]
+pub(crate) fn is_ascii_encoding(enc: OnigEncoding) -> bool {
+    is_canonical_ascii(enc) || (!is_canonical_utf8(enc) && enc.__builtin_encoding_kind() == 2)
+}
+
+#[inline]
+pub(crate) fn same_encoding(a: OnigEncoding, b: OnigEncoding) -> bool {
+    if is_canonical_utf8(a) {
+        return is_utf8_encoding(b);
+    }
+    if is_canonical_ascii(a) {
+        return is_ascii_encoding(b);
+    }
+    if is_canonical_utf8(b) {
+        return is_utf8_encoding(a);
+    }
+    if is_canonical_ascii(b) {
+        return is_ascii_encoding(a);
+    }
+    std::ptr::eq(a, b)
 }
 
 // === Encoding query helpers ===
@@ -142,23 +202,41 @@ pub(crate) fn enc_get_skip_offset(enc: OnigEncoding) -> u32 {
 
 #[inline]
 pub(crate) fn onigenc_is_unicode_encoding(enc: OnigEncoding) -> bool {
-    (enc.flag() & ENC_FLAG_UNICODE) != 0
+    if is_canonical_utf8(enc) {
+        true
+    } else if is_canonical_ascii(enc) {
+        false
+    } else {
+        (enc.flag() & ENC_FLAG_UNICODE) != 0
+    }
 }
 
-#[inline]
+#[inline(always)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub(crate) fn onigenc_is_ascii_compatible_encoding(enc: OnigEncoding) -> bool {
-    // Rust-only (ADR-008): UTF-8, the usual encoding, is recognized by its
-    // fat pointer (data + vtable), skipping the virtual `flag` call without
-    // colliding with other zero-sized encoding statics.
-    let utf8: OnigEncoding = &crate::encodings::utf8::ONIG_ENCODING_UTF8;
-    std::ptr::eq(enc, utf8) || (enc.flag() & ENC_FLAG_ASCII_COMPATIBLE) != 0
+    // Rust-only (ADR-008): canonical UTF-8 / US-ASCII statics have non-zero
+    // interior-mutable addresses, so a single data-pointer compare skips the
+    // virtual `flag` call safely across Windows MSVC ZSTs and ThinLTO CGUs.
+    is_canonical_utf8(enc) || is_canonical_ascii(enc) || onigenc_is_ascii_compatible_slow(enc)
+}
+
+#[cold]
+#[inline(never)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn onigenc_is_ascii_compatible_slow(enc: OnigEncoding) -> bool {
+    (enc.flag() & ENC_FLAG_ASCII_COMPATIBLE) != 0
 }
 
 #[inline]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub(crate) fn onigenc_is_singlebyte(enc: OnigEncoding) -> bool {
-    enc.max_enc_len() == 1
+    if is_canonical_utf8(enc) {
+        false
+    } else if is_canonical_ascii(enc) {
+        true
+    } else {
+        enc.max_enc_len() == 1
+    }
 }
 
 #[inline]
