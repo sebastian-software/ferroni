@@ -7661,7 +7661,7 @@ fn try_case_insensitive_trie(
     reg: &mut RegexType,
     branches: &[AltBranchInfo],
 ) -> bool {
-    if !std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8) {
+    if !crate::regenc::is_utf8_encoding(reg.enc) {
         return false;
     }
     let literals: Vec<&[u8]> = branches
@@ -9870,7 +9870,7 @@ const MAX_NARROWED_CLASS_CODES: usize = 16;
 /// `mbc_to_code` decodes (`first_bytes::utf8_lead_bytes`). `None` for any
 /// other class or encoding, where the caller keeps every byte from 0x80 up.
 fn utf8_class_lead_bytes(cc: &CClassNode, enc: OnigEncoding) -> Option<BitSet> {
-    if cc.is_not() || !std::ptr::addr_eq(enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8) {
+    if cc.is_not() || !crate::regenc::is_utf8_encoding(enc) {
         return None;
     }
     let mut leads: BitSet = [0; BITSET_REAL_SIZE];
@@ -11365,9 +11365,7 @@ fn compile_parsed(
 
     // Rust-only, opt-in (ADR-008): preserve the original warning list and
     // capture structure while removing retries whose exits cannot match.
-    if choices.optimize_backtracking
-        && std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
-    {
+    if choices.optimize_backtracking && crate::regenc::is_utf8_encoding(reg.enc) {
         reg.backtrack_rewrites =
             crate::backtrack_rewrite::apply(&mut root, reg.options, env.cap_history);
         refresh_node_references(&mut root, env);
@@ -11717,8 +11715,8 @@ fn guard_backtrack_pushes(reg: &mut RegexType, literal_first: &[Option<u8>; MEM_
                 .ops
                 .get(pc + 1)
                 .is_some_and(|op| op.opcode == OpCode::MemEnd)
-            && (std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
-                || std::ptr::addr_eq(reg.enc, &crate::encodings::ascii::ONIG_ENCODING_ASCII))
+            && (crate::regenc::is_utf8_encoding(reg.enc)
+                || crate::regenc::is_ascii_encoding(reg.enc))
         {
             if let Some(c) = lazy_literal_byte(reg, pc + 1, literal_first) {
                 reg.ops[pc] = Operation {
@@ -12130,6 +12128,7 @@ fn onig_new_with_choices(
     syntax: &OnigSyntaxType,
     choices: RustOnlyCompile,
 ) -> Result<(RegexType, ScannerSeek, AcceptSeek), crate::error::RegexError> {
+    let enc = crate::regenc::canonicalize_encoding(enc);
     // Validate options
     if option.intersects(ONIG_OPTION_DONT_CAPTURE_GROUP)
         && option.intersects(ONIG_OPTION_CAPTURE_GROUP)

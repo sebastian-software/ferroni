@@ -97,7 +97,7 @@ fn add_code_range_heads(
             }
         }
     }
-    if !std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8) {
+    if !crate::regenc::is_utf8_encoding(reg.enc) {
         add_high_bytes(map);
         return;
     }

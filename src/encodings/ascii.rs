@@ -134,6 +134,111 @@ impl Encoding for AsciiEncoding {
     fn index(&self) -> i32 {
         0
     }
+
+    fn __builtin_encoding_kind(&self) -> u8 {
+        2
+    }
+}
+
+/// Non-zero-sized internal US-ASCII wrapper whose `AtomicU8` payload guarantees
+/// a unique, non-mergeable data address across Windows MSVC ZSTs and linker ICF.
+pub(crate) struct CanonicalAscii(std::sync::atomic::AtomicU8);
+
+pub(crate) static CANONICAL_ENCODING_ASCII: CanonicalAscii =
+    CanonicalAscii(std::sync::atomic::AtomicU8::new(2));
+
+#[cfg_attr(coverage_nightly, coverage(off))]
+impl Encoding for CanonicalAscii {
+    fn mbc_enc_len(&self, p: &[u8]) -> usize {
+        ONIG_ENCODING_ASCII.mbc_enc_len(p)
+    }
+    fn name(&self) -> &str {
+        ONIG_ENCODING_ASCII.name()
+    }
+    fn max_enc_len(&self) -> usize {
+        ONIG_ENCODING_ASCII.max_enc_len()
+    }
+    fn min_enc_len(&self) -> usize {
+        ONIG_ENCODING_ASCII.min_enc_len()
+    }
+    fn is_mbc_newline(&self, p: &[u8], end: usize) -> bool {
+        ONIG_ENCODING_ASCII.is_mbc_newline(p, end)
+    }
+    fn mbc_to_code(&self, p: &[u8], end: usize) -> OnigCodePoint {
+        ONIG_ENCODING_ASCII.mbc_to_code(p, end)
+    }
+    fn code_to_mbclen(&self, code: OnigCodePoint) -> i32 {
+        ONIG_ENCODING_ASCII.code_to_mbclen(code)
+    }
+    fn code_to_mbc(&self, code: OnigCodePoint, buf: &mut [u8]) -> i32 {
+        ONIG_ENCODING_ASCII.code_to_mbc(code, buf)
+    }
+    fn mbc_case_fold(
+        &self,
+        flag: OnigCaseFoldType,
+        pp: &mut usize,
+        end: usize,
+        source: &[u8],
+        fold_buf: &mut [u8],
+    ) -> i32 {
+        ONIG_ENCODING_ASCII.mbc_case_fold(flag, pp, end, source, fold_buf)
+    }
+    fn apply_all_case_fold(
+        &self,
+        flag: OnigCaseFoldType,
+        f: &mut dyn FnMut(OnigCodePoint, &[OnigCodePoint]) -> i32,
+    ) -> i32 {
+        ONIG_ENCODING_ASCII.apply_all_case_fold(flag, f)
+    }
+    fn get_case_fold_codes_by_str(
+        &self,
+        flag: OnigCaseFoldType,
+        p: &[u8],
+        end: usize,
+        items: &mut [OnigCaseFoldCodeItem],
+    ) -> i32 {
+        ONIG_ENCODING_ASCII.get_case_fold_codes_by_str(flag, p, end, items)
+    }
+    fn property_name_to_ctype(&self, p: &[u8]) -> i32 {
+        ONIG_ENCODING_ASCII.property_name_to_ctype(p)
+    }
+    fn is_code_ctype(&self, code: OnigCodePoint, ctype: u32) -> bool {
+        ONIG_ENCODING_ASCII.is_code_ctype(code, ctype)
+    }
+    fn get_ctype_code_range(
+        &self,
+        ctype: u32,
+        sb_out: &mut OnigCodePoint,
+    ) -> Option<&'static [OnigCodePoint]> {
+        ONIG_ENCODING_ASCII.get_ctype_code_range(ctype, sb_out)
+    }
+    fn left_adjust_char_head(&self, start: usize, s: usize, data: &[u8]) -> usize {
+        ONIG_ENCODING_ASCII.left_adjust_char_head(start, s, data)
+    }
+    fn is_allowed_reverse_match(&self, p: &[u8]) -> bool {
+        ONIG_ENCODING_ASCII.is_allowed_reverse_match(p)
+    }
+    fn init(&self) -> i32 {
+        ONIG_ENCODING_ASCII.init()
+    }
+    fn is_initialized(&self) -> bool {
+        ONIG_ENCODING_ASCII.is_initialized()
+    }
+    fn is_valid_mbc_string(&self, s: &[u8]) -> bool {
+        ONIG_ENCODING_ASCII.is_valid_mbc_string(s)
+    }
+    fn flag(&self) -> u32 {
+        ONIG_ENCODING_ASCII.flag()
+    }
+    fn sb_range(&self) -> OnigCodePoint {
+        ONIG_ENCODING_ASCII.sb_range()
+    }
+    fn index(&self) -> i32 {
+        ONIG_ENCODING_ASCII.index()
+    }
+    fn __builtin_encoding_kind(&self) -> u8 {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 #[cfg(test)]

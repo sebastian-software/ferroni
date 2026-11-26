@@ -2695,9 +2695,10 @@ impl SingleTable {
         let stride = classes.alphabet_len();
         // Leave headroom for both buffers while shrink_to_fit compacts the
         // table; the original and replacement together stay within the cap.
-        let max_rows = limits.dfa_bytes.checked_sub(std::mem::size_of::<Self>())?
+        let max_entries = limits.dfa_bytes.checked_sub(std::mem::size_of::<Self>())?
             / 2
-            / (stride * std::mem::size_of::<u16>());
+            / std::mem::size_of::<u16>();
+        let max_rows = max_entries.saturating_sub(2) / stride;
         let state_entry_bytes =
             std::mem::size_of::<(u64, bool)>() + std::mem::size_of::<((u64, bool), usize)>() * 2;
         let max_rows = max_rows.min(
@@ -2720,7 +2721,11 @@ impl SingleTable {
         let initial_rows = max_rows.min(64);
         let mut states = Vec::with_capacity(initial_rows);
         let mut state_ids = HashMap::with_capacity(initial_rows);
-        let mut transitions = Vec::with_capacity(initial_rows * stride);
+        let mut transitions = Vec::with_capacity(2 + initial_rows * stride);
+        // Reserve slots 0 and 1 (dead / match) so every live state value
+        // `2 + index * stride` indexes directly into `transitions` without
+        // subtracting 2 on every input byte.
+        transitions.extend_from_slice(&[0, 0]);
         #[allow(clippy::too_many_arguments)]
         fn intern(
             mask: u64,
@@ -2817,17 +2822,17 @@ impl SingleTable {
     fn search(&self, text: &[u8], start: usize) -> bool {
         let classes = &self.classes;
         let transitions = &self.transitions;
-        let mut state = self.starts[usize::from(start == 0)];
+        let mut state = usize::from(self.starts[usize::from(start == 0)]);
         for &byte in &text[start..] {
             if state <= 1 {
                 return state == 1;
             }
-            state = transitions[usize::from(state) - 2 + usize::from(classes[usize::from(byte)])];
+            state = usize::from(transitions[state + usize::from(classes[usize::from(byte)])]);
         }
         if state <= 1 {
             return state == 1;
         }
-        transitions[usize::from(state) - 2 + self.eoi] == 1
+        transitions[state + self.eoi] == 1
     }
 
     fn memory_usage(&self) -> usize {
@@ -4724,5 +4729,22 @@ mod tests {
             assert_eq!(seek.search_hybrid(b"xx", 0), Some(false));
         }
         assert_eq!(seek.adaptive_consultations(), (Some(2), None));
+    }
+
+    #[test]
+    fn single_table_direct_indexing_layout_and_budget() {
+        let nfa = thompson::Compiler::new()
+            .configure(thompson::Config::new().utf8(false))
+            .build(r"\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z")
+            .unwrap();
+        let table = SingleTable::build(&nfa, PREFERRED_SINGLE_DENSE_LIMITS).unwrap();
+        assert_eq!(&table.transitions[..2], &[0, 0]);
+        assert!(
+            std::mem::size_of::<SingleTable>() + table.memory_usage() * 2
+                <= PREFERRED_SINGLE_DENSE_LIMITS.dfa_bytes
+        );
+        assert!(table.search(b"550e8400-e29b-41d4-a716-446655440000", 0));
+        assert!(!table.search(b"550e8400-e29b-41d4-a716-44665544000g", 0));
+        assert!(!table.search(b"x550e8400-e29b-41d4-a716-446655440000", 1));
     }
 }

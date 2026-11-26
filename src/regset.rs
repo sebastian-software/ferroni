@@ -917,7 +917,7 @@ pub(crate) type SharedAutomata = ();
 fn regset_alloc() -> Box<OnigRegSet> {
     Box::new(OnigRegSet {
         entries: Vec::new(),
-        enc: &crate::encodings::utf8::ONIG_ENCODING_UTF8,
+        enc: &crate::encodings::utf8::CANONICAL_ENCODING_UTF8,
         anchor: 0,
         anc_dmin: 0,
         anc_dmax: 0,
@@ -1000,7 +1000,7 @@ fn onig_regset_add_shared_impl(
         return ONIGERR_INVALID_ARGUMENT;
     }
 
-    if !set.entries.is_empty() && !std::ptr::eq(reg.enc, set.enc) {
+    if !set.entries.is_empty() && !crate::regenc::same_encoding(reg.enc, set.enc) {
         return ONIGERR_INVALID_ARGUMENT;
     }
 
@@ -1134,7 +1134,7 @@ pub fn onig_regset_replace(set: &mut OnigRegSet, at: usize, reg: Option<Box<Rege
             if opton_find_longest(reg.options) {
                 return ONIGERR_INVALID_ARGUMENT;
             }
-            if set.entries.len() > 1 && !std::ptr::eq(reg.enc, set.enc) {
+            if set.entries.len() > 1 && !crate::regenc::same_encoding(reg.enc, set.enc) {
                 return ONIGERR_INVALID_ARGUMENT;
             }
             set.entries[at].fallback_memo_safe = fallback_memo_is_safe(&reg);

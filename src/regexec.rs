@@ -297,7 +297,13 @@ pub fn onig_region_copy(to: &mut OnigRegion, from: &OnigRegion) {
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn onig_get_encoding(reg: &RegexType) -> OnigEncoding {
-    reg.enc
+    if is_canonical_utf8(reg.enc) {
+        &crate::encodings::utf8::ONIG_ENCODING_UTF8
+    } else if is_canonical_ascii(reg.enc) {
+        &crate::encodings::ascii::ONIG_ENCODING_ASCII
+    } else {
+        reg.enc
+    }
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -2772,23 +2778,16 @@ enum EncKind {
 impl EncKind {
     #[inline]
     fn from_enc(enc: OnigEncoding) -> Self {
-        // Compare full fat pointers (data + vtable), not `addr_eq`: zero-sized
-        // static encodings (`Utf8Encoding`, `AsciiEncoding`, custom ZSTs) may
-        // share the same data address on Windows MSVC. Encodings with
-        // different behavior cannot share identical vtables; if a codegen unit
-        // duplicates a built-in vtable, `Custom(enc)` remains a safe fallback.
-        if std::ptr::eq(
-            enc,
-            &crate::encodings::utf8::ONIG_ENCODING_UTF8 as OnigEncoding,
-        ) {
+        if is_canonical_utf8(enc) {
             Self::Utf8
-        } else if std::ptr::eq(
-            enc,
-            &crate::encodings::ascii::ONIG_ENCODING_ASCII as OnigEncoding,
-        ) {
+        } else if is_canonical_ascii(enc) {
             Self::Ascii
         } else {
-            Self::Custom(enc)
+            match enc.__builtin_encoding_kind() {
+                1 => Self::Utf8,
+                2 => Self::Ascii,
+                _ => Self::Custom(enc),
+            }
         }
     }
 
@@ -2930,9 +2929,67 @@ const WORD_ASCII_TABLE: [bool; 256] = {
 
 /// Check if the character at position s is a word character (encoding-aware).
 /// Uses the encoding's Unicode-aware is_code_ctype for multi-byte encodings.
-#[inline]
+#[inline(always)]
 fn is_word_char_at(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
-    EncKind::from_enc(enc).is_word_char_at(str_data, s, end)
+    if s >= end {
+        return false;
+    }
+    let b = str_data[s];
+    if b < 0x80 {
+        return is_word_ascii(b);
+    }
+    is_word_char_non_ascii(enc, str_data, s, end)
+}
+
+#[cold]
+#[inline(never)]
+fn is_word_char_non_ascii(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
+    if is_canonical_ascii(enc) {
+        false
+    } else if is_canonical_utf8(enc) {
+        let code = crate::encodings::utf8::utf8_mbc_to_code(&str_data[s..], end.saturating_sub(s));
+        crate::unicode::onigenc_unicode_is_code_ctype(code, ONIGENC_CTYPE_WORD)
+    } else {
+        let code = enc.mbc_to_code(&str_data[s..], end.saturating_sub(s));
+        enc.is_code_ctype(code, ONIGENC_CTYPE_WORD)
+    }
+}
+
+/// Decode a multibyte character at `s` without inlining a 3-way dispatch into
+/// `match_at_impl`.
+#[inline]
+fn mbc_to_code_at(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> OnigCodePoint {
+    if is_canonical_utf8(enc) {
+        crate::encodings::utf8::utf8_mbc_to_code(&str_data[s..], end.saturating_sub(s))
+    } else {
+        mbc_to_code_slow(enc, str_data, s, end)
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn mbc_to_code_slow(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> OnigCodePoint {
+    if is_canonical_ascii(enc) {
+        str_data[s] as OnigCodePoint
+    } else {
+        enc.mbc_to_code(&str_data[s..], end.saturating_sub(s))
+    }
+}
+
+/// Check if position `s` is a newline character for `enc`.
+#[inline(always)]
+fn is_mbc_newline_at(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
+    if is_canonical_utf8(enc) || is_canonical_ascii(enc) {
+        s < end && s < str_data.len() && str_data[s] == b'\n'
+    } else {
+        is_mbc_newline_slow(enc, str_data, s, end)
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn is_mbc_newline_slow(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> bool {
+    enc.is_mbc_newline(&str_data[s..], end.saturating_sub(s))
 }
 
 /// Check if position is a word character in ASCII-aware mode.
@@ -3022,8 +3079,20 @@ fn exact_eq_at(str_data: &[u8], s: usize, exact: &[u8], len: usize) -> bool {
 }
 
 /// Get the start of the previous character (left_adjust_char_head).
-#[inline]
+#[inline(always)]
 fn prev_char_head(enc: OnigEncoding, start: usize, s: usize, str_data: &[u8]) -> usize {
+    if s <= start {
+        return s;
+    }
+    if str_data[s - 1] < 0x80 && onigenc_is_ascii_compatible_encoding(enc) {
+        return s - 1;
+    }
+    prev_char_head_slow(enc, start, s, str_data)
+}
+
+#[cold]
+#[inline(never)]
+fn prev_char_head_slow(enc: OnigEncoding, start: usize, s: usize, str_data: &[u8]) -> usize {
     EncKind::from_enc(enc).prev_char_head(start, s, str_data)
 }
 
@@ -3224,9 +3293,37 @@ fn grapheme_cluster_end(
 }
 
 /// Get the character length at position s for the given encoding.
-#[inline]
+#[inline(always)]
 fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
-    EncKind::from_enc(enc).enclen(str_data, s)
+    if s < str_data.len() && str_data[s] < 0x80 && onigenc_is_ascii_compatible_encoding(enc) {
+        return 1;
+    }
+    enclen_slow(enc, str_data, s)
+}
+
+#[cold]
+#[inline(never)]
+fn enclen_slow(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
+    if s >= str_data.len() {
+        return 1;
+    }
+    if is_canonical_utf8(enc) {
+        crate::encodings::utf8::utf8_mbc_enc_len(str_data[s])
+    } else if is_canonical_ascii(enc) {
+        1
+    } else {
+        enc.mbc_enc_len(&str_data[s..])
+    }
+}
+
+/// Fast multibyte character length when `s < str_data.len()` and `str_data[s] >= 0x80`.
+#[inline(always)]
+fn enclen_mb(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
+    if is_canonical_utf8(enc) {
+        crate::encodings::utf8::utf8_mbc_enc_len(str_data[s])
+    } else {
+        enclen_slow(enc, str_data, s)
+    }
 }
 
 /// Advance over one character without moving past the logical end of input.
@@ -3235,7 +3332,7 @@ fn enclen(enc: OnigEncoding, str_data: &[u8], s: usize) -> usize {
 /// input when callers use the byte API with truncated input. The matcher must
 /// consume the available bytes in that case, rather than retaining an offset
 /// beyond `end` for a later opcode or match region.
-#[inline]
+#[inline(always)]
 fn advance_char_to_end(enc: OnigEncoding, str_data: &[u8], s: usize, end: usize) -> usize {
     s.saturating_add(enclen(enc, str_data, s)).min(end)
 }
@@ -4152,7 +4249,6 @@ fn greedy_anychar_lazy(
     stack: &mut Vec<StackEntry>,
     pcode: usize,
     enc: OnigEncoding,
-    enc_kind: EncKind,
     text: &[u8],
     start: usize,
     limit: usize,
@@ -4161,6 +4257,7 @@ fn greedy_anychar_lazy(
     if start >= limit {
         return Ok(start);
     }
+    let enc_kind = EncKind::from_enc(enc);
     if enc_kind.is_singlebyte()
         || (matches!(enc_kind, EncKind::Utf8) && text[start..limit].is_ascii())
     {
@@ -4203,9 +4300,8 @@ fn greedy_anychar_lazy(
 /// Compute the stop boundary for non-multiline `.*` (`AnyCharStar` /
 /// `AnyCharStarPeekNext`) without stopping on a `0x0A` byte that lies inside
 /// a multibyte character (custom encodings or malformed UTF-8).
-#[inline]
 fn anychar_nl_limit(
-    enc_kind: EncKind,
+    enc: OnigEncoding,
     str_data: &[u8],
     start: usize,
     right_range: usize,
@@ -4214,6 +4310,7 @@ fn anychar_nl_limit(
     if start >= right_range {
         return start;
     }
+    let enc_kind = EncKind::from_enc(enc);
     match enc_kind {
         EncKind::Ascii => {
             memchr::memchr(b'\n', &str_data[start..right_range]).map_or(right_range, |i| start + i)
@@ -4266,7 +4363,7 @@ fn anychar_nl_limit(
 fn greedy_anychar_peek_next(
     stack: &mut Vec<StackEntry>,
     pcode: usize,
-    enc_kind: EncKind,
+    enc: OnigEncoding,
     str_data: &[u8],
     start: usize,
     limit: usize,
@@ -4278,6 +4375,7 @@ fn greedy_anychar_peek_next(
     if start >= limit {
         return Ok(start);
     }
+    let enc_kind = EncKind::from_enc(enc);
     let pcode = pcode as u32;
     let slice = &str_data[start..limit];
     let byte_scan_exact = c < 0x80
@@ -4508,9 +4606,12 @@ fn look_behind_ascii_end(
     if b >= 0x80 || at >= right_range || at >= end {
         return None;
     }
-    // An ASCII byte is a character head in ASCII and UTF-8, so the step back
-    // stays at `at`; the check keeps the encoding's own rule.
-    if enc.left_adjust_char_head(0, at, str_data) != at {
+    // An ASCII byte is always a character head in UTF-8 and US-ASCII; only
+    // non-canonical/custom encodings need the virtual character-head check.
+    if !is_canonical_utf8(enc)
+        && !is_canonical_ascii(enc)
+        && enc.left_adjust_char_head(0, at, str_data) != at
+    {
         return None;
     }
     // Results as `single_op_end` gives them for the one-byte character `b`:
@@ -5106,7 +5207,6 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
     let pop_level = reg.stack_pop_level;
     let num_mem = reg.num_mem as usize;
     let enc = reg.enc;
-    let enc_kind = EncKind::from_enc(enc);
     let options = msa.options;
 
     // Reuse stack and capture-group arrays from MatchArg (avoids heap alloc per call)
@@ -5681,13 +5781,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             p += 1;
                         }
                     } else {
-                        let mb_len = enc_kind.enclen(str_data, s);
+                        let mb_len = enclen_mb(enc, str_data, s);
                         // C: a byte that starts no multibyte character
                         // (`ONIGENC_IS_MBC_HEAD`) fails the class.
                         if mb_len == 1 || s + mb_len > right_range {
                             goto_fail = true;
                         } else {
-                            let code = enc_kind.mbc_to_code(str_data, s, end);
+                            let code = mbc_to_code_at(enc, str_data, s, end);
                             if !is_in_code_range(mb, code) {
                                 goto_fail = true;
                             } else {
@@ -5714,7 +5814,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             p += 1;
                         }
                     } else {
-                        let mb_len = enc_kind.enclen(str_data, s);
+                        let mb_len = enclen_mb(enc, str_data, s);
                         if mb_len == 1 {
                             // C: a byte that starts no multibyte character
                             // matches the negated class as one byte.
@@ -5727,7 +5827,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             s = end;
                             p += 1;
                         } else {
-                            let code = enc_kind.mbc_to_code(str_data, s, end);
+                            let code = mbc_to_code_at(enc, str_data, s, end);
                             if is_in_code_range(mb, code) {
                                 goto_fail = true;
                             } else {
@@ -5757,7 +5857,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             p += 1;
                         }
                     } else {
-                        let len = enc_kind.enclen(str_data, s);
+                        let len = enclen_mb(enc, str_data, s);
                         if s + len > right_range {
                             if not {
                                 // Keep CClassMixNot consistent with CClassMbNot
@@ -5773,7 +5873,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             } else {
                                 // C: cclass_mb. A multibyte character is only
                                 // looked up in the code ranges.
-                                let code = enc_kind.mbc_to_code(str_data, s, end);
+                                let code = mbc_to_code_at(enc, str_data, s, end);
                                 is_in_code_range(mb, code)
                             };
                             if in_class == not {
@@ -5796,10 +5896,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if right_range.saturating_sub(s) < 1 {
                     goto_fail = true;
                 } else {
-                    let n = enc_kind.enclen(str_data, s);
+                    let n = enclen(enc, str_data, s);
                     if right_range.saturating_sub(s) < n {
                         goto_fail = true;
-                    } else if enc_kind.is_mbc_newline(str_data, s, end) {
+                    } else if is_mbc_newline_at(enc, str_data, s, end) {
                         goto_fail = true; // ANYCHAR doesn't match newline
                     } else {
                         s += n;
@@ -5812,7 +5912,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if right_range.saturating_sub(s) < 1 {
                     goto_fail = true;
                 } else {
-                    let n = enc_kind.enclen(str_data, s);
+                    let n = enclen(enc, str_data, s);
                     if right_range.saturating_sub(s) < n {
                         goto_fail = true;
                     } else {
@@ -5830,18 +5930,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 // memchr on ASCII / valid UTF-8 and walking `enclen` otherwise).
                 // An absent operator can lower right_range below s; C's loop
                 // (DATA_ENSURE_CHECK1) then simply does not run.
-                let nl_limit = anychar_nl_limit(enc_kind, str_data, s, right_range, end);
+                let nl_limit = anychar_nl_limit(enc, str_data, s, right_range, end);
                 let step = if match_stack_limit == 0 && dot_star_ascii_cache_enabled() {
-                    greedy_anychar_lazy(
-                        &mut stack,
-                        p + 1,
-                        enc,
-                        enc_kind,
-                        str_data,
-                        s,
-                        nl_limit,
-                        stack_cap,
-                    )
+                    greedy_anychar_lazy(&mut stack, p + 1, enc, str_data, s, nl_limit, stack_cap)
                 } else {
                     greedy_anychar_loop(&mut stack, p + 1, enc, str_data, s, nl_limit, stack_cap)
                 };
@@ -5857,16 +5948,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
 
             OpCode::AnyCharMlStar => {
                 let step = if match_stack_limit == 0 && dot_star_ascii_cache_enabled() {
-                    greedy_anychar_lazy(
-                        &mut stack,
-                        p + 1,
-                        enc,
-                        enc_kind,
-                        str_data,
-                        s,
-                        right_range,
-                        stack_cap,
-                    )
+                    greedy_anychar_lazy(&mut stack, p + 1, enc, str_data, s, right_range, stack_cap)
                 } else {
                     greedy_anychar_loop(&mut stack, p + 1, enc, str_data, s, right_range, stack_cap)
                 };
@@ -5883,11 +5965,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             OpCode::AnyCharStarPeekNext => {
                 if let OperationPayload::AnyCharStarPeekNext { c } = op.payload {
                     // See AnyCharStar: right_range can be below s here.
-                    let nl_limit = anychar_nl_limit(enc_kind, str_data, s, right_range, end);
+                    let nl_limit = anychar_nl_limit(enc, str_data, s, right_range, end);
                     match greedy_anychar_peek_next(
                         &mut stack,
                         p + 1,
-                        enc_kind,
+                        enc,
                         str_data,
                         s,
                         nl_limit,
@@ -5916,7 +5998,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     match greedy_anychar_peek_next(
                         &mut stack,
                         p + 1,
-                        enc_kind,
+                        enc,
                         str_data,
                         s,
                         right_range,
@@ -6045,7 +6127,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             continue;
                         }
 
-                        let len = enc_kind.enclen(str_data, s);
+                        let len = enclen_mb(enc, str_data, s);
                         if s + len > right_range {
                             break;
                         }
@@ -6053,7 +6135,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         let in_class = if len == 1 {
                             bitset_at(bsp, b as usize)
                         } else {
-                            let code = enc_kind.mbc_to_code(str_data, s, end);
+                            let code = mbc_to_code_at(enc, str_data, s, end);
                             is_in_code_range(mb, code)
                         };
                         if !in_class {
@@ -6087,13 +6169,13 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     let start = s;
                     let mut exact_heads = true;
                     while s < right_range {
-                        let mb_len = enc_kind.enclen(str_data, s);
+                        let mb_len = enclen(enc, str_data, s);
                         // As `CClassMb`: a byte that starts no multibyte
                         // character ends the run.
                         if mb_len == 1 || s + mb_len > right_range {
                             break;
                         }
-                        let code = enc_kind.mbc_to_code(str_data, s, end);
+                        let code = mbc_to_code_at(enc, str_data, s, end);
                         if !is_in_code_range(mb, code) {
                             break;
                         }
@@ -6192,7 +6274,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         stack_cap,
                         |b| !is_in_code_range(mb, b as OnigCodePoint),
                         |x| {
-                            let mb_len = enc_kind.enclen(str_data, x);
+                            let mb_len = enclen(enc, str_data, x);
                             if mb_len == 1 {
                                 // As `CClassMbNot`: a byte that starts no
                                 // multibyte character matches as one byte.
@@ -6203,7 +6285,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                                 // class, which goes on at the end.
                                 return Some(end);
                             }
-                            let code = enc_kind.mbc_to_code(str_data, x, end);
+                            let code = mbc_to_code_at(enc, str_data, x, end);
                             (!is_in_code_range(mb, code)).then_some(x + mb_len)
                         },
                     ) {
@@ -6234,7 +6316,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                         |b| !bitset_at(bsp, b as usize),
                         |x| {
                             let b = str_data[x];
-                            let len = enc_kind.enclen(str_data, x);
+                            let len = enclen(enc, str_data, x);
                             if x + len > right_range {
                                 // A truncated character matches a negated
                                 // class, which goes on at the end.
@@ -6243,7 +6325,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             let in_class = if len == 1 {
                                 bitset_at(bsp, b as usize)
                             } else {
-                                let code = enc_kind.mbc_to_code(str_data, x, end);
+                                let code = mbc_to_code_at(enc, str_data, x, end);
                                 is_in_code_range(mb, code)
                             };
                             (!in_class).then_some(x + len)
@@ -6268,9 +6350,9 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // ================================================================
             OpCode::WordStar => {
                 let start = s;
-                if enc_kind.is_singlebyte() {
+                if enc_is_singlebyte(enc) {
                     while s < right_range {
-                        if !enc_kind.is_word_char_at(str_data, s, end) {
+                        if !is_word_char_at(enc, str_data, s, end) {
                             break;
                         }
                         s += 1;
@@ -6284,7 +6366,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             peek_byte: 0,
                         });
                     }
-                } else if enc_kind.is_ascii_compatible() {
+                } else if onigenc_is_ascii_compatible_encoding(enc) {
                     let mut ascii_only = true;
                     let mut exact_heads = true;
                     while s < right_range {
@@ -6295,11 +6377,11 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                             }
                             s += 1;
                         } else {
-                            if !enc_kind.is_word_char_at(str_data, s, end) {
+                            if !is_word_char_at(enc, str_data, s, end) {
                                 break;
                             }
                             ascii_only = false;
-                            let next = enc_kind.advance_char_to_end(str_data, s, end);
+                            let next = advance_char_to_end(enc, str_data, s, end);
                             exact_heads &= steps_back_to(enc, str_data, start, s, next);
                             s = next;
                         }
@@ -6321,10 +6403,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 } else {
                     let mut exact_heads = true;
                     while s < right_range {
-                        if !enc_kind.is_word_char_at(str_data, s, end) {
+                        if !is_word_char_at(enc, str_data, s, end) {
                             break;
                         }
-                        let next = enc_kind.advance_char_to_end(str_data, s, end);
+                        let next = advance_char_to_end(enc, str_data, s, end);
                         exact_heads &= steps_back_to(enc, str_data, start, s, next);
                         s = next;
                     }
@@ -6422,10 +6504,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             // Word / NoWord - \w and \W character type matching
             // ================================================================
             OpCode::Word => {
-                if s >= right_range || !enc_kind.is_word_char_at(str_data, s, end) {
+                if s >= right_range || !is_word_char_at(enc, str_data, s, end) {
                     goto_fail = true;
                 } else {
-                    s = enc_kind.advance_char_to_end(str_data, s, end);
+                    s = advance_char_to_end(enc, str_data, s, end);
                     p += 1;
                 }
             }
@@ -6440,10 +6522,10 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
             }
 
             OpCode::NoWord => {
-                if s >= right_range || enc_kind.is_word_char_at(str_data, s, end) {
+                if s >= right_range || is_word_char_at(enc, str_data, s, end) {
                     goto_fail = true;
                 } else {
-                    s = enc_kind.advance_char_to_end(str_data, s, end);
+                    s = advance_char_to_end(enc, str_data, s, end);
                     p += 1;
                 }
             }
@@ -6452,7 +6534,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 if s >= right_range || is_word_ascii(str_data[s]) {
                     goto_fail = true;
                 } else {
-                    s = enc_kind.advance_char_to_end(str_data, s, end);
+                    s = advance_char_to_end(enc, str_data, s, end);
                     p += 1;
                 }
             }
@@ -6575,8 +6657,8 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                 } else if s != end {
                     // C: `else if (! ON_STR_END(s))` -- a newline at the very
                     // end of the subject does not start another line.
-                    let sprev = enc_kind.prev_char_head(0, s, str_data);
-                    if enc_kind.is_mbc_newline(str_data, sprev, end) {
+                    let sprev = prev_char_head(enc, 0, s, str_data);
+                    if is_mbc_newline_at(enc, str_data, sprev, end) {
                         p += 1;
                     } else {
                         goto_fail = true;
@@ -6593,7 +6675,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     } else {
                         p += 1;
                     }
-                } else if enc_kind.is_mbc_newline(str_data, s, end) {
+                } else if is_mbc_newline_at(enc, str_data, s, end) {
                     p += 1;
                 } else {
                     goto_fail = true;
@@ -7586,10 +7668,7 @@ fn match_at_impl<const TRACK_CAPTURES: bool, const OPTIMIZER_MAP: bool>(
                     // the byte before `s` must be ASCII, which is its own
                     // character head in UTF-8. `None` for `\w`, else the byte
                     // of the string. Other cases take the general path.
-                    let inline_body = if not
-                        && char_len == 1
-                        && std::ptr::addr_eq(enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
-                    {
+                    let inline_body = if not && char_len == 1 && is_utf8_encoding(enc) {
                         match (reg.ops[p + 1].opcode, &reg.ops[p + 1].payload) {
                             (OpCode::Word, _) => Some(None),
                             (OpCode::Str1, OperationPayload::Exact { s: lit }) => {
@@ -9105,10 +9184,7 @@ fn lazy_captured_any_char_stop(
     if LAZY_STOP_DISABLED.with(|disabled| disabled.get()) {
         return None;
     }
-    if msa.time_limit != 0
-        || !(std::ptr::addr_eq(reg.enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
-            || std::ptr::addr_eq(reg.enc, &crate::encodings::ascii::ONIG_ENCODING_ASCII))
-    {
+    if msa.time_limit != 0 || !(is_utf8_encoding(reg.enc) || is_ascii_encoding(reg.enc)) {
         return None;
     }
     let multiline = match p.checked_sub(1).map(|body| reg.ops[body].opcode) {
@@ -9227,8 +9303,9 @@ fn count_retries_at_once(
 }
 
 /// Check if encoding is single-byte.
+#[inline]
 fn enc_is_singlebyte(enc: OnigEncoding) -> bool {
-    enc.max_enc_len() == 1
+    onigenc_is_singlebyte(enc)
 }
 
 /// Get previous character head position (encoding-aware, bounded by `start`).
@@ -17517,6 +17594,78 @@ mod tests {
         assert_eq!(
             onig_match(&crlf_reg, b"a\r\n", 3, 0, None, ONIG_OPTION_NONE).0,
             1
+        );
+    }
+
+    #[test]
+    fn canonical_builtin_encodings_are_distinct_and_transparent_externally() {
+        use crate::encodings::ascii::{
+            CANONICAL_ENCODING_ASCII, CanonicalAscii, ONIG_ENCODING_ASCII,
+        };
+        use crate::encodings::utf8::{CANONICAL_ENCODING_UTF8, CanonicalUtf8, ONIG_ENCODING_UTF8};
+
+        // Non-zero-sized statics guarantee distinct data addresses on all
+        // targets (including Windows MSVC ZST folding and ThinLTO CGUs).
+        assert!(std::mem::size_of::<CanonicalUtf8>() > 0);
+        assert!(std::mem::size_of::<CanonicalAscii>() > 0);
+        assert!(!std::ptr::addr_eq(
+            &CANONICAL_ENCODING_UTF8,
+            &CANONICAL_ENCODING_ASCII
+        ));
+
+        let canon_utf8 = canonicalize_encoding(&ONIG_ENCODING_UTF8);
+        let canon_ascii = canonicalize_encoding(&ONIG_ENCODING_ASCII);
+        assert!(is_canonical_utf8(canon_utf8));
+        assert!(!is_canonical_ascii(canon_utf8));
+        assert!(is_canonical_ascii(canon_ascii));
+        assert!(!is_canonical_utf8(canon_ascii));
+        assert!(is_utf8_encoding(&ONIG_ENCODING_UTF8));
+        assert!(is_utf8_encoding(canon_utf8));
+        assert!(!is_utf8_encoding(canon_ascii));
+        assert!(is_ascii_encoding(&ONIG_ENCODING_ASCII));
+        assert!(is_ascii_encoding(canon_ascii));
+        assert!(!is_ascii_encoding(canon_utf8));
+        assert!(same_encoding(&ONIG_ENCODING_UTF8, canon_utf8));
+        assert!(same_encoding(&ONIG_ENCODING_ASCII, canon_ascii));
+        assert!(!same_encoding(canon_utf8, canon_ascii));
+
+        // Compiled regexes store the canonical encoding internally, while
+        // `onig_get_encoding` returns the public static.
+        let utf8_reg = regcomp::onig_new(
+            "[#＃]\\w+".as_bytes(),
+            ONIG_OPTION_NONE,
+            &ONIG_ENCODING_UTF8,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert!(is_canonical_utf8(utf8_reg.enc));
+        let public_utf8 = onig_get_encoding(&utf8_reg);
+        assert!(!is_canonical_utf8(public_utf8));
+        assert!(std::ptr::addr_eq(public_utf8, &ONIG_ENCODING_UTF8));
+        assert_eq!(public_utf8.name(), "UTF-8");
+
+        let ascii_reg = regcomp::onig_new(
+            b"\\w+",
+            ONIG_OPTION_NONE,
+            &ONIG_ENCODING_ASCII,
+            &crate::regsyntax::OnigSyntaxOniguruma,
+        )
+        .unwrap();
+        assert!(is_canonical_ascii(ascii_reg.enc));
+        let public_ascii = onig_get_encoding(&ascii_reg);
+        assert!(!is_canonical_ascii(public_ascii));
+        assert!(std::ptr::addr_eq(public_ascii, &ONIG_ENCODING_ASCII));
+        assert_eq!(public_ascii.name(), "US-ASCII");
+
+        // RegSet enforces matching canonical encodings across entries.
+        let mut set = crate::regset::onig_regset_new(vec![]).0.unwrap();
+        assert_eq!(
+            crate::regset::onig_regset_add(&mut set, Box::new(ascii_reg)),
+            ONIG_NORMAL
+        );
+        assert_eq!(
+            crate::regset::onig_regset_add(&mut set, Box::new(utf8_reg)),
+            ONIGERR_INVALID_ARGUMENT
         );
     }
 }

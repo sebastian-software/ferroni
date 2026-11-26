@@ -884,20 +884,22 @@ impl Regex {
         {
             // Rust-only (ADR-008): a pure literal pattern skips the search state.
             // It runs no attempt that could fail, so no limit can be reached.
-            if let Some(found) = pure_literal_first(
-                self.program(),
-                text,
-                text.len(),
-                start,
-                text.len(),
-                text.len(),
-                self.program().options,
-            ) {
-                return Ok(found.map(|(match_start, match_end)| Match {
-                    subject,
-                    start: match_start,
-                    end: match_end,
-                }));
+            if self.program().pure_literal {
+                if let Some(found) = pure_literal_first(
+                    self.program(),
+                    text,
+                    text.len(),
+                    start,
+                    text.len(),
+                    text.len(),
+                    self.program().options,
+                ) {
+                    return Ok(found.map(|(match_start, match_end)| Match {
+                        subject,
+                        start: match_start,
+                        end: match_end,
+                    }));
+                }
             }
             let mut msa = take_cached_msa(self.program(), ONIG_OPTION_NONE, None, start, limits);
             let found = onig_search_bounds(self.program(), text, start, &mut msa);
@@ -1075,16 +1077,18 @@ impl Regex {
         let reg = self.program();
         // Rust-only (ADR-008): a pure literal pattern skips the search state.
         // It runs no attempt that could fail, so no limit can be reached.
-        if let Some(found) = pure_literal_first(
-            reg,
-            text,
-            text.len(),
-            start,
-            text.len(),
-            text.len(),
-            reg.options,
-        ) {
-            return found.is_some();
+        if reg.pure_literal {
+            if let Some(found) = pure_literal_first(
+                reg,
+                text,
+                text.len(),
+                start,
+                text.len(),
+                text.len(),
+                reg.options,
+            ) {
+                return found.is_some();
+            }
         }
         let (result, _) = onig_search(
             reg,
@@ -1175,8 +1179,10 @@ impl Regex {
         let reg = self.program();
         // Rust-only (ADR-008): a pure literal pattern skips the search state
         // and cannot hit any search limit.
-        if let Some(found) = pure_literal_first(reg, text, len, start, len, len, reg.options) {
-            return Ok(found.is_some());
+        if reg.pure_literal {
+            if let Some(found) = pure_literal_first(reg, text, len, start, len, len, reg.options) {
+                return Ok(found.is_some());
+            }
         }
         let (result, _) = search_in_range(
             reg,

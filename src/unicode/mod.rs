@@ -1259,8 +1259,7 @@ pub(crate) fn onigenc_egcb_is_break_position(
     if s < end
         && str_data[s - 1] < 0x80
         && str_data[s] < 0x80
-        && (std::ptr::addr_eq(enc, &crate::encodings::utf8::ONIG_ENCODING_UTF8)
-            || std::ptr::addr_eq(enc, &crate::encodings::ascii::ONIG_ENCODING_ASCII))
+        && (crate::regenc::is_utf8_encoding(enc) || crate::regenc::is_ascii_encoding(enc))
     {
         return !(str_data[s - 1] == b'\r' && str_data[s] == b'\n');
     }
