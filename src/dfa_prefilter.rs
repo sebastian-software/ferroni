@@ -1719,7 +1719,26 @@ impl PatternBits {
         self.len == self.capacity
     }
 
+    /// Appends the entry index for each pattern ID in the set, ascending.
+    #[inline]
+    fn extend_entries(&self, entries: &[u16], out: &mut Vec<u16>) {
+        if self.len == 0 {
+            return;
+        }
+        out.reserve(self.len);
+        for (w, &word) in self.words.iter().enumerate() {
+            let mut bits = word;
+            let base = w * 64;
+            while bits != 0 {
+                let b = bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                out.push(entries[base + b]);
+            }
+        }
+    }
+
     /// The pattern IDs in the set, ascending.
+    #[cfg(test)]
     #[inline]
     fn iter(&self) -> impl Iterator<Item = usize> + '_ {
         self.words.iter().enumerate().flat_map(|(w, &word)| {
@@ -2207,7 +2226,7 @@ impl SetPrefilter {
         } else {
             None
         };
-        if self.long.is_empty() {
+        if self.long.is_empty() || span_end == haystack.len() {
             return found;
         }
         let dispatch = self.long_dispatch;
@@ -2285,8 +2304,7 @@ impl SetPrefilter {
                     .map(|(_, &index)| index),
             );
         } else {
-            self.candidates
-                .extend(self.patset.iter().map(|pid| entries[pid]));
+            self.patset.extend_entries(entries, &mut self.candidates);
         }
         if self.candidate_memo.active {
             self.candidate_memo.insert(at, &self.candidates, true);
@@ -4746,5 +4764,43 @@ mod tests {
         assert!(table.search(b"550e8400-e29b-41d4-a716-446655440000", 0));
         assert!(!table.search(b"550e8400-e29b-41d4-a716-44665544000g", 0));
         assert!(!table.search(b"x550e8400-e29b-41d4-a716-446655440000", 1));
+    }
+
+    #[test]
+    fn pattern_bits_extend_entries_matches_iter_across_words() {
+        let entries: Vec<u16> = (0..150).map(|i| (i * 3) as u16).collect();
+        let mut bits = PatternBits::new(entries.len());
+        let mut out = Vec::new();
+        bits.extend_entries(&entries, &mut out);
+        assert!(out.is_empty());
+
+        for pid in [0, 1, 63, 64, 65, 127, 128, 149] {
+            assert!(bits.insert(PatternID::new_unchecked(pid)));
+        }
+        bits.extend_entries(&entries, &mut out);
+        let expected: Vec<u16> = bits.iter().map(|pid| entries[pid]).collect();
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn search_in_short_span_finds_earlier_long_seek_before_bounded_seek() {
+        let _limits = crate::regexec::shared_limits();
+        // Pattern 0 is a bounded seek matching later; pattern 1 is an unbounded
+        // (long) seek matching earlier within a line shorter than the window.
+        let patterns = [r"zz", r"a[a-z]+!"];
+        let mut filtered =
+            Scanner::with_config(&patterns, &ScannerConfig::default().prefilter_warmup(0)).unwrap();
+        let mut plain =
+            Scanner::with_config(&patterns, &ScannerConfig::default().prefilter(false)).unwrap();
+        let text = "---axyzzz!---";
+        let m_filtered = filtered
+            .find_next_match(text, 0, crate::scanner::ScannerFindOptions::NONE)
+            .expect("match");
+        let m_plain = plain
+            .find_next_match(text, 0, crate::scanner::ScannerFindOptions::NONE)
+            .expect("match");
+        assert_eq!(m_filtered, m_plain);
+        assert_eq!(m_filtered.index, 1);
+        assert_eq!(m_filtered.captures()[0].start, 3);
     }
 }

@@ -583,6 +583,34 @@ fn replacement_limit(limit: usize) -> usize {
     if limit == 0 { usize::MAX } else { limit }
 }
 
+/// Estimates initial output capacity on the first literal replacement so
+/// growing replacements (such as inserting separators at zero-width boundaries)
+/// avoid an immediate reallocation when appending the tail or subsequent matches.
+#[inline]
+fn literal_replace_capacity(
+    text_len: usize,
+    match_len: usize,
+    literal_len: usize,
+    limit: usize,
+) -> usize {
+    if literal_len > match_len {
+        let growth = literal_len - match_len;
+        if limit == 1 {
+            return text_len.saturating_add(growth);
+        }
+        let max_matches = if limit == 0 { 4 } else { limit.min(4) };
+        let extra = growth
+            .saturating_mul(max_matches)
+            .min(text_len / 2)
+            .max(growth);
+        text_len.saturating_add(extra)
+    } else if limit == 1 {
+        text_len.saturating_sub(match_len - literal_len)
+    } else {
+        text_len
+    }
+}
+
 impl Regex {
     /// Replace the first match in `text` with `rep`.
     ///
@@ -677,7 +705,14 @@ impl Regex {
         if let Some(literal) = rep.no_expansion() {
             for result in self.find_iter_with(text, options) {
                 let m = result?;
-                let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
+                let out = out.get_or_insert_with(|| {
+                    String::with_capacity(literal_replace_capacity(
+                        text.len(),
+                        m.len(),
+                        literal.len(),
+                        0,
+                    ))
+                });
                 out.push_str(&text[last..m.start()]);
                 out.push_str(&literal);
                 last = m.end();
@@ -732,7 +767,14 @@ impl Regex {
             let mut out: Option<String> = None;
             let mut last = 0;
             for m in self.find_iter(text).take(replacement_limit(limit)) {
-                let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
+                let out = out.get_or_insert_with(|| {
+                    String::with_capacity(literal_replace_capacity(
+                        text.len(),
+                        m.len(),
+                        literal.len(),
+                        limit,
+                    ))
+                });
                 out.push_str(&text[last..m.start()]);
                 out.push_str(&literal);
                 last = m.end();
@@ -802,7 +844,14 @@ impl Regex {
         if let Some(literal) = rep.no_expansion() {
             for result in self.find_iter_bytes_with(text, options) {
                 let m = result?;
-                let out = out.get_or_insert_with(|| Vec::with_capacity(text.len()));
+                let out = out.get_or_insert_with(|| {
+                    Vec::with_capacity(literal_replace_capacity(
+                        text.len(),
+                        m.len(),
+                        literal.len(),
+                        0,
+                    ))
+                });
                 out.extend_from_slice(&text[last..m.start()]);
                 out.extend_from_slice(&literal);
                 last = m.end();
@@ -852,7 +901,14 @@ impl Regex {
             let mut out: Option<Vec<u8>> = None;
             let mut last = 0;
             for m in self.find_iter_bytes(text).take(replacement_limit(limit)) {
-                let out = out.get_or_insert_with(|| Vec::with_capacity(text.len()));
+                let out = out.get_or_insert_with(|| {
+                    Vec::with_capacity(literal_replace_capacity(
+                        text.len(),
+                        m.len(),
+                        literal.len(),
+                        limit,
+                    ))
+                });
                 out.extend_from_slice(&text[last..m.start()]);
                 out.extend_from_slice(&literal);
                 last = m.end();
@@ -1255,5 +1311,27 @@ mod tests {
             );
             assert_eq!(re.find_at(text, start).is_some(), expected);
         }
+    }
+
+    #[test]
+    fn literal_replace_capacity_presizes_growing_and_single_replacements() {
+        // Zero-width growing replacement (e.g. inserting `_` at camel-case boundaries).
+        assert_eq!(literal_replace_capacity(20, 0, 1, 0), 24);
+        assert_eq!(literal_replace_capacity(20, 0, 1, 1), 21);
+        assert_eq!(literal_replace_capacity(20, 0, 1, 2), 22);
+        // Single shrinking replacement computes exact final byte length.
+        assert_eq!(literal_replace_capacity(20, 5, 2, 1), 17);
+        assert_eq!(literal_replace_capacity(20, 5, 2, 0), 20);
+        // End-to-end check on zero-width underscore insertion.
+        let re = Regex::new(r"(?<=[A-Z])(?=[A-Z][a-z])|(?<=[a-z\d])(?=[A-Z])").unwrap();
+        assert_eq!(
+            re.replace_all("ActiveModel::HTMLParser", "_"),
+            "Active_Model::HTML_Parser"
+        );
+        assert_eq!(
+            re.replace_all_bytes(b"ActiveModel::HTMLParser", &b"_"[..])
+                .as_ref(),
+            b"Active_Model::HTML_Parser"
+        );
     }
 }

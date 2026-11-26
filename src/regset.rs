@@ -264,6 +264,15 @@ pub struct OnigRegSet {
     /// a later match can be reused as tokenization advances.
     fallback_memo_key: Option<FallbackMemoKey>,
     fallback_memos: Vec<Vec<FallbackMemo>>,
+    /// Whole-set no-match memo for position-lead searches over a stable
+    /// immutable subject (`NoMatchMemo`). Cleared whenever the set mutates.
+    no_match_memo: Option<NoMatchMemo>,
+    /// Whether no entry has callouts or `\G` (`CheckPositionType::SearchStart`),
+    /// so a whole-set no-match over `[from, end]` stays valid for later starts.
+    no_match_memo_safe: bool,
+    /// Entry indexes with `ANCR_ANYCHAR_INF`, checked when `anychar_inf` is set
+    /// and a later start does not follow a newline.
+    anychar_inf_entries: Vec<u16>,
     /// Global limits captured by `scratch_msa`. Identity changes invalidate
     /// cached results, but do not require discarding its reusable buffers.
     scratch_limits: Option<FallbackMemoLimits>,
@@ -526,6 +535,25 @@ fn next_required_literal(reg: &RegexType, str_data: &[u8], s: usize, end: usize)
     reg.required_literals.as_deref()?.find(str_data, s, end)
 }
 
+#[derive(Clone, Copy)]
+struct NoMatchMemo {
+    key: FallbackMemoKey,
+    from: usize,
+}
+
+#[inline]
+fn entry_has_search_start_anchor(reg: &RegexType) -> bool {
+    (reg.anchor & ANCR_BEGIN_POSITION) != 0
+        || reg.ops.iter().any(|op| {
+            matches!(
+                op.payload,
+                OperationPayload::CheckPosition {
+                    check_type: CheckPositionType::SearchStart
+                }
+            )
+        })
+}
+
 #[inline]
 fn fallback_memo_is_safe(reg: &RegexType) -> bool {
     reg.extp.as_ref().is_none_or(|ext| ext.callout_num == 0)
@@ -738,6 +766,17 @@ fn build_first_byte_table(set: &mut OnigRegSet) {
     set.fallback_search_candidates = fallback_search_candidates;
     set.fallback_memo_key = None;
     set.fallback_memos = vec![Vec::new(); set.entries.len()];
+    set.no_match_memo = None;
+    set.no_match_memo_safe = set
+        .entries
+        .iter()
+        .all(|entry| !entry.has_callouts && !entry_has_search_start_anchor(&entry.reg));
+    set.anychar_inf_entries = set
+        .entries
+        .iter()
+        .enumerate()
+        .filter_map(|(i, entry)| ((entry.reg.anchor & ANCR_ANYCHAR_INF) != 0).then_some(i as u16))
+        .collect();
     set.scratch_limits = None;
     set.scratch_limits_revision = None;
     set.scratch_table_retry_counters = vec![0; set.entries.len()];
@@ -929,6 +968,9 @@ fn regset_alloc() -> Box<OnigRegSet> {
         fallback_search_candidates: Vec::new(),
         fallback_memo_key: None,
         fallback_memos: Vec::new(),
+        no_match_memo: None,
+        no_match_memo_safe: true,
+        anychar_inf_entries: Vec::new(),
         scratch_limits: None,
         scratch_limits_revision: None,
         scratch_table_retry_counters: Vec::new(),
@@ -1039,6 +1081,15 @@ fn onig_regset_add_shared_impl(
         }
         set.fallback_memo_key = None;
         set.fallback_memos.resize_with(set.entries.len(), Vec::new);
+        set.no_match_memo = None;
+        if set.entries[set.entries.len() - 1].has_callouts
+            || entry_has_search_start_anchor(&set.entries[set.entries.len() - 1].reg)
+        {
+            set.no_match_memo_safe = false;
+        }
+        if (set.entries[set.entries.len() - 1].reg.anchor & ANCR_ANYCHAR_INF) != 0 {
+            set.anychar_inf_entries.push((set.entries.len() - 1) as u16);
+        }
         set.scratch_limits = None;
         set.scratch_limits_revision = None;
         set.scratch_table_retry_counters
@@ -3514,6 +3565,138 @@ pub(crate) fn onig_regset_swap_region(
 /// fallback search: a later-index entry only needs positions strictly before
 /// the winner, while an earlier-index entry also needs the winner's position
 /// to resolve a tie.
+#[inline]
+fn no_match_memo_key(
+    identity: FallbackMemoIdentity,
+    end: usize,
+    option: OnigOptionType,
+    limits: FallbackMemoLimits,
+) -> FallbackMemoKey {
+    FallbackMemoKey {
+        identity,
+        end,
+        option,
+        retry_limit_in_match: limits.retry_limit_in_match,
+        retry_limit_in_search: limits.retry_limit_in_search,
+        match_stack_limit: limits.match_stack_limit,
+        time_limit: limits.time_limit,
+        subexp_call_limit_in_search: limits.subexp_call_limit_in_search,
+        subexp_call_max_nest_level: limits.subexp_call_max_nest_level,
+    }
+}
+
+#[inline]
+fn is_valid_char_boundary_for_set(set: &OnigRegSet, str_data: &[u8], end: usize, s: usize) -> bool {
+    set.enc.max_enc_len() == 1 || (set.subject_utf8 && (s == end || (str_data[s] & 0xC0) != 0x80))
+}
+
+/// Checks whether a previously recorded whole-set no-match over `[from, end]`
+/// proves that searching from `start >= from` on the same subject, options,
+/// and limits also returns `ONIG_MISMATCH`.
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+fn no_match_memo_hit(
+    set: &mut OnigRegSet,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    option: OnigOptionType,
+    limits: FallbackMemoLimits,
+    fallback_memo_id: Option<FallbackMemoIdentity>,
+) -> bool {
+    let Some(memo) = set.no_match_memo else {
+        return false;
+    };
+    if !set.no_match_memo_safe
+        || range != end
+        || limits.retry_limit_in_search != 0
+        || limits.time_limit != 0
+        || start < memo.from
+    {
+        return false;
+    }
+    let Some(identity) = fallback_memo_id else {
+        return false;
+    };
+    if memo.key != no_match_memo_key(identity, end, option, limits) {
+        return false;
+    }
+    if start > memo.from && !is_valid_char_boundary_for_set(set, str_data, end, start) {
+        return false;
+    }
+    if set.anychar_inf && start > memo.from && str_data[start - 1] != b'\n' {
+        let subject = Some((identity, end));
+        if set.gate_subject != subject {
+            set.gate_subject = subject;
+            set.gate_generation = set.gate_generation.wrapping_add(1);
+            if set.gate_generation == 0 {
+                set.gates.fill(EntryGate::STALE);
+                set.gate_generation = 1;
+            }
+        }
+        for i in 0..set.anychar_inf_entries.len() {
+            let idx = set.anychar_inf_entries[i] as usize;
+            let entry = &set.entries[idx];
+            if end - start < entry.reg.threshold_len.max(0) as usize {
+                continue;
+            }
+            if start < end
+                && entry
+                    .start_filter
+                    .as_deref()
+                    .is_some_and(|filter| filter[str_data[start] as usize] == 0)
+                && (set.subject_utf8 || start_map_may_skip(&entry.reg, str_data, start))
+            {
+                continue;
+            }
+            if (entry.fallback || entry.gated)
+                && !table_gate_admits(set, idx, str_data, end, start, range, start)
+            {
+                continue;
+            }
+            return false;
+        }
+    }
+    set.last_match_len = ONIG_MISMATCH;
+    true
+}
+
+/// Records a whole-set no-match over `[start, end]` for reuse by later
+/// searches on the same subject, options, and limits.
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+fn record_no_match_memo(
+    set: &mut OnigRegSet,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    option: OnigOptionType,
+    limits: FallbackMemoLimits,
+    fallback_memo_id: Option<FallbackMemoIdentity>,
+) {
+    if !set.no_match_memo_safe
+        || range != end
+        || limits.retry_limit_in_search != 0
+        || limits.time_limit != 0
+        || !is_valid_char_boundary_for_set(set, str_data, end, start)
+    {
+        return;
+    }
+    let Some(identity) = fallback_memo_id else {
+        return;
+    };
+    let key = no_match_memo_key(identity, end, option, limits);
+    set.no_match_memo = Some(match set.no_match_memo {
+        Some(prev) if prev.key == key => NoMatchMemo {
+            key,
+            from: prev.from.min(start),
+        },
+        _ => NoMatchMemo { key, from: start },
+    });
+}
+
 #[inline(never)]
 #[allow(clippy::too_many_arguments)]
 fn regset_search_body_position_lead(
@@ -3527,6 +3710,81 @@ fn regset_search_body_position_lead(
     fallback_memo_id: Option<FallbackMemoIdentity>,
 ) -> (i32, i32) {
     let limits = refresh_scratch_limits(set);
+    #[cfg(not(feature = "prefilter-self-check"))]
+    if set.no_match_memo.is_some()
+        && no_match_memo_hit(
+            set,
+            str_data,
+            end,
+            start,
+            range,
+            option,
+            limits,
+            fallback_memo_id,
+        )
+    {
+        return (ONIG_MISMATCH, 0);
+    }
+    #[cfg(feature = "prefilter-self-check")]
+    let memo_claimed_no_match = !set.prefilter_bypass
+        && set.no_match_memo.is_some()
+        && no_match_memo_hit(
+            set,
+            str_data,
+            end,
+            start,
+            range,
+            option,
+            limits,
+            fallback_memo_id,
+        );
+    let result = regset_search_body_position_lead_uncached(
+        set,
+        str_data,
+        end,
+        start,
+        range,
+        option,
+        skip_region_for_nomem,
+        fallback_memo_id,
+        limits,
+    );
+    #[cfg(feature = "prefilter-self-check")]
+    if memo_claimed_no_match {
+        assert_eq!(
+            result,
+            (ONIG_MISMATCH, 0),
+            "no-match memo disagreed with search at start={start}"
+        );
+    }
+    if result.0 == ONIG_MISMATCH && fallback_memo_id.is_some() {
+        record_no_match_memo(
+            set,
+            str_data,
+            end,
+            start,
+            range,
+            option,
+            limits,
+            fallback_memo_id,
+        );
+    }
+    result
+}
+
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn regset_search_body_position_lead_uncached(
+    set: &mut OnigRegSet,
+    str_data: &[u8],
+    end: usize,
+    start: usize,
+    range: usize,
+    option: OnigOptionType,
+    skip_region_for_nomem: bool,
+    fallback_memo_id: Option<FallbackMemoIdentity>,
+    limits: FallbackMemoLimits,
+) -> (i32, i32) {
     // Rust-only (ADR-008): whether the DFA pre-filter decides this search,
     // which builds it on the first one it decides; its own search runs
     // below, after the gate bookkeeping that serves both.
@@ -7995,5 +8253,175 @@ mod tests {
         ));
         assert!(matches!(compute_skip_needle(&built), SkipNeedle::None));
         assert!(matches!(compute_skip_needle(&appended), SkipNeedle::None));
+    }
+
+    #[test]
+    fn no_match_memo_reuses_and_respects_anchors_options_and_boundaries() {
+        let _limits = crate::regexec::shared_limits();
+        let make_set = |patterns: &[&str]| {
+            let regs = patterns.iter().map(|p| compile(p.as_bytes())).collect();
+            onig_regset_new(regs).0.unwrap()
+        };
+
+        // Plain set: no-match at start=0 caches for advancing starts on the same
+        // subject and options, and invalidates on option change or set mutation.
+        let mut set = make_set(&[r"\Afoo", r"bar\d+"]);
+        let text = b"baz qux";
+        let id = Some(FallbackMemoIdentity::OnigString(101));
+        assert_eq!(
+            onig_regset_search_utf8(
+                &mut set,
+                text,
+                text.len(),
+                0,
+                text.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+                id,
+            ),
+            (ONIG_MISMATCH, 0)
+        );
+        assert!(set.no_match_memo.is_some());
+        assert_eq!(
+            onig_regset_search_utf8(
+                &mut set,
+                text,
+                text.len(),
+                4,
+                text.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+                id,
+            ),
+            (ONIG_MISMATCH, 0)
+        );
+        // Option change must not reuse the memo: `\Afoo` matches `"foo"` when
+        // `NOT_BEGIN_STRING` is cleared.
+        let foo = b"foo";
+        let id2 = Some(FallbackMemoIdentity::OnigString(102));
+        assert_eq!(
+            onig_regset_search_utf8(
+                &mut set,
+                foo,
+                foo.len(),
+                0,
+                foo.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NOT_BEGIN_STRING,
+                id2,
+            ),
+            (ONIG_MISMATCH, 0)
+        );
+        assert_eq!(
+            onig_regset_search_utf8(
+                &mut set,
+                foo,
+                foo.len(),
+                0,
+                foo.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+                id2,
+            ),
+            (0, 0)
+        );
+
+        // `\G` (`CheckPositionType::SearchStart`) disables the whole-set memo:
+        // failing at start=0 must not hide a match at start=1.
+        let mut g_set = make_set(&[r"\Gb", "zzz"]);
+        let ab = b"ab";
+        let id3 = Some(FallbackMemoIdentity::OnigString(103));
+        assert!(!g_set.no_match_memo_safe);
+        assert_eq!(
+            onig_regset_search_utf8(
+                &mut g_set,
+                ab,
+                ab.len(),
+                0,
+                ab.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+                id3,
+            ),
+            (ONIG_MISMATCH, 0)
+        );
+        assert_eq!(
+            onig_regset_search_utf8(
+                &mut g_set,
+                ab,
+                ab.len(),
+                1,
+                ab.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+                id3,
+            ),
+            (0, 1)
+        );
+
+        // `ANCR_ANYCHAR_INF` with a leading look-behind can fail at start=0 and
+        // match at start=1; the memo must not suppress it.
+        let mut lb_set = make_set(&[r"(?<=a).*b", "zzz"]);
+        let id4 = Some(FallbackMemoIdentity::OnigString(104));
+        assert_eq!(
+            onig_regset_search_utf8(
+                &mut lb_set,
+                ab,
+                ab.len(),
+                0,
+                ab.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+                id4,
+            ),
+            (ONIG_MISMATCH, 0)
+        );
+        assert_eq!(
+            onig_regset_search_utf8(
+                &mut lb_set,
+                ab,
+                ab.len(),
+                1,
+                ab.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+                id4,
+            ),
+            (0, 1)
+        );
+
+        // `ANCR_ANYCHAR_INF` with an absent required literal is ruled out by
+        // its optimizer gate, so advancing starts reuse the memo safely.
+        let mut gated_anychar = make_set(&[r"(.+)(\.)(extend)(`)", r"(.+)?(\.)?(keyframes)(`)"]);
+        let line = b"import type { ReactElement } from \"react\";\n";
+        let id5 = Some(FallbackMemoIdentity::OnigString(105));
+        assert_eq!(
+            onig_regset_search_utf8(
+                &mut gated_anychar,
+                line,
+                line.len(),
+                0,
+                line.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+                id5,
+            ),
+            (ONIG_MISMATCH, 0)
+        );
+        assert!(gated_anychar.no_match_memo.is_some());
+        assert_eq!(
+            onig_regset_search_utf8(
+                &mut gated_anychar,
+                line,
+                line.len(),
+                11,
+                line.len(),
+                OnigRegSetLead::PositionLead,
+                ONIG_OPTION_NONE,
+                id5,
+            ),
+            (ONIG_MISMATCH, 0)
+        );
+        assert_eq!(onig_regset_last_match_len(&gated_anychar), ONIG_MISMATCH);
     }
 }

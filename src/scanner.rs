@@ -1849,31 +1849,31 @@ impl Scanner {
 /// Build a `ScannerMatch` from a regex index and region.
 fn build_scanner_match(index: usize, region: &OnigRegion) -> ScannerMatch {
     let num_regs = region.num_regs as usize;
-    let mut capture_indices = SmallVec::with_capacity(num_regs);
-
-    for i in 0..num_regs {
-        let beg = region.beg[i];
-        let end = region.end[i];
-        // A capture whose start lies after its end (a group that started
-        // again and failed before closing) is not a range of the string;
-        // report it like an unmatched group.
-        if beg >= 0 && end >= beg {
-            let start = beg as usize;
-            let end = end as usize;
-            capture_indices.push(CaptureIndex {
-                start,
-                end,
-                length: end - start,
-            });
-        } else {
-            // Unmatched optional capture group
-            capture_indices.push(CaptureIndex {
-                start: 0,
-                end: 0,
-                length: 0,
-            });
-        }
-    }
+    let capture_indices = region.beg[..num_regs]
+        .iter()
+        .zip(&region.end[..num_regs])
+        .map(|(&beg, &end)| {
+            // A capture whose start lies after its end (a group that started
+            // again and failed before closing) is not a range of the string;
+            // report it like an unmatched group.
+            if beg >= 0 && end >= beg {
+                let start = beg as usize;
+                let end = end as usize;
+                CaptureIndex {
+                    start,
+                    end,
+                    length: end - start,
+                }
+            } else {
+                // Unmatched optional capture group
+                CaptureIndex {
+                    start: 0,
+                    end: 0,
+                    length: 0,
+                }
+            }
+        })
+        .collect();
 
     ScannerMatch {
         index,
