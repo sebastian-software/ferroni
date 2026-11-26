@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.9.1](https://github.com/sebastian-software/ferroni/compare/v2.9.0...v2.9.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **deps:** update docs site ([#498](https://github.com/sebastian-software/ferroni/issues/498)) ([e920179](https://github.com/sebastian-software/ferroni/commit/e920179976cca29d75923c751107a8503e9c4ce2))
+* **deps:** update github actions ([#496](https://github.com/sebastian-software/ferroni/issues/496)) ([c1583ce](https://github.com/sebastian-software/ferroni/commit/c1583cee169fb4b961689bb1c7444e5b37dc3ff4))
+* **deps:** update toolchain pins ([#499](https://github.com/sebastian-software/ferroni/issues/499)) ([29e6f45](https://github.com/sebastian-software/ferroni/commit/29e6f457b13a1e7f4ca41fd85268a41e40702f9b))
+* **engine:** enforce stack cap in star loops, honor UpdateVar clear, and fix ASCII char-head stepping ([42be73a](https://github.com/sebastian-software/ferroni/commit/42be73a2988de8448cda3aeabcce3c6ff113e4ed))
+* **engine:** keep Call limits live and share named-group selection in replace ([6ded64b](https://github.com/sebastian-software/ferroni/commit/6ded64b71a0da0eeff29214ae4a031ab805799f3))
+* **engine:** stop backward-search retry at adjrange and key RegSet memo on nest limit ([0f90f61](https://github.com/sebastian-software/ferroni/commit/0f90f615ec257fb3bca62801057b229743dc6052))
+
+
+### Performance Improvements
+
+* **engine:** compact RegexType, CSR RegSet dispatch, and flat-pool portable DFA ([#504](https://github.com/sebastian-software/ferroni/issues/504)) ([1443db0](https://github.com/sebastian-software/ferroni/commit/1443db0674fde565988d2921ce40cfb79524b6eb))
+* **engine:** fix steady-lane regressions from encoding checks, SingleTable, and VM inlining ([#507](https://github.com/sebastian-software/ferroni/issues/507)) ([16ac733](https://github.com/sebastian-software/ferroni/commit/16ac7334a963f9b9de4b750e19a4ad9e69ee685d))
+* **engine:** lazy scanner caches, O(S) u16 SingleTable, pre-parsed replace templates, and fast paths ([7ab59f8](https://github.com/sebastian-software/ferroni/commit/7ab59f8434bc28c101bc50c1ea69fdcecd770451))
+* **engine:** shrink StackEntry to 32B, inline EncKind, and use AltLazy for AnyCharStar ([#505](https://github.com/sebastian-software/ferroni/issues/505)) ([43f4c07](https://github.com/sebastian-software/ferroni/commit/43f4c07cb23e7cb3b3d2fa09938fd13a74b49712))
+* **scanner,replace:** speed up warm scanner searches and growing literal replaces ([#508](https://github.com/sebastian-software/ferroni/issues/508)) ([0785b54](https://github.com/sebastian-software/ferroni/commit/0785b541302c58aa3f8267977f4d5159bdf6354c))
+
 ## [2.9.0](https://github.com/sebastian-software/ferroni/compare/v2.8.0...v2.9.0) (2026-11-18)
 
 
